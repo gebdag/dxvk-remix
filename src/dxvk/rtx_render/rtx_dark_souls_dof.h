@@ -109,6 +109,21 @@ namespace dxvk {
                     args.flags = RtxOptionFlags::UserSetting);
     RTX_OPTION_ARGS("rtx.ds1dof", float, depthEdgeSoftness, 0.05f,  "Relative depth tolerance for edge-preserving blur.",
                     args.flags = RtxOptionFlags::UserSetting);
+    RTX_OPTION_ARGS("rtx.ds1dof", float, cocStabilizationTexels, 1.0f,
+                    "Radius, in render-resolution depth texels, over which the circle of confusion is averaged.\n"
+                    "The view Z buffer is point-sampled at jittering sub-pixel positions while an upscaler is "
+                    "active, so at a silhouette - and badly across alpha-tested foliage - which surface owns a "
+                    "texel flips every frame, and the circle of confusion flips with it. Averaging over roughly "
+                    "the one texel of uncertainty turns that flip into a bounded change in a smooth value. "
+                    "0 disables the smoothing and restores a single unfiltered depth fetch. Raise it if edges "
+                    "still crawl, lower it if the blur transition looks too soft.",
+                    args.flags = RtxOptionFlags::NoSave);
+    RTX_OPTION_ARGS("rtx.ds1dof", bool,  debugVisualizeCoc, false,
+                    "Diagnostic. Output the circle of confusion as greyscale instead of the blurred image. "
+                    "The CoC depends only on the sampled depth, so this splits a depth-side instability "
+                    "(the grey image itself flickers) from a gather-side or source-colour one (the grey image "
+                    "is stable while the normal output dances).",
+                    args.flags = RtxOptionFlags::NoSave);
     RTX_OPTION_ARGS("rtx.ds1dof", bool,  compensateCameraJitter, true,
                     "Undo the camera jitter when reading the view Z buffer. That buffer is rasterized at render "
                     "resolution with the upscaler's sub-pixel jitter applied, while the colour this pass receives "

@@ -29,6 +29,7 @@
 #include "rtx_imgui.h"
 
 #include <rtx_shaders/post_fx_dark_souls_dof.h>
+#include <rtx_shaders/post_fx_dark_souls_dof_prepare.h>
 
 namespace dxvk {
 
@@ -40,6 +41,24 @@ namespace dxvk {
 
       PUSH_CONSTANTS(PostFxDarkSoulsDofArgs)
 
+      // Note: no depth binding - the gather reads the circle of confusion out of the source
+      // texture's alpha. Binding 1 is intentionally unused here; the prepare pass below still uses it.
+      BEGIN_PARAMETER()
+        TEXTURE2D(POST_FX_DS_DOF_SOURCE)
+        RW_TEXTURE2D(POST_FX_DS_DOF_OUTPUT)
+        SAMPLER(POST_FX_DS_DOF_LINEAR_SAMPLER)
+      END_PARAMETER()
+    };
+
+    PREWARM_SHADER_PIPELINE(PostFxDarkSoulsDofShader);
+
+    // Stages the frame into the intermediate texture and packs the stabilized circle of confusion
+    // into its alpha. Replaces the raw copyImage the dispatch used to be preceded by.
+    class PostFxDarkSoulsDofPrepareShader : public ManagedShader {
+      SHADER_SOURCE(PostFxDarkSoulsDofPrepareShader, VK_SHADER_STAGE_COMPUTE_BIT, post_fx_dark_souls_dof_prepare)
+
+      PUSH_CONSTANTS(PostFxDarkSoulsDofArgs)
+
       BEGIN_PARAMETER()
         TEXTURE2D(POST_FX_DS_DOF_SOURCE)
         TEXTURE2D(POST_FX_DS_DOF_LINEAR_VIEW_Z)
@@ -48,7 +67,7 @@ namespace dxvk {
       END_PARAMETER()
     };
 
-    PREWARM_SHADER_PIPELINE(PostFxDarkSoulsDofShader);
+    PREWARM_SHADER_PIPELINE(PostFxDarkSoulsDofPrepareShader);
   }
 
   DxvkDarkSoulsDof::DxvkDarkSoulsDof(DxvkDevice* device) {
@@ -102,16 +121,30 @@ namespace dxvk {
     // The jitter is expressed in render-resolution pixels, so normalize by the view Z buffer's own
     // extent rather than by the output extent this pass dispatches over - the two differ whenever an
     // upscaler is active, which is exactly when the jitter is non-zero.
+    args.debugVisualizeCoc = debugVisualizeCoc() ? 1u : 0u;
+    args.cocStabilizationTexels = std::max(cocStabilizationTexels(), 0.0f);
+
+    const VkExtent3D viewZExtent = linearViewZ.image->mipLevelExtent(0);
+    args.invViewZSize = { 1.0f / float(viewZExtent.width), 1.0f / float(viewZExtent.height) };
+
     args.depthJitterUv = { 0.0f, 0.0f };
     if (compensateCameraJitter()) {
-      const VkExtent3D viewZExtent = linearViewZ.image->mipLevelExtent(0);
       args.depthJitterUv = { jitterOffset[0] / float(viewZExtent.width),
                              jitterOffset[1] / float(viewZExtent.height) };
     }
 
+    // Prepare: read the frame, write colour + stabilized CoC into the staging copy.
+    ctx->pushConstants(0, sizeof(args), &args);
+    ctx->bindResourceView(POST_FX_DS_DOF_SOURCE, inOutColor.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_DOF_LINEAR_VIEW_Z, linearViewZ.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_DOF_OUTPUT, sourceColor.view, nullptr);
+    ctx->bindResourceSampler(POST_FX_DS_DOF_LINEAR_SAMPLER, m_linearSampler);
+    ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsDofPrepareShader::getShader());
+    ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
+
+    // Gather: read that staging copy, write the blurred frame back.
     ctx->pushConstants(0, sizeof(args), &args);
     ctx->bindResourceView(POST_FX_DS_DOF_SOURCE, sourceColor.view, nullptr);
-    ctx->bindResourceView(POST_FX_DS_DOF_LINEAR_VIEW_Z, linearViewZ.view, nullptr);
     ctx->bindResourceView(POST_FX_DS_DOF_OUTPUT, inOutColor.view, nullptr);
     ctx->bindResourceSampler(POST_FX_DS_DOF_LINEAR_SAMPLER, m_linearSampler);
     ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsDofShader::getShader());
@@ -149,6 +182,12 @@ namespace dxvk {
     RemixGui::DragFloat("Max Blur Radius##ds1dof", &maxBlurRadiusObject(), 0.25f, 0.0f, 48.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
     RemixGui::DragFloat("Depth Edge Softness##ds1dof", &depthEdgeSoftnessObject(), 0.001f, 0.001f, 0.100f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
     RemixGui::DragFloat("Focus Exponent##ds1dof", &focusExponentObject(), 0.01f, 0.20f, 4.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Diagnostics");
+    RemixGui::DragFloat("CoC Stabilization (texels)##ds1dof", &cocStabilizationTexelsObject(), 0.05f, 0.0f, 4.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+    RemixGui::Checkbox("Visualize Circle of Confusion##ds1dof", &debugVisualizeCocObject());
+    RemixGui::Checkbox("Compensate Camera Jitter##ds1dof", &compensateCameraJitterObject());
 
     ImGui::Spacing();
     ImGui::TextDisabled("DofBank parameters");

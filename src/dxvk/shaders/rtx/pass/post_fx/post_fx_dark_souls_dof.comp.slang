@@ -26,9 +26,6 @@
 [[vk::binding(POST_FX_DS_DOF_SOURCE)]]
 Texture2D<float4> SourceColorTexture;
 
-[[vk::binding(POST_FX_DS_DOF_LINEAR_VIEW_Z)]]
-Texture2D<float> LinearViewZTexture;
-
 [[vk::binding(POST_FX_DS_DOF_OUTPUT)]]
 RWTexture2D<float4> OutputColorTexture;
 
@@ -44,53 +41,9 @@ static const float kGoldenAngle = 2.39996323f;
 // blur circle is considered to no longer reach the center pixel.
 static const float kScatterSoftness = 1.5f;
 
-// uv is in output-resolution screen space, but the view Z buffer is rasterized at render
-// resolution WITH the camera jitter applied, while the colour reaching this pass has already
-// been temporally resolved by the upscaler and no longer carries that jitter. Reading the
-// buffer at the unadjusted uv therefore samples a depth that walks around by a sub-pixel amount
-// every frame, following the Halton jitter sequence. Across a depth discontinuity that walk
-// flips the fetched depth between the near and far surface, which flips the circle of confusion,
-// which makes the pixel visibly dance - most obviously along bright silhouettes, where the
-// resulting change in blur is largest.
-//
-// Shift into the jittered buffer the same way TAA's OutputToInput does: it maps an output pixel
-// to its input-space location as
-//   (pixelPos + 0.5) * inputOverOutputViewSize - 0.5 + jitterOffset
-// which in uv terms is exactly uv + jitterOffset / renderResolution. cb.depthJitterUv carries
-// that term, and is zero whenever no upscaler is active (calcPixelJitter returns 0 then).
-float sampleViewDistance(float2 uv) {
-  return abs(LinearViewZTexture.SampleLevel(LinearSampler, uv + cb.depthJitterUv, 0.0f));
-}
-
-float computeFarRate(float depth) {
-  if (cb.farMul <= 0.0f || cb.farEnd <= cb.farBegin) {
-    return 0.0f;
-  }
-
-  const float ramp = saturate((depth - cb.farBegin) / max(cb.farEnd - cb.farBegin, 1e-4f));
-  return ramp * saturate(cb.farMul / 100.0f);
-}
-
-float computeNearRate(float depth) {
-  if (cb.nearMul <= 0.0f) {
-    return 0.0f;
-  }
-
-  const float nearStart = max(cb.nearBegin, cb.nearEnd);
-  const float nearFull = min(cb.nearBegin, cb.nearEnd);
-  if (nearStart <= nearFull + 1e-4f) {
-    return 0.0f;
-  }
-
-  const float ramp = saturate((nearStart - depth) / max(nearStart - nearFull, 1e-4f));
-  return ramp * saturate(cb.nearMul / 100.0f);
-}
-
-float computeBlurAmount(float farRate, float nearRate) {
-  const float blur = saturate(max(farRate, nearRate));
-  return pow(blur, max(cb.focusExponent, 0.2f));
-}
-
+// Note: this pass does not read the view Z buffer at all. The circle of confusion is computed once
+// per pixel by the prepare pass and arrives in the alpha channel of SourceColorTexture, which is why
+// the depth ramp helpers and the jitter compensation live over there.
 float hashAngle(uint2 pixelPos) {
   const uint hash = pixelPos.x * 1664525u + pixelPos.y * 1013904223u + 2246822519u;
   return frac(float(hash & 0x00FFFFFFu) / 16777216.0f) * 6.28318531f;
@@ -124,20 +77,30 @@ void main(uint2 pixelPos : SV_DispatchThreadID) {
   }
 
   const float2 uv = (float2(pixelPos) + 0.5f) * cb.invImageSize;
+  // The prepare pass packed the stabilized circle of confusion into alpha, so the whole gather reads
+  // colour and CoC from one texture and never touches the view Z buffer. That is both the stability
+  // fix (the CoC is smoothed once, over the render-resolution texel the jitter makes uncertain) and
+  // a large saving - this used to be 49 depth fetches per output pixel.
   const float4 centerSample = SourceColorTexture.SampleLevel(LinearSampler, uv, 0.0f);
-  const float centerDepth = sampleViewDistance(uv);
-  const float centerFarRate = computeFarRate(centerDepth);
-  const float centerNearRate = computeNearRate(centerDepth);
-  const float centerBlur = computeBlurAmount(centerFarRate, centerNearRate);
+  const float centerBlur = centerSample.a;
+
+  // Diagnostic: show the circle of confusion on its own, before any gathering. The CoC is a pure
+  // function of the sampled depth, so if THIS flickers the instability is in the depth signal; if it
+  // is rock solid and only the final image dances, the instability is in the gather or in the colour
+  // the gather reads. Placed ahead of the early-outs so in-focus regions are shown too.
+  if (cb.debugVisualizeCoc != 0) {
+    OutputColorTexture[pixelPos] = float4(centerBlur, centerBlur, centerBlur, 1.0f);
+    return;
+  }
 
   if (centerBlur <= 0.01f || cb.blendWeight <= 0.0f) {
-    OutputColorTexture[pixelPos] = centerSample;
+    OutputColorTexture[pixelPos] = float4(centerSample.rgb, 1.0f);
     return;
   }
 
   const float radiusPixels = centerBlur * cb.maxBlurRadius;
   if (radiusPixels < 0.5f) {
-    OutputColorTexture[pixelPos] = centerSample;
+    OutputColorTexture[pixelPos] = float4(centerSample.rgb, 1.0f);
     return;
   }
 
@@ -153,10 +116,7 @@ void main(uint2 pixelPos : SV_DispatchThreadID) {
     const float tapDist = length(tap);
     const float tapDistPx = tapDist * radiusPixels;
     const float2 sampleUv = saturate(uv + tap * radiusPixels * cb.invImageSize);
-    const float sampleDepth = sampleViewDistance(sampleUv);
-    const float sampleFarRate = computeFarRate(sampleDepth);
-    const float sampleNearRate = computeNearRate(sampleDepth);
-    const float sampleBlur = computeBlurAmount(sampleFarRate, sampleNearRate);
+    const float sampleBlur = SourceColorTexture.SampleLevel(LinearSampler, sampleUv, 0.0f).a;
 
     // Scatter-as-gather: a sample contributes if its own blur circle
     // is large enough to reach this center pixel. In-focus samples
@@ -181,5 +141,6 @@ void main(uint2 pixelPos : SV_DispatchThreadID) {
   const float3 blurredColor = accumulatedColor / accumulatedWeight;
   const float blend = saturate(cb.blendWeight * centerBlur);
   const float3 finalColor = saturate(lerp(centerSample.rgb, blurredColor, blend));
-  OutputColorTexture[pixelPos] = float4(finalColor, centerSample.a);
+  // Note: alpha is the packed CoC on the way in, so it must not be written back out.
+  OutputColorTexture[pixelPos] = float4(finalColor, 1.0f);
 }

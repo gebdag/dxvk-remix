@@ -813,14 +813,8 @@ namespace dxvk {
             const Resources::Resource& linearViewZ = rtOutput.m_primaryLinearViewZ;
             const VkExtent3D extent = finalOut.image->mipLevelExtent(0);
 
-            copyImage(
-              sourceCopy.image,
-              { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
-              { 0, 0, 0 },
-              finalOut.image,
-              { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
-              { 0, 0, 0 },
-              extent);
+            // Note: no copyImage here any more - the pass's own prepare dispatch stages the frame
+            // into sourceCopy and packs the circle of confusion into its alpha at the same time.
 
             // linearViewZ was rasterized with this jitter; the pass undoes it on read.
             float ds1DofJitter[2];

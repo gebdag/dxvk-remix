@@ -48,5 +48,15 @@ struct PostFxDarkSoulsDofArgs {
   // UV offset applied when reading the view Z buffer, to undo the camera jitter that buffer
   // was rasterized with. Zero when no upscaler is active. See sampleViewDistance().
   float2 depthJitterUv;
-  float2 _pad1;
+  // Non-zero: write the circle of confusion as greyscale instead of the blurred image.
+  uint debugVisualizeCoc;
+  uint _pad1;
+
+  // 1 / view Z buffer extent. The view Z buffer is at RENDER resolution, which differs from
+  // invImageSize (output resolution) whenever an upscaler is active.
+  float2 invViewZSize;
+  // Radius, in view Z texels, over which the prepare pass averages the circle of confusion. 0
+  // disables the smoothing and reproduces a single unfiltered depth fetch.
+  float cocStabilizationTexels;
+  float _pad2;
 };
