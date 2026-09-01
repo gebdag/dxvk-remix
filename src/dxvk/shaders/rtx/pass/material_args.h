@@ -42,8 +42,16 @@ struct OpaqueMaterialArgs {
   uint enableThinFilmOverride = 0;
   // Note: This thickness value is normalized on 0-1, predivided by the thinFilmMaxThickness on the CPU.
   float thinFilmNormalizedThicknessOverride = 0.0;
-  uint pad0 = 0;
-  uint pad1 = 0;
+  // Legacy specular experiment (rtx.legacyMaterial.*). Only applied to materials carrying
+  // OPAQUE_SURFACE_MATERIAL_FLAG_USE_LEGACY_SPECULAR. Both are neutral at 1.0, which reproduces
+  // stock Remix behaviour exactly. Filled in RtxContext::updateRaytraceArgs, not by
+  // OpaqueMaterialOptions::fillShaderParams, since the options live on LegacyMaterialDefaults.
+  // Scales the 0.04 dielectric base reflectivity. 0 removes the dielectric specular lobe entirely.
+  float legacySpecularLevel = 1.f;
+  // Schlick's f90 (the grazing angle reflectivity ceiling). Stock Remix hardcodes this to 1.0, which
+  // makes every surface a white mirror at grazing angles; at roughness 1 that energy smears over the
+  // whole hemisphere and reads as an achromatic haze.
+  float legacyFresnelF90 = 1.f;
 };
 
 struct TranslucentMaterialArgs {

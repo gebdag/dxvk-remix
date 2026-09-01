@@ -66,6 +66,10 @@
   X(MetallicConstant,                 metallic_constant,                      float,          0.f,                        1.f,                       0.f) \
   X(EmissiveColorConstant,            emissive_color_constant,                Vector3,        Vector3(0.f),               Vector3(1.f),              Vector3(1.0f, 0.1f, 0.1f)) \
   X(EnableEmission,                   enable_emission,                        bool,           false,                      true,                      false) \
+  /* Legacy specular experiment: true for materials synthesized from the original game fixed function */ \
+  /* state (LegacyMaterialData::createDefault), false for anything authored as a USD/MDL replacement.  */ \
+  /* Gates the rtx.legacyMaterial.specularLevel / fresnelF90 controls.                                 */ \
+  X(IsLegacyMaterial,                 is_legacy_material,                     bool,           false,                      true,                      false) \
   X(SpriteSheetRows,                  sprite_sheet_rows,                      uint8_t,        0,                          255,                       0) \
   X(SpriteSheetCols,                  sprite_sheet_cols,                      uint8_t,        0,                          255,                       0) \
   X(SpriteSheetFPS,                   sprite_sheet_fps,                       uint8_t,        0,                          255,                       0) \
@@ -180,12 +184,14 @@
       type& get##name() { return m_##name; } \
       const type& get##name() const { return m_##name; } \
       void set##name(const type value) { m_##name = value; m_dirty.set(DirtyFlags::k_##name); sanitizeData(); updateCachedHash(); } \
+      bool is##name##Modified() const { return m_dirty.test(DirtyFlags::k_##name); } \
       static pxr::TfToken get##name##Token() { return pxr::TfToken("inputs:"#usd_attr); }
 
 #define WRITE_TEXTURE_MEMBER_FUNC(name, usd_attr, type, minVal, maxVal, defaultVal) \
       type& get##name() { return m_##name; } \
       const type& get##name() const { return m_##name; } \
       void set##name(const type value) { m_##name = value; m_dirty.set(DirtyFlags::k_##name); sanitizeData(); updateCachedHash(); } \
+      bool is##name##Modified() const { return m_dirty.test(DirtyFlags::k_##name); } \
       static pxr::TfToken get##name##Token() { return pxr::TfToken("inputs:"#usd_attr); }
 
 #define WRITE_CONSTANT_DESERIALIZER(name, usd_attr, type, minVal, maxVal, defaultVal) \
@@ -246,6 +252,17 @@ struct name##Data {                                                             
     /* Note: Called after data is sanitized to have the hashed value reflect the adjusted values. */ \
     updateCachedHash();                                                                              \
   }                                                                                                  \
+                                                                                                     \
+  /* Per-parameter "was this authored" bits. A bit is set when the parameter is explicitly       */ \
+  /* assigned - through a setter, through the USD deserializer finding the attribute, or through  */ \
+  /* the constructor's dirtyFlags argument - as opposed to being left at its compiled-in default. */ \
+  /* merge() only overwrites parameters whose bit is clear, so this doubles as the authoring      */ \
+  /* provenance of every field.                                                                   */ \
+  enum class DirtyFlags : uint64_t {                                                                 \
+    X_PARAMS(WRITE_DIRTY_FLAGS)                                                                      \
+  };                                                                                                 \
+                                                                                                     \
+  uint64_t getDirtyFlags() const { return m_dirty.raw(); }                                           \
                                                                                                      \
   X_CONSTANTS(WRITE_CONSTANT_MEMBER_FUNC)                                                            \
   X_TEXTURES(WRITE_TEXTURE_MEMBER_FUNC)                                                              \
@@ -311,10 +328,6 @@ private:                                                                        
   }                                                                                                  \
                                                                                                      \
   X_PARAMS(WRITE_PARAMETER_MEMBERS)                                                                  \
-                                                                                                     \
-  enum class DirtyFlags : uint64_t {                                                                 \
-    X_PARAMS(WRITE_DIRTY_FLAGS)                                                                      \
-  };                                                                                                 \
                                                                                                      \
   Flags<DirtyFlags> m_dirty { 0 };                                                                   \
   XXH64_hash_t m_cachedHash { 0 };                                                                   \

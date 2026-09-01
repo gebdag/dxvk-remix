@@ -617,6 +617,29 @@ struct LegacyMaterialDefaults {
                   "The thickness (in nanometers) of the thin-film layer assuming it is enabled on non-replaced \"legacy\" materials.\n"
                   "Should be any value larger than 0, typically within the wavelength of light, but must be less than or equal to "
                   "OPAQUE_SURFACE_MATERIAL_THIN_FILM_MAX_THICKNESS (" STRINGIFY(OPAQUE_SURFACE_MATERIAL_THIN_FILM_MAX_THICKNESS) " nm).");
+  // Note: The two options below reach the GPU through OpaqueMaterialArgs rather than through the material
+  // itself, so they intentionally do not set InvalidatesDrawcallTranslation - dragging them does not need to
+  // rebuild any cached materials. They only apply to materials carrying
+  // OPAQUE_SURFACE_MATERIAL_FLAG_USE_LEGACY_SPECULAR, so a replacement that authors its own roughness
+  // is unaffected.
+  // Note: Despite living under rtx.legacyMaterial, the two options below apply to every material that
+  // has no authored roughness - non-replaced "legacy" materials plus any replacement that ships neither
+  // a roughness constant nor a roughness map. A replacement that does specify its roughness is treated as
+  // a deliberate PBR decision and is left alone.
+  RTX_OPTION("rtx.legacyMaterial", float, specularLevel, 1.f,
+             "Scales the dielectric base reflectivity (the fixed 0.04 F0) on materials with no authored roughness.\n"
+             "Applies to non-replaced \"legacy\" materials and to any replacement material that sets neither a "
+             "roughness constant nor a roughness texture; a replacement that specifies its roughness is left alone.\n"
+             "Should be in the range 0 to 1, where 1 is the standard physically based value and 0 removes the "
+             "dielectric specular lobe entirely, leaving a purely diffuse surface. Metallic surfaces are "
+             "unaffected, as a conductor's reflectivity is its albedo rather than the dielectric constant.");
+  RTX_OPTION("rtx.legacyMaterial", float, fresnelF90, 1.f,
+             "The grazing angle reflectivity ceiling (Schlick's f90) on materials with no authored roughness.\n"
+             "Applies to the same set of materials as Specular Level above.\n"
+             "Should be in the range 0 to 1. Remix normally hardcodes this to 1, which makes every surface a "
+             "perfect white mirror at grazing angles; at high roughness that energy is spread over the whole "
+             "hemisphere and reads as an achromatic haze that washes out texture contrast. Lowering this "
+             "suppresses the grazing response without having to raise metallic.");
 };
 
 // Surface Materials
@@ -660,7 +683,8 @@ struct RtOpaqueSurfaceMaterial {
     uint32_t subsurfaceMaterialIndex, bool isRaytracedRenderTarget, bool isHairCard,
     uint16_t samplerFeedbackStamp,
     uint32_t secondaryTextureIndex = 0,
-    bool albedoTextureIsSrgb = false, bool emissiveTextureIsSrgb = false
+    bool albedoTextureIsSrgb = false, bool emissiveTextureIsSrgb = false,
+    bool useLegacySpecular = false
   ) :
     m_albedoOpacityTextureIndex{ albedoOpacityTextureIndex }, m_secondaryTextureIndex{secondaryTextureIndex}, m_normalTextureIndex{ normalTextureIndex },
     m_tangentTextureIndex { tangentTextureIndex }, m_heightTextureIndex { heightTextureIndex }, m_roughnessTextureIndex{ roughnessTextureIndex },
@@ -678,7 +702,8 @@ struct RtOpaqueSurfaceMaterial {
     m_dlssControlMaskStructuralStrength{ dlssControlMaskStructuralStrength },
     m_subsurfaceMaterialIndex(subsurfaceMaterialIndex), m_isRaytracedRenderTarget(isRaytracedRenderTarget),
     m_isHairCard(isHairCard), m_samplerFeedbackStamp{ samplerFeedbackStamp },
-    m_albedoTextureIsSrgb{ albedoTextureIsSrgb }, m_emissiveTextureIsSrgb{ emissiveTextureIsSrgb }
+    m_albedoTextureIsSrgb{ albedoTextureIsSrgb }, m_emissiveTextureIsSrgb{ emissiveTextureIsSrgb },
+    m_useLegacySpecular{ useLegacySpecular }
   {
     updateCachedData();
     updateCachedHash();
@@ -722,6 +747,10 @@ struct RtOpaqueSurfaceMaterial {
     }
     if (m_emissiveTextureIsSrgb) {
       flags |= OPAQUE_SURFACE_MATERIAL_FLAG_EMISSIVE_TEXTURE_IS_SRGB;
+    }
+
+    if (m_useLegacySpecular) {
+      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_USE_LEGACY_SPECULAR;
     }
 
     float displaceIn = m_displaceIn * getDisplacementInFactor();
@@ -935,6 +964,7 @@ private:
       uint32_t secondaryTextureIndex;
       uint32_t albedoTextureIsSrgb;       // NOTE: uint32_t to avoid padding
       uint32_t emissiveTextureIsSrgb;     // NOTE: uint32_t to avoid padding
+      uint32_t useLegacySpecular;         // NOTE: uint32_t to avoid padding
       // NOTE: There must be NO padding between members, as the struct is used for hashing
     };
     HashStruct hashData = HashStruct{
@@ -967,6 +997,7 @@ private:
       m_secondaryTextureIndex,
       m_albedoTextureIsSrgb,
       m_emissiveTextureIsSrgb,
+      m_useLegacySpecular,
     };
     m_cachedHash = hashStructByMemory<HashStruct,
       &HashStruct::albedoOpacityTextureIndex,
@@ -997,7 +1028,8 @@ private:
       &HashStruct::samplerFeedbackStamp,
       &HashStruct::secondaryTextureIndex,
       &HashStruct::albedoTextureIsSrgb,
-      &HashStruct::emissiveTextureIsSrgb>(hashData);
+      &HashStruct::emissiveTextureIsSrgb,
+      &HashStruct::useLegacySpecular>(hashData);
   }
 
   void updateCachedData() {
@@ -1059,6 +1091,12 @@ private:
   // shader skips its software gamma correction for that channel. Derived from the texture format on the CPU.
   bool m_albedoTextureIsSrgb;
   bool m_emissiveTextureIsSrgb;
+
+  // Legacy specular experiment: true when nobody made a deliberate roughness decision for this
+  // material - it was synthesized from the game's own fixed function state, or it is a replacement that
+  // authors neither a roughness constant nor a roughness map. Gates rtx.legacyMaterial.specularLevel
+  // and rtx.legacyMaterial.fresnelF90 on the GPU. Computed in SceneManager::createSurfaceMaterial.
+  bool m_useLegacySpecular;
 
   uint16_t m_samplerFeedbackStamp;
 
