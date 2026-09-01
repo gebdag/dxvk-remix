@@ -26,6 +26,9 @@
 #include "dxvk_context.h"
 #include "rtx_objectpicking.h"
 #include "rtx_resources.h"
+// DS1 port: the two Dark Souls post-processing passes are owned by DxvkPostFx.
+#include "rtx_dark_souls_dof.h"
+#include "rtx_dark_souls_grading.h"
 
 #include "../spirv/spirv_code_buffer.h"
 #include "../util/util_matrix.h"
@@ -104,6 +107,12 @@ namespace dxvk {
     RTX_OPTION("rtx.postfx", float, vignetteIntensity, 0.6f, "The darkness of vignette effect.");
     RTX_OPTION("rtx.postfx", float, vignetteRadius, 0.8f, "The radius that vignette effect starts. The unit is normalized screen space, 0 represents the center, 1 means the edge of the short edge of the rendering window. So, this setting can larger than 1 until reach to the long edge of the rendering window.");
     RTX_OPTION("rtx.postfx", float, vignetteSoftness, 0.2f, "The gradient that the color drop to black from the vignetteRadius to the edge of rendering window.");
+
+  public:
+    // DS1 port: dispatched from RtxContext after dispatchPostFxLensEffects, not from
+    // DxvkPostFx::dispatch - they run on post-tonemap LDR data and need RtxContext's copyImage.
+    DxvkDarkSoulsDof m_darkSoulsDof;
+    DxvkDarkSoulsGrading m_darkSoulsGrading;
   };
 
 }

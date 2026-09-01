@@ -802,6 +802,47 @@ namespace dxvk {
         // display-space artifacts so they operate on post-tonemap LDR data.
         dispatchPostFxLensEffects(rtOutput);
 
+        // NV-DXVK start: DS1 port - Dark Souls depth of field (post-tonemapping, before DS1 grading).
+        // Reads a copy of the frame rather than the frame itself: the pass gathers a neighbourhood per
+        // pixel, so it cannot alias its own output.
+        {
+          DxvkDarkSoulsDof& ds1Dof = m_common->metaPostFx().m_darkSoulsDof;
+          if (ds1Dof.isEnabled()) {
+            const Resources::Resource& finalOut = rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite);
+            const Resources::Resource& sourceCopy = rtOutput.m_postFxIntermediateTexture;
+            const Resources::Resource& linearViewZ = rtOutput.m_primaryLinearViewZ;
+            const VkExtent3D extent = finalOut.image->mipLevelExtent(0);
+
+            copyImage(
+              sourceCopy.image,
+              { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+              { 0, 0, 0 },
+              finalOut.image,
+              { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+              { 0, 0, 0 },
+              extent);
+
+            // linearViewZ was rasterized with this jitter; the pass undoes it on read.
+            float ds1DofJitter[2];
+            getSceneManager().getCamera().getJittering(ds1DofJitter);
+
+            ds1Dof.dispatch(this, sourceCopy, linearViewZ, finalOut, extent, ds1DofJitter);
+          }
+        }
+        // NV-DXVK end
+
+        // NV-DXVK start: DS1 port - Dark Souls color grading (post-tonemapping, on 0-1 SDR data).
+        // Per-pixel, so it works in place on the final output.
+        {
+          DxvkDarkSoulsGrading& ds1Grading = m_common->metaPostFx().m_darkSoulsGrading;
+          if (ds1Grading.isEnabled()) {
+            const Resources::Resource& finalOut = rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite);
+            const VkExtent3D extent = finalOut.image->mipLevelExtent(0);
+            ds1Grading.dispatch(this, finalOut, extent);
+          }
+        }
+        // NV-DXVK end
+
         // Final output pass converts the linear post-tonemap LDR image to sRGB and applies
         // dithering as the very last step. SRGB conversion is suppressed for screenshot
         // captures (WAR for TREX-553: NVTT implicitly applies sRGB during dds->png conversion
