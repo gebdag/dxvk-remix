@@ -168,7 +168,23 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
 #endif
   bool infiniteRetries = false;
   bool bEarlyOut = false;
+  // Why a wait gave up is otherwise unrecoverable from the logs: the caller
+  // reports only "no response from server" for every distinct cause.
+  bool loggedMismatch = false;
+  uint32_t mismatchCount = 0;
+  uint32_t peekTimeouts = 0;
+  const DWORD waitStartMS = GetTickCount();
   uint32_t attemptNum = 0;
+
+  // The retry budget is meant to span time, not iterations. While a response is
+  // queued peek() returns immediately, so counting attempts expires the budget
+  // in microseconds and reports a failure the caller cannot distinguish from a
+  // dead server. Bound the loop by the wall-clock window those retries were
+  // meant to cover instead, which behaves identically when peeks block and
+  // stays patient when they do not.
+  const DWORD retryWindowMS = (maxAttempts == INFINITE)
+    ? INFINITE
+    : maxAttempts * (peekTimeoutMS > 0 ? peekTimeoutMS : 1);
   do {
     Result result;
     Header header = getReaderChannel().commands->peek(result, peekTimeoutMS, pbEarlyOutSignal);
@@ -191,15 +207,24 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
 #endif
         return Result::Success;
       } else {
-#if defined(_DEBUG) || defined(DEBUGOPT)
-        if (GlobalOptions::getLogAllCommands()) {
-          Logger::info(format_string("Different instance of a command detected: %s with UID: %s , Expected: %s with UID: %s. ", Commands::toString(header.command).c_str(), std::to_string(header.pHandle).c_str(),
-                                     Commands::toString(command).c_str(), std::to_string(uidToVerify).c_str()));
+        // Unconditional: a mismatch here is the response channel losing its
+        // pairing, and it is invisible in release builds otherwise. Logged once
+        // per wait so a desync names the command that displaced the expected one.
+        if (!loggedMismatch) {
+          loggedMismatch = true;
+          Logger::err(format_string("Response mismatch: received %s UID %s, expected %s UID %s.",
+                                    Commands::toString(header.command).c_str(), std::to_string(header.pHandle).c_str(),
+                                    Commands::toString(command).c_str(), std::to_string(uidToVerify).c_str()));
         }
-#endif
+        ++mismatchCount;
         // If we see the incorrect command, we want to give the other side of
-        // the bridge ample time to make an attempt to process it first
-        Sleep(peekTimeoutMS);
+        // the bridge ample time to make an attempt to process it first.
+        //
+        // When peeks do not block (timeouts disabled) yield cheaply at first, so
+        // a response that is merely a few entries behind is picked up within
+        // microseconds rather than costing a millisecond of stall per retry.
+        // Escalate only if the mismatch persists.
+        Sleep(peekTimeoutMS > 0 ? peekTimeoutMS : (mismatchCount < 64 ? 0 : 1));
       }
       break;
     }
@@ -229,6 +254,7 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
         // Drop the flag - we're in the normal loop now.
         infiniteRetries = false;
       }
+      ++peekTimeouts;
       Logger::trace(format_string("Peek timeout while waiting for command: %s.", Commands::toString(command).c_str()));
       break;
     }
@@ -243,9 +269,23 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
     if (pbEarlyOutSignal) {
       bEarlyOut = pbEarlyOutSignal->load();
     }
+    ++attemptNum;
   } while (!bEarlyOut &&
-            attemptNum++ <= maxAttempts &&
+            (retryWindowMS == INFINITE || (GetTickCount() - waitStartMS) < retryWindowMS) &&
             gbBridgeRunning);
+
+  // Every caller collapses this into "no response from server", which hides
+  // which of the four exits was taken. Attribute it: a retry-budget exhaustion
+  // with mismatches is a desynchronised response channel, an early-out or a
+  // cleared gbBridgeRunning is a teardown, and a fast exit with neither is
+  // neither of those.
+  Logger::err(format_string(
+    "waitForCommand gave up on %s UID %s after %ums (window %ums): attempts=%u mismatches=%u "
+    "peekTimeouts=%u earlyOut=%u bridgeRunning=%u peekTimeoutMS=%u",
+    Commands::toString(command).c_str(), std::to_string(uidToVerify).c_str(),
+    GetTickCount() - waitStartMS, retryWindowMS, attemptNum, mismatchCount,
+    peekTimeouts, bEarlyOut ? 1u : 0u, gbBridgeRunning ? 1u : 0u, peekTimeoutMS));
+
   return Result::Timeout;
 }
 

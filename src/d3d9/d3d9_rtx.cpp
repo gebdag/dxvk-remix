@@ -578,6 +578,17 @@ namespace dxvk {
   }
 
   bool D3D9Rtx::isRenderingUI() {
+    // DS1 port: explicit per-draw UI tag for compatibility proxies. A marker value in stage 0's
+    // D3DTSS_CONSTANT (inert unless a stage argument references D3DTA_CONSTANT) marks UI draws that
+    // the heuristics below cannot see. The orthographic heuristic is gated on !UseProgrammableVS(),
+    // so a game whose UI goes through vertex shaders - as Dark Souls' does, for every draw - has no
+    // path to being classified as UI without this.
+    constexpr uint32_t kFixedFunctionUiMarker = 0xD15D0011;
+    if (RtxOptions::uiMarkerEnabled() &&
+        d3d9State().textureStages[0][DXVK_TSS_CONSTANT] == kFixedFunctionUiMarker) {
+      return true;
+    }
+
     if (!m_parent->UseProgrammableVS() && orthographicIsUI()) {
       // Here we assume drawcalls with an orthographic projection are UI calls (as this pattern is common, and we can't raytrace these objects).
       const bool isOrthographic = (d3d9State().transforms[GetTransformIndex(D3DTS_PROJECTION)][3][3] == 1.0f);
@@ -1142,6 +1153,17 @@ namespace dxvk {
       // Check if an ignore texture is bound
       if (m_activeDrawCallState.getCategoryFlags().test(InstanceCategories::Ignore)) {
         return false;
+      }
+
+      // DS1 port: explicit per-draw decal tag for compatibility proxies. Marks coplanar alpha-blended
+      // overlay draws that must composite onto the surface beneath them via decal material blending,
+      // rather than being treated as independent geometry that z-fights with it.
+      if constexpr (FixedFunction) {
+        constexpr uint32_t kFixedFunctionDecalMarker = 0xD15DECA1;
+        if (RtxOptions::fixedFunctionDecalMarkerEnabled() &&
+            d3d9State().textureStages[firstStage][DXVK_TSS_CONSTANT] == kFixedFunctionDecalMarker) {
+          m_activeDrawCallState.setCategory(InstanceCategories::DecalStatic, true);
+        }
       }
 
       if (m_activeDrawCallState.testCategoryFlags(InstanceCategories::Terrain)) {

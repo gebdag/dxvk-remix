@@ -1069,11 +1069,26 @@ namespace dxvk {
                  srcTextureInfo->Desc()->Pool != D3DPOOL_DEFAULT))
       return D3DERR_INVALIDCALL;
 
+    // NV-DXVK start: DS1 port - guard against NULL-format surfaces (D3DFMT_NULL has no backing image)
+    if (unlikely(dstTextureInfo->IsNull() || srcTextureInfo->IsNull()))
+      return D3DERR_INVALIDCALL;
+    // NV-DXVK end
+
     Rc<DxvkImage> dstImage = dstTextureInfo->GetImage();
     Rc<DxvkImage> srcImage = srcTextureInfo->GetImage();
 
+    // NV-DXVK start: DS1 port - guard against unexpected null images (e.g. MAP_MODE_NONE)
+    if (unlikely(dstImage == nullptr || srcImage == nullptr))
+      return D3DERR_INVALIDCALL;
+    // NV-DXVK end
+
     const DxvkFormatInfo* dstFormatInfo = imageFormatInfo(dstImage->info().format);
     const DxvkFormatInfo* srcFormatInfo = imageFormatInfo(srcImage->info().format);
+
+    // NV-DXVK start: DS1 port - guard against unmapped formats (imageFormatInfo returns nullptr for unknown VkFormats)
+    if (unlikely(dstFormatInfo == nullptr || srcFormatInfo == nullptr))
+      return D3DERR_INVALIDCALL;
+    // NV-DXVK end
 
     const VkImageSubresource dstSubresource = dstTextureInfo->GetSubresourceFromIndex(dstFormatInfo->aspectMask, dst->GetSubresource());
     const VkImageSubresource srcSubresource = srcTextureInfo->GetSubresourceFromIndex(srcFormatInfo->aspectMask, src->GetSubresource());

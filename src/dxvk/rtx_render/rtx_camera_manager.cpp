@@ -23,6 +23,9 @@
 
 #include "dxvk_device.h"
 
+// DS1 port: std::isnan / std::isinf for the clip range validation below.
+#include <cmath>
+
 namespace {
   constexpr float kFovToleranceRadians = 0.001f;
 }
@@ -80,11 +83,22 @@ namespace dxvk {
     static auto isFovValid = [](float fovA) {
       return fovA >= kFovToleranceRadians;
     };
+    // DS1 port: a proxy synthesizing D3DTS_PROJECTION from a game's shader constants can hand over a
+    // decomposition with a non-finite or inverted clip range. That is not a camera, and accepting it
+    // poisons every downstream depth calculation, so reject it alongside the shear and FOV checks.
+    static auto isClipRangeValid = [](const DecomposeProjectionParams& params) {
+      const bool nearFinite = !std::isnan(params.nearPlane) && !std::isinf(params.nearPlane);
+      const bool farFinite = !std::isnan(params.farPlane) && !std::isinf(params.farPlane);
+      return nearFinite && farFinite &&
+        params.nearPlane > 0.0f && params.farPlane > params.nearPlane;
+    };
     static auto areFovsClose = [](float fovA, const RtCamera& cameraB) {
       return std::abs(fovA - cameraB.getFov()) < kFovToleranceRadians;
     };
 
-    if (std::abs(decomposeProjectionParams.shearX) > 0.01f || !isFovValid(decomposeProjectionParams.fov)) {
+    if (std::abs(decomposeProjectionParams.shearX) > 0.01f ||
+        !isFovValid(decomposeProjectionParams.fov) ||
+        !isClipRangeValid(decomposeProjectionParams)) {
       ONCE(Logger::warn("[RTX] CameraManager: rejected an invalid camera"));
       return input.getCategoryFlags().test(InstanceCategories::Sky) ? CameraType::Sky : CameraType::Unknown;
     }
