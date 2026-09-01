@@ -49,10 +49,20 @@ static const uint8_t surfaceMaterialTypeMask = uint8_t(0x3u);
 #define OPAQUE_SURFACE_MATERIAL_FLAG_ENABLE_RENDER_TARGET_EMISSION (1 << COMMON_MATERIAL_FLAG_TYPE_OFFSET(6))
 #define OPAQUE_SURFACE_MATERIAL_FLAG_ALBEDO_IS_RENDER_TARGET (1 << COMMON_MATERIAL_FLAG_TYPE_OFFSET(7))
 // NV-DXVK end
+// Legacy specular experiment: set on opaque materials nobody made a deliberate roughness decision
+// for - everything synthesized from the original game's fixed function state (i.e. anything that went
+// through LegacyMaterialData::createDefault), plus any replacement that authors neither a roughness
+// constant nor a roughness map. Gates the rtx.legacyMaterial.specularLevel / fresnelF90 controls, so a
+// replacement that does specify its roughness keeps the untouched PBR response.
+#define OPAQUE_SURFACE_MATERIAL_FLAG_USE_LEGACY_SPECULAR (1 << COMMON_MATERIAL_FLAG_TYPE_OFFSET(8))
 
 
 #define OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_HAS_HEIGHT_TEXTURE (1 << 0)
 #define OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_THIN_FILM_LAYER (1 << 1)
+// Legacy specular experiment: interaction-side mirror of OPAQUE_SURFACE_MATERIAL_FLAG_USE_LEGACY_SPECULAR.
+// Must stay inside OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_MASK so it survives the GBuffer round trip
+// and reaches the Fresnel evaluations done after the primary hit (indirect, ReSTIR GI, PSR).
+#define OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_LEGACY_SPECULAR (1 << 2)
 // flags overlap with type field when in gbuffer, which occupies last 2 bits.
 #define OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_MASK 0x3F
 

@@ -75,6 +75,7 @@
 
 #include "rtx_matrix_helpers.h"
 #include "../util/util_fastops.h"
+#include "rtx_legacy_specular.h"
 
 // Destructor requires the struct definitions
 #include "rtx_sky.h"
@@ -1470,6 +1471,7 @@ namespace dxvk {
     constants.volumeArgs = globalVolumetrics.getVolumeArgs(cameraManager, getSceneManager().getFogState(), enablePortalVolumes);
     constants.startInMediumMaterialIndex = getSceneManager().getStartInMediumMaterialIndex();
     OpaqueMaterialOptions::fillShaderParams(constants.opaqueMaterialArgs);
+    fillLegacySpecularArgs(constants.opaqueMaterialArgs);
     TranslucentMaterialOptions::fillShaderParams(constants.translucentMaterialArgs);
     m_common->metaWaterSim().fillShaderParams(constants.waterSimArgs);
     constants.waterSimArgs.sludgeWaterMaterialIndex = getSceneManager().getSludgeWaterMaterialIndex();

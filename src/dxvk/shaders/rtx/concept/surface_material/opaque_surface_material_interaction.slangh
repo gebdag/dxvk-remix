@@ -557,8 +557,13 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   const bool thinFilmEnabled = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_USE_THIN_FILM_LAYER;
   const bool isHairCardMaterial = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_IS_HAIR_CARD;
   const float materialLodBias = isHairCardMaterial ? cb.hairCardMipBias : 0.0f;
+  // Legacy specular experiment: carried onto the interaction (and therefore through the GBuffer) so the
+  // Fresnel evaluations that happen after the primary hit can still tell materials with no authored
+  // roughness apart from ones a replacement author gave a deliberate roughness to.
+  const bool useLegacySpecular = opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_USE_LEGACY_SPECULAR;
 
   opaqueSurfaceMaterialInteraction.flags |= thinFilmEnabled ? OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_THIN_FILM_LAYER : 0;
+  opaqueSurfaceMaterialInteraction.flags |= useLegacySpecular ? OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_LEGACY_SPECULAR : 0;
 
 #ifdef OPAQUE_MATERIAL_USE_POM
   if (EnablePom && cb.pomMode != DisplacementMode::Off && opaqueSurfaceMaterial.hasValidDisplacement())
@@ -951,8 +956,14 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
 
   // Note: Opacity factored into albedo and base reflectivity to ensure NEE and indirect lighting off of objects with opacity properly
   // account for how much light is being transmitted due to the opacity (similar to how Fresnel on glass works).
+  // Note: The specular level only scales the dielectric part of the base reflectivity, and only for
+  // eligible materials. Because it is folded in here it needs no extra GBuffer storage - the scaled base
+  // reflectivity is what gets serialized, so indirect bounces and ReSTIR GI see the same value the
+  // primary hit did.
+  const float dielectricSpecularLevel = useLegacySpecular ? cb.opaqueMaterialArgs.legacySpecularLevel : 1.0f;
+
   opaqueSurfaceMaterialInteraction.albedo = surface.isMatte ? vec3(0) : albedoToAdjustedAlbedo(albedo, metallic, opacity);
-  opaqueSurfaceMaterialInteraction.baseReflectivity = surface.isMatte ? vec3(0) : calcBaseReflectivity(albedo, metallic, opacity);
+  opaqueSurfaceMaterialInteraction.baseReflectivity = surface.isMatte ? vec3(0) : calcBaseReflectivity(albedo, metallic, opacity, dielectricSpecularLevel);
    
   // Note: Roughness loaded from texture is a perceptual roughness value (for optimal encoding), so this works as intended.
   calcRoughness(roughness, opaqueSurfaceMaterial.anisotropy,
@@ -1142,6 +1153,22 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
   return opaqueSurfaceMaterialInteraction;
 }
 
+// Legacy specular experiment: returns the Schlick f90 (grazing angle reflectivity ceiling) to use for
+// this interaction. Stock Remix behaviour is a hardcoded 1.0, which is what ineligible materials and a
+// neutral rtx.legacyMaterial.fresnelF90 both produce. Lowering it suppresses the achromatic
+// grazing-angle rim that a broad (high roughness) GGX lobe smears across the hemisphere.
+// Note: Must be used by every Fresnel evaluation for a given interaction - the lobe sampling
+// probabilities and the BSDF weights have to agree or the importance sampling stops matching the
+// integrand and variance goes up.
+float opaqueSurfaceMaterialInteractionGetFresnelF90(
+  OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteraction)
+{
+  const bool useLegacySpecular =
+    opaqueSurfaceMaterialInteraction.flags & OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_LEGACY_SPECULAR;
+
+  return useLegacySpecular ? cb.opaqueMaterialArgs.legacyFresnelF90 : 1.0f;
+}
+
 SurfaceMaterialInteractionLobeInformation opaqueSurfaceMaterialInteractionGetLobeInformation(
   OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteraction)
 {
@@ -1185,7 +1212,8 @@ bool opaqueSurfaceMaterialInteractionCalcLobeProbability(
   // in the albedo approximations below.
   const vec3 albedo = opaqueSurfaceMaterialInteraction.albedo;
   const vec3 fresnel =
-    evalOpaqueSchlickFresnel(opaqueSurfaceMaterialInteraction.baseReflectivity, normalDotOutputDirection);
+    evalOpaqueSchlickFresnel(opaqueSurfaceMaterialInteraction.baseReflectivity,
+      opaqueSurfaceMaterialInteractionGetFresnelF90(opaqueSurfaceMaterialInteraction), normalDotOutputDirection);
 
   // Note: I think these should be using a preintegrated albedo calculation (e.g. the EnvBRDF approximation for specular
   // albedo), but I am not 100% sure if that is the intended "ideal" quantity to be using for a lobe's weight (when only the outgoing
@@ -1465,7 +1493,8 @@ SurfaceMaterialInteractionSample opaqueSurfaceMaterialInteractionCalcSpecularRef
   // Calculate the throughput of the sample
 
   const vec3 fresnel = evalOpaqueSchlickFresnel(
-    opaqueSurfaceMaterialInteraction.baseReflectivity, outputDirectionDotMicrofacetNormal);
+    opaqueSurfaceMaterialInteraction.baseReflectivity,
+    opaqueSurfaceMaterialInteractionGetFresnelF90(opaqueSurfaceMaterialInteraction), outputDirectionDotMicrofacetNormal);
 
   // Todo: Pass in a material mode similar to the resolve mode to control this sort of material simplification option.
 #ifdef OPAQUE_MATERIAL_USE_THIN_FILM
@@ -1582,7 +1611,8 @@ SurfaceMaterialInteractionSample opaqueSurfaceMaterialInteractionCalcDiffuseTran
   const float /* o.h */ outputDirectionDotMicrofacetNormal = outputDirection.z;
 
   const vec3 fresnel = evalOpaqueSchlickFresnel(
-    opaqueSurfaceMaterialInteraction.baseReflectivity, outputDirectionDotMicrofacetNormal);
+    opaqueSurfaceMaterialInteraction.baseReflectivity,
+    opaqueSurfaceMaterialInteractionGetFresnelF90(opaqueSurfaceMaterialInteraction), outputDirectionDotMicrofacetNormal);
   const vec3 transmissionFresnel = vec3(1.0f, 1.0f, 1.0f) - fresnel;
 
   SurfaceMaterialInteractionSample materialSample;
@@ -1785,7 +1815,8 @@ SurfaceMaterialInteractionPSRSample opaqueSurfaceMaterialInteractionCalcPSRRefle
   // Calculate the attenuation of the sample
 
   const vec3 fresnel = evalOpaqueSchlickFresnel(
-    opaqueSurfaceMaterialInteraction.baseReflectivity, outputDirectionDotMicrofacetNormal);
+    opaqueSurfaceMaterialInteraction.baseReflectivity,
+    opaqueSurfaceMaterialInteractionGetFresnelF90(opaqueSurfaceMaterialInteraction), outputDirectionDotMicrofacetNormal);
 
   // Todo: Pass in a material mode similar to the resolve mode to control this sort of material simplification option.
 #ifdef OPAQUE_MATERIAL_USE_THIN_FILM
@@ -2060,7 +2091,8 @@ SurfaceMaterialInteractionSplitWeight opaqueSurfaceMaterialInteractionCalcApprox
   }
 
   // Calculate the weight
-  const vec3 fresnel = evalOpaqueSchlickFresnel(opaqueSurfaceMaterialInteraction.baseReflectivity, outputDirectionDotMicrofacetNormal);
+  const vec3 fresnel = evalOpaqueSchlickFresnel(opaqueSurfaceMaterialInteraction.baseReflectivity,
+    opaqueSurfaceMaterialInteractionGetFresnelF90(opaqueSurfaceMaterialInteraction), outputDirectionDotMicrofacetNormal);
   const float normalDistributionFunction = evalGGXNormalDistributionIsotropic(opaqueSurfaceMaterialInteraction.isotropicRoughness, normalDotMicrofacetNormal);
   // Note: Actual shadowing/masking (G) function omitted from visibility calculation for a cheaper approximation.
   const float visibility = safePositiveDivide(float(1), float(4) * normalDotInputDirection * normalDotOutputDirection, materialEpsilon);
@@ -2139,7 +2171,8 @@ SurfaceMaterialInteractionSplitWeight opaqueSurfaceMaterialInteractionCalcProjec
   // Calculate the weight
 
   const vec3 fresnel = evalOpaqueSchlickFresnel(
-    opaqueSurfaceMaterialInteraction.baseReflectivity, outputDirectionDotMicrofacetNormal);
+    opaqueSurfaceMaterialInteraction.baseReflectivity,
+    opaqueSurfaceMaterialInteractionGetFresnelF90(opaqueSurfaceMaterialInteraction), outputDirectionDotMicrofacetNormal);
 
   // Todo: Pass in a material mode similar to the resolve mode to control this sort of material simplification option.
 #ifdef OPAQUE_MATERIAL_USE_THIN_FILM

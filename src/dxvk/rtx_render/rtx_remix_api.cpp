@@ -310,6 +310,7 @@ namespace {
           src.getMetallicConstant(),
           src.getEmissiveColorConstant(),
           src.getEnableEmission(),
+          src.getIsLegacyMaterial(), // legacy specular experiment: preserved across texture preload
           src.getSpriteSheetRows(),
           src.getSpriteSheetCols(),
           src.getSpriteSheetFPS(),
@@ -343,7 +344,10 @@ namespace {
           src.getTextureScrollAngle(),
           src.getTextureScale(),
           src.getTextureOffset(),
-          src.getTextureRotation()
+          src.getTextureRotation(),
+          // Note: Rebuilding the material field by field would otherwise reset every parameter's
+          // authored/default provenance, which merge() and the legacy specular gate both read.
+          src.getDirtyFlags()
         } };
       }
       case MaterialDataType::Translucent: 
@@ -423,6 +427,7 @@ namespace {
           extOpaque->metallicConstant,
           tovec3(info.emissiveColorConstant),
           info.emissiveIntensity > 0.f,
+          false, // OpaqueMaterial::IsLegacyMaterial - API materials are authored, not legacy
           info.spriteSheetRow,
           info.spriteSheetCol,
           info.spriteSheetFps,
@@ -457,6 +462,9 @@ namespace {
           hasTextureTransform && extOpaque->textureScale_hasvalue ? tovec2(extOpaque->textureScale_value) : Vector2(1.f),
           hasTextureTransform ? tovec2(extOpaque->textureOffset) : Vector2(0.f),
           hasTextureTransform ? extOpaque->textureRotation : 0.f,
+          // Note: remixapi_MaterialInfoOpaqueEXT always carries a roughness value, so an API material
+          // is always an authored one as far as the legacy specular gate is concerned.
+          uint64_t(1) << uint64_t(OpaqueMaterialData::DirtyFlags::k_RoughnessConstant),
         } };
       }
       if (auto extTranslucent = pnext::find<remixapi_MaterialInfoTranslucentEXT>(&info)) {

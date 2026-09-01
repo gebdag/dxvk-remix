@@ -60,6 +60,15 @@ vec3 calcBaseReflectivity(vec3 albedo, float metallic, float opacity)
   return mix(materialBaseReflectivityDielectric, albedo, metallic) * opacity;
 }
 
+// As above, but scales the dielectric portion of the base reflectivity by a "specular level" factor.
+// Note: Only the dielectric term is scaled - a full conductor's reflectivity is its albedo and is a
+// property of the metal, so it is left alone. This matches the usual "specular"/"specular level"
+// control found in Disney/UE style parameterizations. A level of 1.0 is identical to the function above.
+vec3 calcBaseReflectivity(vec3 albedo, float metallic, float opacity, float dielectricSpecularLevel)
+{
+  return mix(materialBaseReflectivityDielectric * dielectricSpecularLevel, albedo, metallic) * opacity;
+}
+
 // Calculates the standard (mathematically linear) roughness from a perceptual (perceptually linear) roughness value.
 // [Burley 2012, "Physically-Based Shading at Disney"]
 float perceptualRoughnessToRoughness(float perceptualRoughness)
@@ -213,6 +222,22 @@ vec3 evalOpaqueSchlickFresnel(vec3 baseReflectivity,
   // non-physically based shadowing feature art wise.
 
   return baseReflectivity + (vec3(1.0f) - baseReflectivity) * invClampPow5(outputDirectionDotMicrofacetNormal);
+}
+
+// Fresnel (F): Schlick Approximation with an explicit f90 (grazing angle reflectivity ceiling).
+// This is the "Fresnel shadowing" control described in "Crash Course in BRDF Implementation" and
+// deliberately not implemented by the standard evalOpaqueSchlickFresnel above (see its note). It is
+// exposed here for the legacy material path, where the hardcoded f90 of 1.0 turns every surface into
+// a white mirror at grazing angles regardless of its albedo. An f90 of 1.0 is identical to the
+// function above.
+// Note: The (f90 - baseReflectivity) term is clamped to 0 so an f90 below the base reflectivity
+// flattens the response rather than driving the Fresnel negative.
+vec3 evalOpaqueSchlickFresnel(vec3 baseReflectivity,
+                                 float f90,
+                                 float /* v.h */ outputDirectionDotMicrofacetNormal)
+{
+  return baseReflectivity +
+    max(vec3(f90) - baseReflectivity, vec3(0.0f)) * invClampPow5(outputDirectionDotMicrofacetNormal);
 }
 
 // Fresnel (F): Schlick Approximation

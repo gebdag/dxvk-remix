@@ -704,6 +704,12 @@ namespace dxvk {
         RemixGui::DragFloat("Metallic", &LegacyMaterialDefaults::metallicConstantObject(), 0.01f, 0.0f, 1.f, "%.3f", sliderFlags);
         RemixGui::DragFloat("Anisotropy", &LegacyMaterialDefaults::anisotropyObject(), 0.01f, -1.0f, 1.f, "%.3f", sliderFlags);
 
+        ImGui::Separator();
+        // Note: RemixGui builds the hover tooltip from each RtxOption's description, so these need no
+        // explicit tooltip calls.
+        RemixGui::SliderFloat("Specular Level", &LegacyMaterialDefaults::specularLevelObject(), 0.0f, 1.f, "%.3f", sliderFlags);
+        RemixGui::SliderFloat("Fresnel Grazing (f90)", &LegacyMaterialDefaults::fresnelF90Object(), 0.0f, 1.f, "%.3f", sliderFlags);
+
         ImGui::Unindent();
       }
 

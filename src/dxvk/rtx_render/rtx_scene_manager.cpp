@@ -26,6 +26,7 @@
 #include "rtx_asset_replacer.h"
 #include "rtx_scene_manager.h"
 #include "rtx_opacity_micromap_manager.h"
+#include "rtx_legacy_specular.h"
 #include "dxvk_device.h"
 #include "dxvk_context.h"
 #include "dxvk_buffer.h"
@@ -1874,6 +1875,9 @@ namespace dxvk {
         subsurfaceMaterialIndex = m_surfaceMaterialExtensionCache.track(subsurfaceMaterial);
       }
 
+      const bool useLegacySpecular =
+        useLegacySpecularOverrides(opaqueMaterialData, roughnessTextureIndex);
+
       const RtOpaqueSurfaceMaterial opaqueSurfaceMaterial{
         albedoOpacityTextureIndex, normalTextureIndex,
         tangentTextureIndex, heightTextureIndex, roughnessTextureIndex,
@@ -1890,7 +1894,8 @@ namespace dxvk {
         opaqueMaterialData.getDLSSControlMaskStructuralStrength(),
         subsurfaceMaterialIndex, isUsingRaytracedRenderTarget, isHairCard,
         samplerFeedbackStamp,
-        secondaryTextureIndex, albedoOpacityIsRenderTarget
+        secondaryTextureIndex, albedoOpacityIsRenderTarget,
+        useLegacySpecular
       };
 
       surfaceMaterial.emplace(opaqueSurfaceMaterial);

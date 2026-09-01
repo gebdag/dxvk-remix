@@ -146,6 +146,9 @@ dxvk::OpaqueMaterialData LegacyMaterialData::createDefault() {
   opaqueMat.setEnableThinFilm(LegacyMaterialDefaults::enableThinFilm());
   opaqueMat.setAlphaIsThinFilmThickness(LegacyMaterialDefaults::alphaIsThinFilmThickness());
   opaqueMat.setThinFilmThicknessConstant(LegacyMaterialDefaults::thinFilmThicknessConstant());
+  // Legacy specular experiment: everything built here came from the original game rather than from a
+  // USD/MDL replacement, so it is eligible for the rtx.legacyMaterial specular controls.
+  opaqueMat.setIsLegacyMaterial(true);
   return opaqueMat;
 }
 
