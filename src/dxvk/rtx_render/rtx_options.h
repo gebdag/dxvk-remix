@@ -1280,6 +1280,10 @@ namespace dxvk {
                "Classify fixed-function draws carrying the marker value 0xD15DECA1 in the first texture stage's D3DTSS_CONSTANT as static decals, without requiring their texture hashes in rtx.decalTextures.\n"
                "The stage constant does not affect rendering unless a stage argument references D3DTA_CONSTANT, so compatibility proxies can use it as an explicit per-draw decal tag.\n"
                "Intended for proxies that split a game's multi-layer materials (e.g. grass blended over dirt by vertex-color alpha) into an opaque base draw plus a coplanar alpha-blended overlay draw: the tagged overlay is composited onto the base surface by decal material blending.");
+    RTX_OPTION("rtx", bool, skyMarkerEnabled, true,
+               "Classify draws carrying the marker value 0xD15D05C1 in texture stage 0's D3DTSS_CONSTANT as sky, without requiring their texture hashes in rtx.skyBoxTextures.\n"
+               "Works for draws using programmable shaders: a compatibility proxy that recognises a game's sky layers can send them with the game's own shaders and this tag, and the sky rasterization then reproduces the game's shading of them exactly.\n"
+               "The marker is applied after the sky heuristics, so they cannot clear it. Inert unless a proxy sets the value.");
     RTX_OPTION("rtx", bool, uiMarkerEnabled, false,
                "Classify draws carrying the marker value 0xD15D0011 in texture stage 0's D3DTSS_CONSTANT as UI, without requiring their texture hashes in rtx.uiTextures.\n"
                "Unlike the built-in orthographic heuristic this works for draws using programmable shaders, so compatibility proxies that can identify a game's UI draws structurally (e.g. by their draw-call signature) can tag them explicitly. Tagged draws are rasterized on top of the path-traced scene.");

@@ -762,6 +762,16 @@ namespace dxvk {
     m_activeDrawCallState.setupCategoriesForHeuristics(m_seenCameraPositionsPrev.size(),
                                                        m_seenCameraPositions);
 
+    // DS1 port: explicit per-draw sky tag for compatibility proxies (see rtx.skyMarkerEnabled). Applied
+    // after the heuristics above, which rewrite the Sky category from their own sources and would
+    // otherwise clear it.
+    constexpr uint32_t kSkyMarker = 0xD15D05C1;
+    if (RtxOptions::skyMarkerEnabled() &&
+        d3d9State().textureStages[0][DXVK_TSS_CONSTANT] == kSkyMarker) {
+      m_activeDrawCallState.setCategory(InstanceCategories::Sky, true);
+      m_activeDrawCallState.skyAutoDetected = false;
+    }
+
     if (RtxOptions::fogIgnoreSky() && m_activeDrawCallState.categories.test(InstanceCategories::Sky)) {
       m_activeDrawCallState.fogState.mode = D3DFOG_NONE;
     }
