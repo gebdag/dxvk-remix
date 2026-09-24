@@ -705,6 +705,22 @@ struct DrawCallState {
     return skinningData;
   }
 
+  // World-space point used to pair this draw with last frame's BLAS entry and instance.
+  // A skinned draw's objectToWorld is ~identity after finalizeSkinningData (its bones
+  // carry world space), so its bind-pose bounding box would put every copy of a mesh -
+  // every enemy of one type - at the same point, and those copies would be paired at
+  // random, swapping their skinned position history. Carry the bind-pose centroid through
+  // one of the mesh's own bones instead, which lands on the character.
+  Vector3 getMatchingCentroid() const {
+    const Matrix4& objectToWorld = transformData.objectToWorld;
+    if (skinningData.numBones > skinningData.minBoneIndex &&
+        skinningData.minBoneIndex < skinningData.pBoneMatrices.size()) {
+      return geometryData.boundingBox.getTransformedCentroid(
+        objectToWorld * skinningData.pBoneMatrices[skinningData.minBoneIndex]);
+    }
+    return geometryData.boundingBox.getTransformedCentroid(objectToWorld);
+  }
+
   const FogState& getFogState() const {
     return fogState;
   }

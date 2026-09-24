@@ -84,8 +84,7 @@ DrawCallCache::CacheState DrawCallCache::get(const DrawCallState& drawCall, Blas
   // Bucket has multiple BlasEntries
 
   float bestScore = std::numeric_limits<float>::min();
-  Matrix4 newTransform = drawCall.getTransformData().objectToWorld;
-  const Vector3 newWorldPosition = drawCall.getGeometryData().boundingBox.getTransformedCentroid(newTransform);
+  const Vector3 newWorldPosition = drawCall.getMatchingCentroid();
 
   for (auto bucketIter = range.first; bucketIter != range.second; bucketIter++) {
     BlasEntry& blas  = bucketIter->second;
@@ -110,8 +109,7 @@ DrawCallCache::CacheState DrawCallCache::get(const DrawCallState& drawCall, Blas
     }
     // TODO this is only checking the distance to the first instance that created the BlasEntry, not to
     // each instance.  It also doesn't include the portal logic from InstanceManager.
-    Matrix4 oldTransform = blas.input.getTransformData().objectToWorld;
-    const Vector3 worldPosition = blas.input.getGeometryData().boundingBox.getTransformedCentroid(oldTransform);
+    const Vector3 worldPosition = blas.input.getMatchingCentroid();
     score -= lengthSqr(newWorldPosition - worldPosition);
     if (score > bestScore) {
       bestScore = score;

@@ -342,7 +342,7 @@ namespace dxvk {
       hashes.getHashForRule<rules::TopologicalHash>(),
       drawCallState.getMaterialData().getHash(),
       hashes[HashComponents::VertexPosition],
-      drawCallState.getGeometryData().boundingBox.getTransformedCentroid(objectToWorld),
+      drawCallState.getMatchingCentroid(),
       objectToWorld,
       drawCallState.getTransformData().textureTransform,
       drawCallState.getTransformData().texgenMode,
