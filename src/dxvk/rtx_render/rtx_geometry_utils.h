@@ -196,6 +196,13 @@ namespace dxvk {
     void dispatchSmoothNormals(
       const Rc<DxvkContext>& ctx,
       const RasterGeometry& input,
+      RaytraceGeometry& geo,
+      bool forceGpu = false);
+
+    // Smooth normals for a skinned mesh: recorded on the skinning context right after
+    // dispatchSkinning, from the skinned positions.
+    void dispatchSmoothNormalsAfterSkinning(
+      const RasterGeometry& input,
       RaytraceGeometry& geo);
 
     inline void flushCommandList() {

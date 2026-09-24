@@ -55,5 +55,7 @@ struct SkinningArgs {
   uint numVertices;
   uint useIndices;
   uint numBones;
-  uint useOctahedralNormals;
+  uint useOctahedralNormals;  // source (draw call) normals are 32-bit octahedral
+  uint dstOctahedralNormals;  // destination normals are 32-bit octahedral: the output
+                              // buffer's own format, which smooth normals can change
 };

@@ -1542,7 +1542,14 @@ namespace dxvk {
     // from the triangle mesh (area-weighted) and written into the normal buffer.
     // Only dispatch on BVH build/update - for static geometry, positions don't change so
     // the normals computed on the first pass remain valid for subsequent frames.
-    if (drawCallState.getCategoryFlags().test(InstanceCategories::SmoothNormals) &&
+    //
+    // Skinned meshes are excluded here and smoothed after skinning instead (below). Smoothing
+    // here ran on this context from the previous pose, and marked the normals octahedral,
+    // while skinning ran on its own context writing float3 normals over the same buffer:
+    // whichever landed last won, so character normals churned from frame to frame.
+    const bool isSkinned = drawCallState.getSkinningState().numBones > 0 &&
+                           drawCallState.getGeometryData().numBonesPerVertex > 0;
+    if (drawCallState.getCategoryFlags().test(InstanceCategories::SmoothNormals) && !isSkinned &&
         (result == ObjectCacheState::KBuildBVH || result == ObjectCacheState::kUpdateBVH)) {
       m_device->getCommon()->metaGeometryUtils().dispatchSmoothNormals(ctx, drawCallState.getGeometryData(), pBlas->modifiedGeometryData);
       pBlas->modifiedGeometryData.smoothNormalsApplied = true;
@@ -1552,10 +1559,13 @@ namespace dxvk {
       m_instanceManager.notifySceneChanged();
     }
 
-    if (drawCallState.getSkinningState().numBones > 0 &&
-        drawCallState.getGeometryData().numBonesPerVertex > 0 &&
+    if (isSkinned &&
         (result == ObjectCacheState::KBuildBVH || result == ObjectCacheState::kUpdateBVH)) {
       m_device->getCommon()->metaGeometryUtils().dispatchSkinning(drawCallState, pBlas->modifiedGeometryData);
+      if (drawCallState.getCategoryFlags().test(InstanceCategories::SmoothNormals)) {
+        m_device->getCommon()->metaGeometryUtils().dispatchSmoothNormalsAfterSkinning(drawCallState.getGeometryData(), pBlas->modifiedGeometryData);
+        pBlas->modifiedGeometryData.smoothNormalsApplied = true;
+      }
       pBlas->frameLastUpdated = pBlas->frameLastTouched;
       m_instanceManager.notifySceneChanged();
     }

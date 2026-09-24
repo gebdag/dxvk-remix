@@ -306,6 +306,10 @@ namespace dxvk {
     params.useIndices = drawCallState.getGeometryData().blendIndicesBuffer.defined() ? 1 : 0;
     params.numBones = drawCallState.getGeometryData().numBonesPerVertex;
     params.useOctahedralNormals = normalVertexFormat == VK_FORMAT_R32_UINT ? 1 : 0;
+    // The destination is the BLAS's own vertex data, whose normal format can differ from
+    // the draw call's: smooth normals rewrites it as octahedral R32_UINT. Writing float3
+    // into it would be decoded as octahedral garbage.
+    params.dstOctahedralNormals = geo.normalBuffer.vertexFormat() == VK_FORMAT_R32_UINT ? 1 : 0;
 
     // If we don't have a mappable vertex buffer then we need to do this on the GPU
     bool mustUseGPU = drawCallState.getGeometryData().positionBuffer.mapPtr() == nullptr;
@@ -365,7 +369,8 @@ namespace dxvk {
         skinning(idx, &dstPosition[0], &dstNormal[0], srcPosition, srcBlendWeight, srcBlendIndices, srcNormal, params);
 
         ctx->writeToBuffer(geo.positionBuffer.buffer(), geo.positionBuffer.offsetFromSlice() + idx * geo.positionBuffer.stride(), sizeof(dstPosition), &dstPosition[0]);
-        ctx->writeToBuffer(geo.normalBuffer.buffer(), geo.normalBuffer.offsetFromSlice() + idx * geo.normalBuffer.stride(), sizeof(dstNormal), &dstNormal[0]);
+        ctx->writeToBuffer(geo.normalBuffer.buffer(), geo.normalBuffer.offsetFromSlice() + idx * geo.normalBuffer.stride(),
+                           params.dstOctahedralNormals ? sizeof(float) : sizeof(dstNormal), &dstNormal[0]);
       }
     }
     ++m_skinningCommands;
@@ -1026,7 +1031,19 @@ namespace dxvk {
     return std::sqrtf(maxUvTileSizeSqr);
   }
 
-  void RtxGeometryUtils::dispatchSmoothNormals(const Rc<DxvkContext>& ctx, const RasterGeometry& input, RaytraceGeometry& geo) {
+  void RtxGeometryUtils::dispatchSmoothNormalsAfterSkinning(const RasterGeometry& input, RaytraceGeometry& geo) {
+    // Same context as dispatchSkinning, recorded after it, so the smoothing reads this
+    // frame's skinned positions. The GPU path is forced: the CPU path reads the draw
+    // call's positions, which for a skinned mesh are the bind pose.
+    const Rc<DxvkContext>& ctx = m_skinningContext;
+    if (ctx->getCommandList() == nullptr) {
+      ctx->beginRecording(ctx->getDevice()->createCommandList());
+    }
+    dispatchSmoothNormals(ctx, input, geo, /*forceGpu=*/true);
+    ++m_skinningCommands;
+  }
+
+  void RtxGeometryUtils::dispatchSmoothNormals(const Rc<DxvkContext>& ctx, const RasterGeometry& input, RaytraceGeometry& geo, bool forceGpu) {
     ScopedGpuProfileZone(ctx, "smoothNormals");
 
     if (!geo.positionBuffer.defined() || !geo.indexBuffer.defined() || !geo.normalBuffer.defined()) {
@@ -1065,7 +1082,7 @@ namespace dxvk {
     const bool pendingGpuWrite = input.positionBuffer.isPendingGpuWrite() || input.indexBuffer.isPendingGpuWrite();
 
     const uint32_t kMaxTrianglesForCPU = 512;
-    const bool useCPU = numTriangles <= kMaxTrianglesForCPU && !pendingGpuWrite && !mustUseGPU;
+    const bool useCPU = numTriangles <= kMaxTrianglesForCPU && !pendingGpuWrite && !mustUseGPU && !forceGpu;
 
     if (useCPU) {
       // --- CPU path: uses the same shared functions as the GPU shader ---

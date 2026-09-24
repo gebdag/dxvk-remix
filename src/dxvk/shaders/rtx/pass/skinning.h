@@ -139,7 +139,7 @@ void skinning(const uint32_t idx,
   dstPosition[baseDstPositionOffset + 2] = positionOut.z;
 
   const uint baseDstNormalOffset = (cb.dstNormalOffset + idx * cb.dstNormalStride) / 4;
-  if (cb.useOctahedralNormals) {
+  if (cb.dstOctahedralNormals) {
     const uint encodedNormal = encodeNormal(newNormal);
 
     dstNormal[baseDstNormalOffset] = asfloat(encodedNormal);
