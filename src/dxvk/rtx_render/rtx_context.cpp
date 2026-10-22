@@ -1481,6 +1481,14 @@ namespace dxvk {
     constants.startInMediumMaterialIndex = getSceneManager().getStartInMediumMaterialIndex();
     OpaqueMaterialOptions::fillShaderParams(constants.opaqueMaterialArgs);
     TranslucentMaterialOptions::fillShaderParams(constants.translucentMaterialArgs);
+    {
+      // Fork: the animated water LOD biases are given at output resolution (a blur of N
+      // output pixels); rays are traced at the downscaled resolution, whose pixels are larger.
+      const float renderScale = static_cast<float>(downscaledExtent.width) / static_cast<float>(std::max(1u, targetExtent.width));
+      const float toRender = renderScale > 0.f ? std::log2(renderScale) : 0.f;
+      constants.translucentMaterialArgs.animatedWaterPrimaryNormalLodBias += toRender;
+      constants.translucentMaterialArgs.animatedWaterSecondaryNormalLodBias += toRender;
+    }
     ViewDistanceOptions::fillShaderParams(constants.viewDistanceArgs, RtxOptions::getMeterToWorldUnitScale());
     constants.alphaBlendSurfacePackMult = RtxOptions::getMeterToWorldUnitScale();
 

@@ -55,7 +55,7 @@ struct TranslucentMaterialArgs {
   vec2 animatedWaterSecondaryNormalMotion = vec2(0.f, 0.f);
   float animatedWaterSecondaryNormalLodBias = 0.f;
   uint animatedWaterEnable = 0;
-  uint pad0 = 0;
+  float animatedWaterPrimaryNormalLodBias = 0.f; // fork: was pad0
   uint pad1 = 0;
 };
 
@@ -147,6 +147,12 @@ struct TranslucentMaterialOptions {
   RTX_OPTION("rtx.translucentMaterial", float, animatedWaterSecondaryNormalLodBias, 1.0f,
              "LoD bias to use when taking the second normal map sample.\n"
              "Values greater than 0 will cause the secondary normal map to be blurred, resulting in lower frequency waves.");
+  RTX_OPTION("rtx.translucentMaterial", float, animatedWaterPrimaryNormalLodBias, 0.0f,
+             "LoD bias to use when taking the primary normal map sample of animated water (fork).\n"
+             "Games that build water normals from a coarse screen-space height field (Dark Souls: a\n"
+             "difference over ~0.0175 x distance) blur them by a fixed number of pixels; a matching\n"
+             "bias makes the mip chain do the same at every distance. Both animated water biases are\n"
+             "given at output resolution; the fork subtracts the upscaler's render scale.");
   RTX_OPTION("rtx.translucentMaterial", bool, animatedWaterEnable, true,
              "If enabled, draw calls in the AnimatedWater category and a translucent material will have their primary texcoordinates animated, and will also take a second sample from the normal map.\n"
              "Note that objects must be properly categorized as animated water to be rendered with this mode.");
@@ -162,6 +168,7 @@ public:
     args.animatedWaterPrimaryNormalMotion = animatedWaterPrimaryNormalMotion();
     args.animatedWaterSecondaryNormalMotion = animatedWaterSecondaryNormalMotion();
     args.animatedWaterSecondaryNormalLodBias = animatedWaterSecondaryNormalLodBias();
+    args.animatedWaterPrimaryNormalLodBias = animatedWaterPrimaryNormalLodBias();
     args.animatedWaterEnable = animatedWaterEnable();
     args.enableDiffuseLayerOverride = enableDiffuseLayerOverride();
   }

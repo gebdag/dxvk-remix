@@ -59,8 +59,10 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
   vec4 emissiveColorSample;
 
   bool secondNormalLoaded = false;
+  float primaryNormalLodBias = 0.0f;
   if (cb.translucentMaterialArgs.animatedWaterEnable && surface.isAnimatedWater)
   {
+    primaryNormalLodBias = cb.translucentMaterialArgs.animatedWaterPrimaryNormalLodBias;
     vec2 uvSize, uvBias;
     calcSpritesheetValues(
       cb.timeSinceStartSeconds,
@@ -86,7 +88,7 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
     surfaceInteraction.textureCoordinates = primaryUV;
   }
 
-  const bool normalLoaded = surfaceMaterialInteractionTextureReadHelper(translucentSurfaceMaterial.normalTextureIndex, translucentSurfaceMaterial.samplerIndex, surfaceInteraction, normalSample);
+  const bool normalLoaded = surfaceMaterialInteractionTextureReadHelper(translucentSurfaceMaterial.normalTextureIndex, translucentSurfaceMaterial.samplerIndex, surfaceInteraction, normalSample, primaryNormalLodBias);
   // Note: Premultiplied alpha should really be used here for the transmittance or diffuse color as without it "transparent" regions of the texture in the diffuse color case for
   // example may cause incorrect coloration on the edges of more opaque regions due to texture filtering. This is hard to ensure on the art pipeline side of things however.
   const bool transmittanceOrDiffuseLoaded = surfaceMaterialInteractionTextureReadHelper(translucentSurfaceMaterial.transmittanceOrDiffuseTextureIndex, translucentSurfaceMaterial.samplerIndex, surfaceInteraction, transmittanceOrDiffuseSample);
