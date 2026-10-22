@@ -41,6 +41,8 @@
 #include "imgui_impl_win32.h"
 #include "implot.h"
 #include "dxvk_imgui.h"
+#include "../rtx_render/rtx_ds1_menu.h"
+#include "../rtx_render/rtx_dark_souls_exposure.h"
 #include "rtx_render/rtx_imgui.h"
 #include "dxvk_device.h"
 #include "rtx_render/graph/rtx_graph_gui.h"
@@ -1115,6 +1117,9 @@ namespace dxvk {
               break;
             case kTab_Development:
               showDevelopmentSettings(ctx);
+              break;
+            case kTab_DarkSouls:
+              showDs1Menu(ctx);
               break;
             case kTab_Count:
               assert(false && "kTab_Count hit in ImGUI::showMainMenu");
@@ -4385,7 +4390,8 @@ namespace dxvk {
         RemixGui::DragFloat("User Brightness EV Range", &RtxOptions::userBrightnessEVRangeObject(), 0.5f, 0.f, 10.f, "%.1f");
         RemixGui::Separator();
         RemixGui::Combo("Tonemapping Mode", &RtxOptions::tonemappingModeObject(), "Global\0Local\0");
-        if (RtxOptions::tonemappingMode() == TonemappingMode::Global) {
+        // DS1 port: the global tonemapper runs while DS1 follows the game's exposure (rtx.ds1Exposure.followGame).
+        if (RtxOptions::tonemappingMode() == TonemappingMode::Global || DxvkDarkSoulsExposure::followGame()) {
           common->metaToneMapping().showImguiSettings();
         } else {
           common->metaLocalToneMapping().showImguiSettings();

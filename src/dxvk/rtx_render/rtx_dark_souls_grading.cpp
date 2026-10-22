@@ -73,14 +73,31 @@ namespace dxvk {
 
     PostFxDarkSoulsArgs args = {};
     args.imageSize   = { extent.width, extent.height };
-    args.brightnessR = brightnessR();
-    args.brightnessG = brightnessG();
-    args.brightnessB = brightnessB();
-    args.contrastR   = contrastR();
-    args.contrastG   = contrastG();
-    args.contrastB   = contrastB();
-    args.saturation  = saturation();
     args.blendWeight = blendWeight();
+    if (useGameValues() && gameActive()) {
+      const Vector3 r = gameRowR(), g = gameRowG(), b = gameRowB(), o = gameOffset();
+      args.scale = gameScale();
+      args.rowR = { r.x, r.y, r.z, o.x };
+      args.rowG = { g.x, g.y, g.z, o.y };
+      args.rowB = { b.x, b.y, b.z, o.z };
+    } else {
+      // The preset sliders as the game builds its matrix from a ToneCorrectBank row:
+      // saturation about Rec.709 luma, then (x - 0.5) * contrast + 0.5, then brightness.
+      constexpr float kLuma[3] = { 0.2125f, 0.7154f, 0.0721f };
+      const float s = saturation();
+      const float contrast[3] = { contrastR(), contrastG(), contrastB() };
+      const float brightness[3] = { brightnessR(), brightnessG(), brightnessB() };
+      float4* rows[3] = { &args.rowR, &args.rowG, &args.rowB };
+      for (int i = 0; i < 3; ++i) {
+        const float k = brightness[i] * contrast[i];
+        float coeff[3];
+        for (int j = 0; j < 3; ++j) {
+          coeff[j] = k * ((i == j ? s : 0.0f) + (1.0f - s) * kLuma[j]);
+        }
+        *rows[i] = { coeff[0], coeff[1], coeff[2], brightness[i] * 0.5f * (1.0f - contrast[i]) };
+      }
+      args.scale = 1.0f;
+    }
 
     ctx->pushConstants(0, sizeof(args), &args);
 
@@ -99,6 +116,21 @@ namespace dxvk {
 
     if (!enable())
       return;
+
+    RemixGui::Checkbox("Use the Game's Grade", &useGameValuesObject());
+    if (useGameValues()) {
+      if (!gameActive()) {
+        ImGui::TextDisabled("No grade from the game yet; the preset below applies.");
+      } else {
+        const Vector3 r = gameRowR(), g = gameRowG(), b = gameRowB(), o = gameOffset();
+        ImGui::Text("brightness %.3f", gameScale());
+        ImGui::Text("R  %.3f %.3f %.3f  %+.3f", r.x, r.y, r.z, o.x);
+        ImGui::Text("G  %.3f %.3f %.3f  %+.3f", g.x, g.y, g.z, o.y);
+        ImGui::Text("B  %.3f %.3f %.3f  %+.3f", b.x, b.y, b.z, o.z);
+        RemixGui::DragFloat("Blend Weight", &blendWeightObject(), 0.01f, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+        return;
+      }
+    }
 
     // --- Preset dropdown ---
     {

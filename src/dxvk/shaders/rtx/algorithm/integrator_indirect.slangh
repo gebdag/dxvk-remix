@@ -371,6 +371,12 @@ void integratePathVertex(
     {
       skyRadiance = cb.domeLightArgs.radiance * sampleDomeLightTexture(LinearWrapSampler, pathState.direction, cb.domeLightArgs.textureIndex, cb.domeLightArgs.worldToLightTransform);
     }
+    else if (cb.ds1Ambient.enable != 0)
+    {
+      // Fork: Dark Souls' ambient light for the area (its irradiance probe and hemisphere
+      // ambient), so bounce light matches the game's lighting where the sky is visible.
+      skyRadiance = ds1AmbientRadiance(cb.ds1Ambient, pathState.direction);
+    }
     else
     {
       skyRadiance = cb.skyBrightness * SkyProbe.SampleLevel(pathState.direction, 0);

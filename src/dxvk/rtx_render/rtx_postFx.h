@@ -29,6 +29,7 @@
 // DS1 port: the two Dark Souls post-processing passes are owned by DxvkPostFx.
 #include "rtx_dark_souls_dof.h"
 #include "rtx_dark_souls_grading.h"
+#include "rtx_dark_souls_haze.h"
 
 #include "../spirv/spirv_code_buffer.h"
 #include "../util/util_matrix.h"
@@ -73,6 +74,11 @@ namespace dxvk {
 
     void showImguiSettings();
 
+    // DS1 port: the Dark Souls menu (showDs1Menu, rtx_ds1_menu.h) draws these passes' panels.
+    DxvkDarkSoulsDof& darkSoulsDof() { return m_darkSoulsDof; }
+    DxvkDarkSoulsGrading& darkSoulsGrading() { return m_darkSoulsGrading; }
+    DxvkDarkSoulsHaze& darkSoulsHaze() { return m_darkSoulsHaze; }
+
     inline bool isPostFxEnabled() const { return enable(); }
     inline bool isMotionBlurEnabled() const { return enable() && enableMotionBlur() && motionBlurSampleCount() > 0 && exposureFraction() > 0.0f; }
     inline bool isChromaticAberrationEnabled() const { return enable() && enableChromaticAberration() && chromaticAberrationAmount() > 0.0f; }
@@ -113,6 +119,7 @@ namespace dxvk {
     // DxvkPostFx::dispatch - they run on post-tonemap LDR data and need RtxContext's copyImage.
     DxvkDarkSoulsDof m_darkSoulsDof;
     DxvkDarkSoulsGrading m_darkSoulsGrading;
+    DxvkDarkSoulsHaze m_darkSoulsHaze;
   };
 
 }

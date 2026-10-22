@@ -31,9 +31,10 @@ namespace dxvk {
 
   class DxvkDevice;
 
-  // Dark Souls 1 color grading post-FX pass.
-  // Reconstructed from ToneCorrectBank.param files and FRPG_Fil_HDR_ColAdj shader.
-  // Apply after tonemapping to reproduce the original game's per-map look.
+  // Dark Souls 1 color grading post-FX pass: FRPG_Fil_HDR_ColAdj's grade on the
+  // tonemapped frame, gamma encoded as the game applies it: a brightness scale,
+  // then an affine colour matrix. The matrix is the game's own (set each frame by
+  // the DS1 proxy) or one built from the preset sliders (ToneCorrectBank rows).
   class DxvkDarkSoulsGrading {
   public:
     explicit DxvkDarkSoulsGrading(DxvkDevice* device);
@@ -103,6 +104,18 @@ namespace dxvk {
                     args.flags = RtxOptionFlags::UserSetting);
     RTX_OPTION_ARGS("rtx.ds1grading", float, saturation,   1.00f, "Saturation (0=greyscale, 1=identity, >1=boosted).",
                     args.flags = RtxOptionFlags::UserSetting);
+    RTX_OPTION_ARGS("rtx.ds1grading", bool,  useGameValues, true,
+                    "Grade with the values the game is using right now (FRPG_Fil_HDR_ColAdj: brightness c56.z, colour matrix "
+                    "c62-c64, set each frame by the DS1 proxy) instead of the preset sliders, whenever the proxy sends them.",
+                    args.flags = RtxOptionFlags::UserSetting);
+
+    // Game state, set by the proxy. Never saved.
+    RTX_OPTION_FLAG("rtx.ds1grading", bool,    gameActive, false, RtxOptionFlags::NoSave, "Set by the DS1 proxy once it has read the game's grade.");
+    RTX_OPTION_FLAG("rtx.ds1grading", float,   gameScale,  1.0f,  RtxOptionFlags::NoSave, "The game's pre-grade brightness (c56.z).");
+    RTX_OPTION_FLAG("rtx.ds1grading", Vector3, gameRowR,   Vector3(1.0f, 0.0f, 0.0f), RtxOptionFlags::NoSave, "Red row of the game's colour matrix (c62.xyz).");
+    RTX_OPTION_FLAG("rtx.ds1grading", Vector3, gameRowG,   Vector3(0.0f, 1.0f, 0.0f), RtxOptionFlags::NoSave, "Green row of the game's colour matrix (c63.xyz).");
+    RTX_OPTION_FLAG("rtx.ds1grading", Vector3, gameRowB,   Vector3(0.0f, 0.0f, 1.0f), RtxOptionFlags::NoSave, "Blue row of the game's colour matrix (c64.xyz).");
+    RTX_OPTION_FLAG("rtx.ds1grading", Vector3, gameOffset, Vector3(0.0f), RtxOptionFlags::NoSave, "Offsets of the game's colour matrix (c62.w, c63.w, c64.w).");
   };
 
 } // namespace dxvk

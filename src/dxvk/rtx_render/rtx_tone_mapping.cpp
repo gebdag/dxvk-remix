@@ -20,6 +20,7 @@
 * DEALINGS IN THE SOFTWARE.
 */
 #include "rtx_tone_mapping.h"
+#include "rtx_dark_souls_exposure.h"
 #include "rtx_dlss_neural_rendering.h"
 #include "dxvk_device.h"
 #include "dxvk_scoped_annotation.h"
@@ -122,7 +123,8 @@ namespace dxvk {
       InverseTonemappingShader::getShader();
     }
 
-    if (RtxOptions::tonemappingMode() != TonemappingMode::Global) {
+    // DS1 port: RtxContext::dispatchToneMapping uses the global tonemapper while DS1 follows the game's exposure.
+    if (RtxOptions::tonemappingMode() != TonemappingMode::Global && !DxvkDarkSoulsExposure::followGame()) {
       return;
     }
 
@@ -230,10 +232,10 @@ namespace dxvk {
 
     // Prepare shader arguments
     ToneMappingHistogramArgs pushArgs = {};
-    pushArgs.enableAutoExposure = autoExposureEnabled;
+    pushArgs.enableAutoExposure = autoExposureEnabled && !DxvkDarkSoulsExposure::replacesAutoExposure();
     pushArgs.toneCurveMinStops = toneCurveMinStops();
     pushArgs.toneCurveMaxStops = toneCurveMaxStops();
-    pushArgs.exposureFactor = exp2f(exposureBias() + RtxOptions::calcUserEVBias());
+    pushArgs.exposureFactor = exp2f(exposureBias() + RtxOptions::calcUserEVBias()) * DxvkDarkSoulsExposure::factor();
 
     ctx->pushConstants(0, sizeof(pushArgs), &pushArgs);
 
@@ -286,16 +288,18 @@ namespace dxvk {
 
     // Prepare shader arguments
     ToneMappingApplyToneMappingArgs pushArgs = {};
-    pushArgs.toneMappingEnabled = tonemappingEnabled();
+    // DS1 port: with the game's exposure, its tone curve is a saturate (the shader's final clamp).
+    pushArgs.toneMappingEnabled = tonemappingEnabled() && !DxvkDarkSoulsExposure::replacesToneCurve();
     pushArgs.colorGradingEnabled = colorGradingEnabled();
-    pushArgs.enableAutoExposure = autoExposureEnabled;
+    // DS1 port: the game's exposure replaces Remix's metering when followed.
+    pushArgs.enableAutoExposure = autoExposureEnabled && !DxvkDarkSoulsExposure::replacesAutoExposure();
     pushArgs.finalizeWithACES = finalizeWithACES();
     pushArgs.useLegacyACES = RtxOptions::useLegacyACES();
 
     // Tonemap args
     pushArgs.shadowContrast = shadowContrast();
     pushArgs.shadowContrastEnd = shadowContrastEnd();
-    pushArgs.exposureFactor = exp2f(exposureBias() + RtxOptions::calcUserEVBias()); // ev100
+    pushArgs.exposureFactor = exp2f(exposureBias() + RtxOptions::calcUserEVBias()) * DxvkDarkSoulsExposure::factor(); // ev100
     pushArgs.toneCurveMinStops = toneCurveMinStops();
     pushArgs.toneCurveMaxStops = toneCurveMaxStops();
     pushArgs.debugMode = tuningMode();
@@ -356,8 +360,8 @@ namespace dxvk {
 
     // Prepare shader arguments
     FastToneMappingArgs pushArgs = {};
-    pushArgs.enableAutoExposure = autoExposureEnabled;
-    pushArgs.exposureFactor = exp2f(exposureBias() + RtxOptions::calcUserEVBias()); // ev100
+    pushArgs.enableAutoExposure = autoExposureEnabled && !DxvkDarkSoulsExposure::replacesAutoExposure();
+    pushArgs.exposureFactor = exp2f(exposureBias() + RtxOptions::calcUserEVBias()) * DxvkDarkSoulsExposure::factor(); // ev100
 
     const Resources::Resource& inputColorTexture = rtOutput.m_finalOutput.resource(Resources::AccessType::Read);
     const VkExtent3D workgroups = util::computeBlockCount(inputColorTexture.view->imageInfo().extent, VkExtent3D { 16 , 16, 1 });
@@ -380,8 +384,8 @@ namespace dxvk {
 
     // Prepare shader arguments
     FastToneMappingArgs pushArgs = {};
-    pushArgs.enableAutoExposure = autoExposureEnabled;
-    pushArgs.exposureFactor = exp2f(exposureBias() + RtxOptions::calcUserEVBias()); // ev100
+    pushArgs.enableAutoExposure = autoExposureEnabled && !DxvkDarkSoulsExposure::replacesAutoExposure();
+    pushArgs.exposureFactor = exp2f(exposureBias() + RtxOptions::calcUserEVBias()) * DxvkDarkSoulsExposure::factor(); // ev100
     // Highlight recovery (inverse-tonemap only path)
     pushArgs.enableHighlightRecovery = DlssNeuralRendering::enableHighlightRecovery() ? 1u : 0u;
     {

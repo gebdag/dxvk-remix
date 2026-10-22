@@ -76,6 +76,8 @@
 #include "rtx_matrix_helpers.h"
 #include "../util/util_fastops.h"
 #include "rtx_legacy_specular.h"
+#include "rtx_dark_souls_exposure.h"
+#include "rtx_dark_souls_ambient.h"
 
 // Destructor requires the struct definitions
 #include "rtx_sky.h"
@@ -799,6 +801,23 @@ namespace dxvk {
 
         dispatchToneMapping(rtOutput, !dlssNrEnabled);
 
+        // NV-DXVK start: DS1 port - Dark Souls haze (post-tonemapping, before the DS1 DoF and grading,
+        // as in the game). Per-pixel, so it works in place on the final output.
+        {
+          DxvkDarkSoulsHaze& ds1Haze = m_common->metaPostFx().darkSoulsHaze();
+          if (ds1Haze.isEnabled()) {
+            const Resources::Resource& finalOut = rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite);
+            float ds1HazeJitter[2];
+            getSceneManager().getCamera().getJittering(ds1HazeJitter);
+            NrdArgs primaryDirectNrdArgs, primaryIndirectNrdArgs, secondaryNrdArgs;
+            getDenoiseArgs(primaryDirectNrdArgs, primaryIndirectNrdArgs, secondaryNrdArgs);
+            ds1Haze.dispatch(this, finalOut, rtOutput.m_primaryLinearViewZ, finalOut.image->mipLevelExtent(0),
+                             getSceneManager().getCamera().getShaderConstants(), ds1HazeJitter,
+                             primaryDirectNrdArgs.missLinearViewZ);
+          }
+        }
+        // NV-DXVK end
+
         // Lens effects (chromatic aberration, vignette) run AFTER tonemapping. They are
         // display-space artifacts so they operate on post-tonemap LDR data.
         dispatchPostFxLensEffects(rtOutput);
@@ -1485,8 +1504,9 @@ namespace dxvk {
     {
       // Fork: see OpaqueMaterialArgs::unlitExposureCompensation. Same exposure the tonemapper applies.
       const DxvkAutoExposure& autoExposure = getCommonObjects()->metaAutoExposure();
-      const float exposure = exp2f(DxvkToneMapping::exposureBias() + RtxOptions::calcUserEVBias()) *
-                             (DxvkAutoExposure::enabled() ? autoExposure.getReadBackExposure() : 1.0f);
+      const float metered = DxvkAutoExposure::enabled() && !DxvkDarkSoulsExposure::replacesAutoExposure()
+                          ? autoExposure.getReadBackExposure() : 1.0f;
+      const float exposure = exp2f(DxvkToneMapping::exposureBias() + RtxOptions::calcUserEVBias()) * DxvkDarkSoulsExposure::factor() * metered;
       constants.opaqueMaterialArgs.unlitExposureCompensation = exposure > 0.f ? 1.0f / exposure : 1.0f;
     }
     TranslucentMaterialOptions::fillShaderParams(constants.translucentMaterialArgs);
@@ -1520,6 +1540,7 @@ namespace dxvk {
     constants.enableCullingSecondaryRays = RtxOptions::enableCullingInSecondaryRays();
 
     constants.domeLightArgs = getSceneManager().getLightManager().getDomeLightArgs();
+    DxvkDarkSoulsAmbient::fillShaderArgs(constants.ds1Ambient);
 
     // Ray miss value handling
     constants.clearColorDepth = getSceneManager().getGlobals().clearColorDepth;
@@ -2038,7 +2059,10 @@ namespace dxvk {
 
     const bool resetToneMapperHistory = m_resetHistory || getSceneManager().getCamera().isCameraCut();
     setFramePassStage(RtxFramePassStage::ToneMapping);
-    if (RtxOptions::tonemappingMode() == TonemappingMode::Global) {
+    // DS1 port: following the game's exposure means the global tonemapper (the fork that DS1 was
+    // tuned on had no local tonemapper): the game's exposure and its saturate curve live there.
+    const bool ds1GlobalTonemap = DxvkDarkSoulsExposure::followGame();
+    if (RtxOptions::tonemappingMode() == TonemappingMode::Global || ds1GlobalTonemap) {
       DxvkToneMapping& toneMapper = m_common->metaToneMapping();
       toneMapper.dispatch(this,
         getResourceManager().getSampler(VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER),
@@ -2049,7 +2073,7 @@ namespace dxvk {
         autoExposure.enabled());
     }
     DxvkLocalToneMapping& localTonemapper = m_common->metaLocalToneMapping();
-    if (localTonemapper.isActive()) {
+    if (localTonemapper.isActive() && !ds1GlobalTonemap) {
       localTonemapper.dispatch(this,
         getResourceManager().getSampler(VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE),
         autoExposure.getExposureTexture().view,

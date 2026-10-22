@@ -21,33 +21,21 @@
 */
 #pragma once
 
-// Dark Souls 1 color grading pass — reconstructed from ToneCorrectBank params.
-// Applied as a post-FX pass after tonemapping. Maps directly to the original
-// engine's per-channel brightness/contrast/saturation math from FRPG_Fil_HDR_ColAdj.
+// Dark Souls 1 color grading pass (FRPG_Fil_HDR_ColAdj's grade), applied after
+// tonemapping on the gamma-encoded frame:
+//   g = saturate(g * scale);  g' = (dot(rowR.xyz, g) + rowR.w, dot(rowG.xyz, g) + rowG.w, dot(rowB.xyz, g) + rowB.w)
 
-#define POST_FX_DS_INPUT  0
-#define POST_FX_DS_OUTPUT 1
-#define POST_FX_DS_INOUT  0
+#define POST_FX_DS_INOUT 0
 
 struct PostFxDarkSoulsArgs {
   uint2  imageSize;
+  // Blend weight for the whole effect [0,1]. 1 = full DS1 look.
+  float  blendWeight;
+  // Brightness applied before the matrix (the game's c56.z; 1 for the presets).
+  float  scale;
 
-  // Per-channel brightness (multiplicative, range ~0.7–1.3). Identity = 1.0
-  float brightnessR;
-  float brightnessG;
-  float brightnessB;
-
-  // Per-channel contrast. Applied as: (x - 0.5) * contrast + 0.5. Identity = 1.0
-  float contrastR;
-  float contrastG;
-  float contrastB;
-
-  // Saturation. 0 = fully desaturated, 1 = identity, >1 = boosted. Uses Rec.709 luma.
-  float saturation;
-
-  // Blend weight for the whole effect [0,1].  1 = full DS1 look.
-  float blendWeight;
-
-  float _pad0;
-  float _pad1;
+  // Rows of the affine colour matrix: xyz = coefficients, w = offset.
+  float4 rowR;
+  float4 rowG;
+  float4 rowB;
 };

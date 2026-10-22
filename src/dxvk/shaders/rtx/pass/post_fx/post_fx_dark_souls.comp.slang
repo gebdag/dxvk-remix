@@ -20,14 +20,14 @@
 * DEALINGS IN THE SOFTWARE.
 */
 
-// Dark Souls 1 color grading compute shader.
-// Faithfully recreates the ToneCorrectBank math from FRPG_Fil_HDR_ColAdj.fpo:
-//   1. Saturation  — lerp from luma to color using Rec.709 weights
-//   2. Contrast    — (x - 0.5) * contrast + 0.5, per channel
-//   3. Brightness  — multiply per channel
-// All three ops match the 4x4 color matrix (c62-c65) the original shader builds at runtime.
+// Dark Souls 1 color grading compute shader: FRPG_Fil_HDR_ColAdj's grade.
+// The game grades its display colour as it is, gamma encoded: a brightness scale
+// (c56.z), then the 4x4 colour matrix c62-c65 (saturation, contrast and
+// brightness of the area's ToneCorrectBank row, built by the game at runtime).
 
 #include "rtx/pass/post_fx/post_fx_dark_souls.h"
+#include "rtx/utility/common.slangh"
+#include "rtx/utility/color.slangh"
 
 layout(binding = POST_FX_DS_INOUT)
 RWTexture2D<float4> InOutColor;
@@ -35,26 +35,15 @@ RWTexture2D<float4> InOutColor;
 layout(push_constant)
 ConstantBuffer<PostFxDarkSoulsArgs> cb;
 
-// Rec.709 luminance weights — same constants hardcoded in FRPG_Fil_SampleLumInitial.fpo
-static const float3 kLuma = float3(0.2125f, 0.7154f, 0.0721f);
-
-float3 applyDS1Grading(float3 color)
+float3 applyDS1Grading(float3 linearColor)
 {
-  // 1. Saturation
-  float luma = dot(color, kLuma);
-  color = lerp(float3(luma, luma, luma), color, cb.saturation);
-
-  // 2. Per-channel contrast: (x - 0.5) * contrast + 0.5
-  color.r = (color.r - 0.5f) * cb.contrastR + 0.5f;
-  color.g = (color.g - 0.5f) * cb.contrastG + 0.5f;
-  color.b = (color.b - 0.5f) * cb.contrastB + 0.5f;
-
-  // 3. Per-channel brightness
-  color.r *= cb.brightnessR;
-  color.g *= cb.brightnessG;
-  color.b *= cb.brightnessB;
-
-  return color;
+  // The same power both ways, so an identity grade leaves the frame unchanged.
+  const float3 g = saturate(pow(max(linearColor, float3(0.0f)), float3(1.0f / kSRGBGamma)) * cb.scale);
+  const float3 graded = float3(
+    dot(cb.rowR.xyz, g) + cb.rowR.w,
+    dot(cb.rowG.xyz, g) + cb.rowG.w,
+    dot(cb.rowB.xyz, g) + cb.rowB.w);
+  return pow(saturate(graded), float3(kSRGBGamma));
 }
 
 [shader("compute")]
@@ -64,7 +53,7 @@ void main(uint2 pixelPos : SV_DispatchThreadID)
   if (any(pixelPos >= cb.imageSize))
     return;
 
-  float3 original = InOutColor[pixelPos].rgb;
-  float3 result = lerp(original, applyDS1Grading(original), cb.blendWeight);
-  InOutColor[pixelPos] = float4(result, InOutColor[pixelPos].a);
+  const float4 original = InOutColor[pixelPos];
+  const float3 result = lerp(original.rgb, applyDS1Grading(original.rgb), cb.blendWeight);
+  InOutColor[pixelPos] = float4(result, original.a);
 }

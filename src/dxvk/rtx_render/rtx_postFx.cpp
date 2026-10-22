@@ -113,6 +113,7 @@ namespace dxvk {
   // DS1 port: both passes need the device to build their pipelines.
   , m_darkSoulsDof(device)
   , m_darkSoulsGrading(device)
+  , m_darkSoulsHaze(device)
   {
   }
 
