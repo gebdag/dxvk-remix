@@ -978,6 +978,9 @@ namespace dxvk {
 
     bool useStageTextureFactorBlending = true;
     bool useMultipleStageTextureFactorBlending = false;
+    // Fork: the later stage also multiplies alpha by the texture factor. The shader
+    // applies the colour half through isTextureFactorBlend and needs this for opacity.
+    bool useMultipleStageTextureFactorAlphaBlending = false;
 
     // Build a mapping of texcoord indices to stage
     const uint8_t kInvalidStage = 0xFF;
@@ -985,6 +988,7 @@ namespace dxvk {
     if constexpr (FixedFunction) {
       memset(&texcoordIndexToStage[0], kInvalidStage, sizeof(texcoordIndexToStage));
       for (uint32_t stage = 0; stage < caps::TextureStageCount; stage++) {
+        bool stageAlphaMul = false;
         auto isTextureFactorBlendingEnabled = [&](const auto& tss) -> bool {
           const auto colorOp = tss[DXVK_TSS_COLOROP];
           const auto alphaOp = tss[DXVK_TSS_ALPHAOP];
@@ -1020,6 +1024,7 @@ namespace dxvk {
             ((a1a == D3DTA_TFACTOR && a2a == prevResultSel) ||
              (a2a == D3DTA_TFACTOR && a1a == prevResultSel));
 
+          stageAlphaMul = alphaMul;
           return colorMul || alphaMul;
         };
 
@@ -1032,6 +1037,7 @@ namespace dxvk {
             isTextureFactorBlendingEnabled(d3d9State().textureStages[stage])) {
           isCurrentStageTextureFactorBlendingEnabled = true;
           useMultipleStageTextureFactorBlending = true;
+          useMultipleStageTextureFactorAlphaBlending |= stageAlphaMul;
         }
 
         if (d3d9State().textures[stage] == nullptr)
@@ -1089,6 +1095,7 @@ namespace dxvk {
             lookupHash(RtxOptions::ignoreBakedLightingTextures(), texHash)) {
           useStageTextureFactorBlending = false;
           useMultipleStageTextureFactorBlending = false;
+          useMultipleStageTextureFactorAlphaBlending = false;
         }
       }
     }
@@ -1144,6 +1151,7 @@ namespace dxvk {
     // Update the drawcall state with texture stage info
     setTextureStageState(d3d9State(), firstStage, useStageTextureFactorBlending, useMultipleStageTextureFactorBlending,
                          m_activeDrawCallState.materialData, m_activeDrawCallState.transformData);
+    m_activeDrawCallState.materialData.isTextureFactorAlphaBlend = useMultipleStageTextureFactorAlphaBlending;
 
     if (d3d9State().textures[firstStage]) {
       m_activeDrawCallState.setupCategoriesForTexture();
@@ -1173,6 +1181,18 @@ namespace dxvk {
         if (RtxOptions::fixedFunctionDecalMarkerEnabled() &&
             d3d9State().textureStages[firstStage][DXVK_TSS_CONSTANT] == kFixedFunctionDecalMarker) {
           m_activeDrawCallState.setCategory(InstanceCategories::DecalStatic, true);
+        }
+        // Fork: unlit tag (see RtxOptions::fixedFunctionUnlitMarkerEnabled).
+        constexpr uint32_t kFixedFunctionUnlitMarker = 0xD15D0E1D;
+        if (RtxOptions::fixedFunctionUnlitMarkerEnabled() &&
+            d3d9State().textureStages[firstStage][DXVK_TSS_CONSTANT] == kFixedFunctionUnlitMarker) {
+          m_activeDrawCallState.materialData.isUnlit = true;
+          // An unlit surface's vertex colour is its colour (particles fade and tint through it),
+          // never baked lighting to normalise away.
+          m_activeDrawCallState.materialData.isVertexColorBakedLighting = false;
+          // Unlit-marked draws are the game's sprites: as particles they fade out softly where they
+          // meet geometry, as the game's soft sprites do, and skip untrustworthy motion vectors.
+          m_activeDrawCallState.setCategory(InstanceCategories::Particle, true);
         }
       }
 

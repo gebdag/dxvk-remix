@@ -353,7 +353,8 @@ struct RtSurface {
     textureFlags |= ((static_cast<uint32_t>(textureAlphaOperation)  & 0x7) << 11);
 
     textureFlags |= eyeParams ? (1 << 14) : 0;
-    // textureFlags bits 15-16 unused
+    textureFlags |= isTextureFactorAlphaBlend ? (1 << 15) : 0;
+    textureFlags |= isUnlit ? (1 << 16) : 0;
 
     static_assert(static_cast<uint32_t>(TexGenMode::Count) <= 4);
     textureFlags |= ((static_cast<uint32_t>(texgenMode) & 0x3) << 17);
@@ -415,6 +416,8 @@ struct RtSurface {
   bool isAnimatedWater = false;
   bool isClipPlaneEnabled = false;
   bool isTextureFactorBlend = false;
+  bool isTextureFactorAlphaBlend = false;
+  bool isUnlit = false;
   bool isVertexColorBakedLighting = true;
   bool isMotionBlurMaskOut = false;
   bool skipSurfaceInteractionSpritesheetAdjustment = false;
@@ -484,6 +487,7 @@ struct RtSurface {
       "  isAnimatedWater: ", isAnimatedWater, "\n",
       "  isClipPlaneEnabled: ", isClipPlaneEnabled, "\n",
       "  isTextureFactorBlend: ", isTextureFactorBlend, "\n",
+      "  isTextureFactorAlphaBlend: ", isTextureFactorAlphaBlend, "\n",
       "  isMotionBlurMaskOut: ", isMotionBlurMaskOut, "\n",
       "  skipSurfaceInteractionSpritesheetAdjustment: ", skipSurfaceInteractionSpritesheetAdjustment));
     
@@ -2023,6 +2027,8 @@ struct LegacyMaterialData {
   uint32_t tFactor = 0xffffffff;  // Value for D3DRS_TEXTUREFACTOR, default value of is opaque white
   D3DMATERIAL9 d3dMaterial = {};
   bool isTextureFactorBlend = false;
+  bool isTextureFactorAlphaBlend = false;
+  bool isUnlit = false; // fork: unlit marker, see RtxOptions::fixedFunctionUnlitMarkerEnabled
   bool isVertexColorBakedLighting = true;
 
   void setHashOverride(XXH64_hash_t hash) {

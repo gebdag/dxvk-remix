@@ -462,6 +462,22 @@ struct Surface
     set { data13.z = (data13.z & ~(0x3 << 17)) | (uint32_t(newValue & 0x3) << 17); }
   }
 
+  // A later texture stage modulates alpha by D3DRS_TEXTUREFACTOR (fork). isTextureFactorBlend
+  // only carries the colour half of that multiply.
+  property bool isTextureFactorAlphaBlend
+  {
+    get { return packedFlagGet(data13.z, 1 << 15); }
+    set { data13.z = newValue ? packedFlagSet(data13.z, 1 << 15) : packedFlagUnset(data13.z, 1 << 15); }
+  }
+
+  // Fork: drawn with the unlit marker. The surface takes no light: its texture x vertex
+  // colour is its emission (premultiplied by its alpha unless it uses an emissive blend).
+  property bool isUnlit
+  {
+    get { return packedFlagGet(data13.z, 1 << 16); }
+    set { data13.z = newValue ? packedFlagSet(data13.z, 1 << 16) : packedFlagUnset(data13.z, 1 << 16); }
+  }
+
   property bool isEye
   {
     get { return packedFlagGet(data13.z, 1 << 14); }

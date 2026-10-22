@@ -52,6 +52,12 @@ struct OpaqueMaterialArgs {
   // makes every surface a white mirror at grazing angles; at roughness 1 that energy smears over the
   // whole hemisphere and reads as an achromatic haze.
   float legacyFresnelF90 = 1.f;
+  // Fork: 1 / the exposure the tonemapper applies (exposure bias x auto exposure as read back), for
+  // unlit surfaces (Surface::isUnlit), whose emission is display-referred like the game's particles.
+  float unlitExposureCompensation = 1.f;
+  uint pad0 = 0;
+  uint pad1 = 0;
+  uint pad2 = 0;
 };
 
 struct TranslucentMaterialArgs {

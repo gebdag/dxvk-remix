@@ -197,7 +197,8 @@ namespace dxvk {
     desc.extent = VkExtent3D{ 1, 1, 1 };
 
     viewInfo.format = desc.format = VK_FORMAT_R32_SFLOAT;
-    viewInfo.usage = desc.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    // Fork: TRANSFER_SRC for readBackExposure.
+    viewInfo.usage = desc.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     m_exposure.image = device()->createImage(desc, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, DxvkMemoryStats::Category::RTXRenderTarget, "autoexposure");
     m_exposure.view = device()->createImageView(m_exposure.image, viewInfo);
     ctx->changeImageLayout(m_exposure.image, VK_IMAGE_LAYOUT_GENERAL);
@@ -339,7 +340,40 @@ namespace dxvk {
     }
 
     dispatchAutoExposure(ctx, linearSampler, rtOutput, frameTimeMilliseconds);
+    readBackExposure(ctx);
 
     m_resetState = false;
+  }
+
+  void DxvkAutoExposure::readBackExposure(Rc<DxvkContext> ctx) {
+    if (m_exposure.image == nullptr) {
+      return;
+    }
+    if (m_exposureReadback == nullptr) {
+      DxvkBufferCreateInfo info;
+      info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+      info.stages = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_HOST_BIT;
+      info.access = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_HOST_READ_BIT;
+      info.size = kExposureReadbackSlots * sizeof(float);
+      m_exposureReadback = device()->createBuffer(info, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                                  DxvkMemoryStats::Category::RTXBuffer, "autoexposure readback");
+      for (uint32_t i = 0; i < kExposureReadbackSlots; i++) {
+        *reinterpret_cast<float*>(m_exposureReadback->mapPtr(i * sizeof(float))) = 1.0f;
+      }
+    }
+
+    // Copy this frame's value into its slot; read the oldest slot, written kExposureReadbackSlots - 1
+    // frames ago and long finished on the GPU.
+    const uint32_t slot = m_exposureReadbackFrame % kExposureReadbackSlots;
+    const VkImageSubresourceLayers layers = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+    ctx->copyImageToBuffer(m_exposureReadback, slot * sizeof(float), 0, 0, m_exposure.image, layers, VkOffset3D { 0, 0, 0 }, VkExtent3D { 1, 1, 1 });
+    if (m_exposureReadbackFrame >= kExposureReadbackSlots - 1) {
+      const uint32_t oldest = (m_exposureReadbackFrame + 1) % kExposureReadbackSlots;
+      const float value = *reinterpret_cast<const float*>(m_exposureReadback->mapPtr(oldest * sizeof(float)));
+      if (std::isfinite(value) && value > 0.0f) {
+        m_readBackExposure = value;
+      }
+    }
+    m_exposureReadbackFrame++;
   }
 }

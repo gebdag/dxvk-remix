@@ -50,8 +50,17 @@ namespace dxvk {
 
     void createResources(Rc<DxvkContext> ctx);
     const Resources::Resource& getExposureTexture() const { return m_exposure; }
+    // Fork: the auto-exposure value as the CPU last read it back (a few frames old, which
+    // adaptation over hundreds of milliseconds makes irrelevant). 1 until the first readback.
+    float getReadBackExposure() const { return m_readBackExposure; }
 
   private:
+    void readBackExposure(Rc<DxvkContext> ctx);
+
+    static constexpr uint32_t kExposureReadbackSlots = 4;
+    Rc<DxvkBuffer> m_exposureReadback;
+    uint32_t m_exposureReadbackFrame = 0;
+    float m_readBackExposure = 1.0f;
 
     void dispatchAutoExposure(
       Rc<DxvkContext> ctx,

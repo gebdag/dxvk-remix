@@ -721,6 +721,9 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     chooseTextureArgument(textureAlphaArg1, surface.textureAlphaArg1Source, opacity, surfaceInteraction.vertexColor.a, tFactor.a, opacity);
     chooseTextureArgument(textureAlphaArg2, surface.textureAlphaArg2Source, opacity, surfaceInteraction.vertexColor.a, tFactor.a, float(1.0f));
     chooseTextureOperationAlpha(opacity, surface.textureAlphaOperation, textureAlphaArg1, textureAlphaArg2);
+    if (surface.isTextureFactorAlphaBlend) {
+      opacity *= tFactor.a;
+    }
     
     // Ensure we perform these opacity calculations after the texture operations have been applied to abledo and alpha.
     calcOpaqueSurfaceMaterialOpacity(
@@ -856,8 +859,10 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   // primary hit did.
   const float dielectricSpecularLevel = useLegacySpecular ? cb.opaqueMaterialArgs.legacySpecularLevel : 1.0f;
 
-  opaqueSurfaceMaterialInteraction.albedo = surface.isMatte ? vec3(0) : albedoToAdjustedAlbedo(albedo, metallic, opacity);
-  opaqueSurfaceMaterialInteraction.baseReflectivity = surface.isMatte ? vec3(0) : calcBaseReflectivity(albedo, metallic, opacity, dielectricSpecularLevel);
+  // Fork: unlit surfaces (see Surface::isUnlit) reflect nothing.
+  const bool noReflectance = surface.isMatte || surface.isUnlit;
+  opaqueSurfaceMaterialInteraction.albedo = noReflectance ? vec3(0) : albedoToAdjustedAlbedo(albedo, metallic, opacity);
+  opaqueSurfaceMaterialInteraction.baseReflectivity = noReflectance ? vec3(0) : calcBaseReflectivity(albedo, metallic, opacity, dielectricSpecularLevel);
    
   // Note: Roughness loaded from texture is a perceptual roughness value (for optimal encoding), so this works as intended.
   calcRoughness(roughness, opaqueSurfaceMaterial.anisotropy,
@@ -899,6 +904,25 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
       emissiveColor = gammaToLinear(emissiveColor);
     }
 
+    // Fork: the game scales an unlit additive layer by its alpha in gamma space (it blends into a
+    // gamma-encoded target), which is darker than scaling its linear colour for faint layers.
+    if (surface.isUnlit && surface.isEmissiveBlend)
+    {
+      emissiveColor = pow(linearToGamma(emissiveColor) * emissiveBlendOverrideInfluence, kSRGBGamma);
+      emissiveBlendOverrideInfluence = 1.0f;
+    }
+    // Fork: an unlit surface with an ordinary blend shows colour * alpha over what is behind
+    // it, so its emission is premultiplied by its opacity (emissive blends already scale by it).
+    // The WBOIT resolve premultiplies every layer by its opacity itself.
+    if (surface.isUnlit && !surface.isEmissiveBlend && !cb.wboitEnabled)
+    {
+      emissiveBlendOverrideInfluence *= opacity;
+    }
+    // Fork: and it is display-referred, so it is divided by the exposure the tonemapper will apply.
+    if (surface.isUnlit)
+    {
+      emissiveBlendOverrideInfluence *= cb.opaqueMaterialArgs.unlitExposureCompensation;
+    }
     emissiveRadiance = emissiveBlendOverrideInfluence * emissiveColor * opaqueSurfaceMaterial.emissiveIntensity;
   }
 

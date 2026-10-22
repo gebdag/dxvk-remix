@@ -1114,6 +1114,8 @@ namespace dxvk {
         currentInstance.surface.isAnimatedWater = currentInstance.testCategoryFlags(InstanceCategories::AnimatedWater);
         currentInstance.surface.associatedGeometryHash = drawCall.getHash(RtxOptions::geometryAssetHashRule());
         currentInstance.surface.isTextureFactorBlend = drawCall.getMaterialData().isTextureFactorBlend;
+        currentInstance.surface.isTextureFactorAlphaBlend = drawCall.getMaterialData().isTextureFactorAlphaBlend;
+        currentInstance.surface.isUnlit = drawCall.getMaterialData().isUnlit;
         currentInstance.surface.isVertexColorBakedLighting = drawCall.getMaterialData().isVertexColorBakedLighting;
         currentInstance.surface.isMotionBlurMaskOut = currentInstance.testCategoryFlags(InstanceCategories::IgnoreMotionBlur);
 
@@ -1142,6 +1144,17 @@ namespace dxvk {
             // For worldspace UI, we want to show the UI (unlit) in the world.  So configure the blend mode if blending is used accordingly.
             tmpMaterialData.getOpaqueMaterialData().setEnableEmission(true);
             tmpMaterialData.getOpaqueMaterialData().setEmissiveIntensity(2.0f);
+            tmpMaterialData.getOpaqueMaterialData().setEmissiveColorTexture(tmpMaterialData.getOpaqueMaterialData().getAlbedoOpacityTexture());
+          } else if (drawCall.getMaterialData().isUnlit && useLegacyAlphaState) {
+            // Fork: unlit marker. Like the emissive blend override below, whatever the blend mode:
+            // the surface's texture is its emission; the shader drops its albedo and premultiplies
+            // the emission by its alpha for non-emissive blends. Additive surfaces reach their
+            // brightness by stacking layers, ordinary blends do not, so each has its own intensity.
+            tmpMaterialData = *materialData;
+            materialData = &tmpMaterialData;
+            tmpMaterialData.getOpaqueMaterialData().setEnableEmission(true);
+            tmpMaterialData.getOpaqueMaterialData().setEmissiveIntensity(currentInstance.surface.alphaState.emissiveBlend
+              ? RtxOptions::emissiveBlendOverrideEmissiveIntensity() : RtxOptions::unlitBlendedEmissiveIntensity());
             tmpMaterialData.getOpaqueMaterialData().setEmissiveColorTexture(tmpMaterialData.getOpaqueMaterialData().getAlbedoOpacityTexture());
           } else if (currentInstance.surface.alphaState.emissiveBlend && RtxOptions::enableEmissiveBlendEmissiveOverride() && useLegacyAlphaState) {
             // Here we need to do deep copy and patch the material

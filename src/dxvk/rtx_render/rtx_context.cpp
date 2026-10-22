@@ -1482,6 +1482,13 @@ namespace dxvk {
     constants.startInMediumMaterialIndex = getSceneManager().getStartInMediumMaterialIndex();
     OpaqueMaterialOptions::fillShaderParams(constants.opaqueMaterialArgs);
     fillLegacySpecularArgs(constants.opaqueMaterialArgs);
+    {
+      // Fork: see OpaqueMaterialArgs::unlitExposureCompensation. Same exposure the tonemapper applies.
+      const DxvkAutoExposure& autoExposure = getCommonObjects()->metaAutoExposure();
+      const float exposure = exp2f(DxvkToneMapping::exposureBias() + RtxOptions::calcUserEVBias()) *
+                             (DxvkAutoExposure::enabled() ? autoExposure.getReadBackExposure() : 1.0f);
+      constants.opaqueMaterialArgs.unlitExposureCompensation = exposure > 0.f ? 1.0f / exposure : 1.0f;
+    }
     TranslucentMaterialOptions::fillShaderParams(constants.translucentMaterialArgs);
     {
       // Fork: the animated water LOD biases are given at output resolution (a blur of N

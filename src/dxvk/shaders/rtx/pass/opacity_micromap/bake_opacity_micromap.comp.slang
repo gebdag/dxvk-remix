@@ -121,6 +121,9 @@ void applyVertexAndTextureOperationsToOpacity(inout float opacity, vec3 albedo, 
     chooseTextureArgument(textureAlphaArg1, surface.textureAlphaArg1Source, opacity, vertexInterpolatedOpacity, tFactorAlpha, opacity);
     chooseTextureArgument(textureAlphaArg2, surface.textureAlphaArg2Source, opacity, vertexInterpolatedOpacity, tFactorAlpha, float(1.0));
     chooseTextureOperationAlpha(opacity, surface.textureAlphaOperation, textureAlphaArg1, textureAlphaArg2);
+    if (surface.isTextureFactorAlphaBlend) {
+      opacity *= tFactorAlpha;
+    }
 
     // Unused
     float emissiveBlendOverrideInfluence = float(0);

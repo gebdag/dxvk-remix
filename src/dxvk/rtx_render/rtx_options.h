@@ -1286,6 +1286,13 @@ namespace dxvk {
                "Classify fixed-function draws carrying the marker value 0xD15DECA1 in the first texture stage's D3DTSS_CONSTANT as static decals, without requiring their texture hashes in rtx.decalTextures.\n"
                "The stage constant does not affect rendering unless a stage argument references D3DTA_CONSTANT, so compatibility proxies can use it as an explicit per-draw decal tag.\n"
                "Intended for proxies that split a game's multi-layer materials (e.g. grass blended over dirt by vertex-color alpha) into an opaque base draw plus a coplanar alpha-blended overlay draw: the tagged overlay is composited onto the base surface by decal material blending.");
+    RTX_OPTION("rtx", bool, fixedFunctionUnlitMarkerEnabled, false,
+               "Render fixed-function draws carrying the marker value 0xD15D0E1D in texture stage 0's D3DTSS_CONSTANT unlit: their texture x vertex colour "
+               "is their emission (scaled by rtx.emissiveBlendOverrideEmissiveIntensity or rtx.unlitBlendedEmissiveIntensity, by their alpha unless they use an emissive blend, and by 1 / the current exposure, so they keep the brightness the game gave them) and they reflect no light.\n"
+               "For compatibility proxies whose game draws particles with unlit shaders (colour = texture x vertex colour), which Remix would otherwise light as surfaces.");
+    RTX_OPTION("rtx", float, unlitBlendedEmissiveIntensity, 1.0f,
+               "Emission intensity of unlit-marked surfaces with an ordinary (non-emissive) blend, e.g. smoke; unlit surfaces with an "
+               "emissive blend use rtx.emissiveBlendOverrideEmissiveIntensity. Both are relative to the current exposure.");
     RTX_OPTION("rtx", bool, skyMarkerEnabled, true,
                "Classify draws carrying the marker value 0xD15D05C1 in texture stage 0's D3DTSS_CONSTANT as sky, without requiring their texture hashes in rtx.skyBoxTextures.\n"
                "Works for draws using programmable shaders: a compatibility proxy that recognises a game's sky layers can send them with the game's own shaders and this tag, and the sky rasterization then reproduces the game's shading of them exactly.\n"

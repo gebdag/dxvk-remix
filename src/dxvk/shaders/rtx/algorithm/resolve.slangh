@@ -844,6 +844,8 @@ float resolveVertexUnorderedParticles<
   float3 alphaColorSum = 0..xxx;
   float alphaWeightSum = 0.0f;
   float alphaTransProd = 1.0f;
+  // Fork: display-referred gamma-space sum of the unlit additive layers (see below).
+  float3 unlitAdditiveGammaSum = 0..xxx;
 #else
   mat4 binnedRadiancesAndAttenuation = mat4(
     vec4(0.0f, 0.0f, 0.0f, 1.0f),
@@ -1054,12 +1056,32 @@ float resolveVertexUnorderedParticles<
 
     float3 src = currentEmissiveRadiance * float3(radianceAttenuation) * volumeAttenuation;
 
-    float alphaVal = saturate(1.f - currentRadianceAttenuation);
+    // Fork: additive layers (alpha / colour emissive blends) add, as the blend does: averaging them
+    // with the other layers dims stacked additive particles, and their coverage would darken what
+    // is behind them.
+    if (surface.blendType == uint8_t(BlendType::kAlphaEmissive) || surface.blendType == uint8_t(BlendType::kColorEmissive))
+    {
+      // Fork: the game blends unlit (particle) layers into a gamma-encoded target, so its additive
+      // layers sum in gamma space: a stack of faint layers reaches white there, where their linear
+      // sum stays dim. They are display-referred (scaled by 1 / exposure), so undo that first.
+      if (surface.isUnlit)
+      {
+        unlitAdditiveGammaSum += linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation);
+      }
+      else
+      {
+        emissiveRadiance += src;
+      }
+    }
+    else
+    {
+      float alphaVal = saturate(1.f - currentRadianceAttenuation);
 
-    float3 Ci = src * alphaVal;
-    alphaColorSum  += Ci * w;
-    alphaWeightSum += alphaVal * w;
-    alphaTransProd *= (1.f - alphaVal);
+      float3 Ci = src * alphaVal;
+      alphaColorSum  += Ci * w;
+      alphaWeightSum += alphaVal * w;
+      alphaTransProd *= (1.f - alphaVal);
+    }
 #else
     uint lowestIndex;
     float lowestDistance;
@@ -1113,6 +1135,9 @@ float resolveVertexUnorderedParticles<
     float coverage = cb.wboitEnergyLossCompensation * saturate(1.0f - alphaTransProd);
     emissiveRadiance += alphaAvg * coverage;
   }
+
+  // Fork: the unlit additive layers' gamma-space sum, back to linear and scene-referred.
+  emissiveRadiance += pow(unlitAdditiveGammaSum, kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation;
 
   radianceAttenuation *= alphaTransProd;
 #else
@@ -1199,6 +1224,8 @@ void resolveVertexUnordered<
   float3 alphaColorSum = 0..xxx;
   float alphaWeightSum = 0.0f;
   float alphaTransProd = 1.0f;
+  // Fork: display-referred gamma-space sum of the unlit additive layers (see below).
+  float3 unlitAdditiveGammaSum = 0..xxx;
 #else
   // Note: Initialize bins to completely transparent with no radiance to be added in at an impossibly low distance. This
   // ensures these filler items are pulled out first in sorted order, giving the incoming elements a few iterations to populate
@@ -1508,14 +1535,34 @@ void resolveVertexUnordered<
 
       float3 src = currentEmissiveRadiance * float3(radianceAttenuation) * volumeAttenuation;
 
-      // Extinction-based alpha
-      float alphaVal = saturate(1.f - currentRadianceAttenuation);
+      // Fork: additive layers (alpha / colour emissive blends) add, as the blend does: averaging them
+      // with the other layers dims stacked additive particles, and their coverage would darken what
+      // is behind them.
+      if (surface.blendType == uint8_t(BlendType::kAlphaEmissive) || surface.blendType == uint8_t(BlendType::kColorEmissive))
+      {
+        // Fork: the game blends unlit (particle) layers into a gamma-encoded target, so its additive
+        // layers sum in gamma space: a stack of faint layers reaches white there, where their linear
+        // sum stays dim. They are display-referred (scaled by 1 / exposure), so undo that first.
+        if (surface.isUnlit)
+        {
+          unlitAdditiveGammaSum += linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation);
+        }
+        else
+        {
+          emissiveRadiance += src;
+        }
+      }
+      else
+      {
+        // Extinction-based alpha
+        float alphaVal = saturate(1.f - currentRadianceAttenuation);
 
-      // premultiplied color
-      float3 Ci = src * alphaVal;
-      alphaColorSum  += Ci * w;
-      alphaWeightSum += alphaVal * w;
-      alphaTransProd *= (1.f - alphaVal);
+        // premultiplied color
+        float3 Ci = src * alphaVal;
+        alphaColorSum  += Ci * w;
+        alphaWeightSum += alphaVal * w;
+        alphaTransProd *= (1.f - alphaVal);
+      }
 #else
      // Find the lowest item in the bins
       uint lowestIndex;
@@ -1589,6 +1636,9 @@ void resolveVertexUnordered<
     float coverage = cb.wboitEnergyLossCompensation * saturate(1.0f - alphaTransProd);
     emissiveRadiance += alphaAvg * coverage;
   }
+
+  // Fork: the unlit additive layers' gamma-space sum, back to linear and scene-referred.
+  emissiveRadiance += pow(unlitAdditiveGammaSum, kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation;
 
   radianceAttenuation *= alphaTransProd;
 #else
