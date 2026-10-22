@@ -96,17 +96,21 @@ struct OpaqueSurfaceMaterial
   // 24-25
   uint subsurfaceMaterialIndex;
 
-  // 26
+  // 26-27
   uint16_t samplerFeedbackStamp;
-  uint16_t data0;
+  // Fork: specular colour workflow, see opaqueSurfaceMaterialInteractionCreate.
+  uint16_t specularColorTextureIndex;
 
   // 28-29
   uint dlssControlMask;
 
   // Todo: Fixed function blend state info here in the future (Actually this should go on a Legacy Material, or some sort of non-PBR Legacy Surface)
 
+  // 30
+  float16_t specularColorScale;
+
   // padding (to keep size matching with MemoryPolymorphicSurfaceMaterial)
-  uint16_t data[2];
+  uint16_t data[1];
 
   bool hasValidDisplacement() {
     return flags & OPAQUE_SURFACE_MATERIAL_FLAG_HAS_DISPLACEMENT;

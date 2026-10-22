@@ -646,6 +646,7 @@ namespace dxvk {
       createTextureRef(ReplacementMaterialTextureType::Metallic),
       createTextureRef(ReplacementMaterialTextureType::Emissive),
       TextureRef(), TextureRef(), TextureRef(), TextureRef(), TextureRef(), // SSS textures
+      TextureRef(), // fork: SpecularColorTexture - baked terrain keeps the metallic workflow
       Material::Properties::roughnessAnisotropy(),
       Material::Properties::emissiveIntensity(),
       Vector3(1, 1, 1), // AlbedoConstant - unused since the AlbedoOpacity texture must be always present for baking
@@ -689,7 +690,8 @@ namespace dxvk {
       0.f, // TextureScrollAngle
       Vector2(1.f), // TextureScale
       Vector2(0.f), // TextureOffset
-      0.f          // TextureRotation
+      0.f,         // TextureRotation
+      1.f          // SpecularColorScale
     ));
 
     m_hasInitializedMaterialDataThisFrame = true;

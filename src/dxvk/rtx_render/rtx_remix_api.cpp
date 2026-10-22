@@ -299,6 +299,7 @@ namespace {
           preloadTexture(preload.subsurfaceSingleScatteringAlbedoTexture),
           preloadTexture(preload.subsurfaceRadiusTexture),
           TextureRef(),
+          src.getSpecularColorTexture(), // fork: specular colour workflow (USD only, no API preload slot)
           src.getAnisotropyConstant(),
           src.getEmissiveIntensity(),
           src.getAlbedoConstant(),
@@ -342,6 +343,7 @@ namespace {
           src.getTextureScale(),
           src.getTextureOffset(),
           src.getTextureRotation(),
+          src.getSpecularColorScale(),
           // Note: Rebuilding the material field by field would otherwise reset every parameter's
           // authored/default provenance, which merge() and the legacy specular gate both read.
           src.getDirtyFlags()
@@ -416,6 +418,7 @@ namespace {
           {},
           {},
           {},
+          {}, // fork: SpecularColorTexture - not exposed via remixapi
           extOpaque->anisotropy,
           info.emissiveIntensity,
           tovec3(extOpaque->albedoConstant),
@@ -459,6 +462,7 @@ namespace {
           hasTextureTransform && extOpaque->textureScale_hasvalue ? tovec2(extOpaque->textureScale_value) : Vector2(1.f),
           hasTextureTransform ? tovec2(extOpaque->textureOffset) : Vector2(0.f),
           hasTextureTransform ? extOpaque->textureRotation : 0.f,
+          1.f, // SpecularColorScale
           // Note: remixapi_MaterialInfoOpaqueEXT always carries a roughness value, so an API material
           // is always an authored one as far as the legacy specular gate is concerned.
           uint64_t(1) << uint64_t(OpaqueMaterialData::DirtyFlags::k_RoughnessConstant),

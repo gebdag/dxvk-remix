@@ -187,6 +187,7 @@ struct NEECacheUtils
       opaqueSurfaceMaterial.heightTextureIndex = BINDING_INDEX_INVALID;
       opaqueSurfaceMaterial.roughnessTextureIndex = BINDING_INDEX_INVALID;
       opaqueSurfaceMaterial.metallicTextureIndex = BINDING_INDEX_INVALID;
+      opaqueSurfaceMaterial.specularColorTextureIndex = BINDING_INDEX_INVALID;
       opaqueSurfaceMaterial.anisotropy = 1.0;
       opaqueSurfaceMaterial.albedoOpacityConstant = 0.0;
       opaqueSurfaceMaterial.roughnessConstant = 0.0;

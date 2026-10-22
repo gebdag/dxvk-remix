@@ -1704,6 +1704,7 @@ namespace dxvk {
       texturePresenceMask |= opaqueMaterialData.getSubsurfaceThicknessTexture().isImageEmpty()       ? 0u : (1u << 9);
       texturePresenceMask |= opaqueMaterialData.getSubsurfaceSingleScatteringAlbedoTexture().isImageEmpty() ? 0u : (1u << 10);
       texturePresenceMask |= opaqueMaterialData.getSubsurfaceRadiusTexture().isImageEmpty()          ? 0u : (1u << 11);
+      texturePresenceMask |= opaqueMaterialData.getSpecularColorTexture().isImageEmpty()             ? 0u : (1u << 12);
       preCreationHash = XXH64(&texturePresenceMask, sizeof(texturePresenceMask), preCreationHash);
 
       // Fold in the sRGB-linearization toggle so flipping rtx.linearizeSrgbTextures at runtime invalidates
@@ -1733,6 +1734,7 @@ namespace dxvk {
       uint32_t roughnessTextureIndex = kSurfaceMaterialInvalidTextureIndex;
       uint32_t metallicTextureIndex = kSurfaceMaterialInvalidTextureIndex;
       uint32_t emissiveColorTextureIndex = kSurfaceMaterialInvalidTextureIndex;
+      uint32_t specularColorTextureIndex = kSurfaceMaterialInvalidTextureIndex;
       uint32_t subsurfaceMaterialIndex = SURFACE_INDEX_INVALID;
       uint32_t subsurfaceTransmittanceTextureIndex = kSurfaceMaterialInvalidTextureIndex;
       uint32_t subsurfaceThicknessTextureIndex = kSurfaceMaterialInvalidTextureIndex;
@@ -1776,6 +1778,7 @@ namespace dxvk {
         trackTexture(opaqueMaterialData.getRoughnessTexture(), roughnessTextureIndex, hasTexcoords, true, &samplerFeedbackStamp);
         trackTexture(opaqueMaterialData.getMetallicTexture(), metallicTextureIndex, hasTexcoords, true, &samplerFeedbackStamp);
         trackTexture(opaqueMaterialData.getSecondaryTexture(), secondaryTextureIndex, hasTexcoords, true, &samplerFeedbackStamp);
+        trackTexture(opaqueMaterialData.getSpecularColorTexture(), specularColorTextureIndex, hasTexcoords, true, &samplerFeedbackStamp);
 
         albedoOpacityConstant.xyz() = opaqueMaterialData.getAlbedoConstant();
         albedoOpacityConstant.w = opaqueMaterialData.getOpacityConstant();
@@ -1892,7 +1895,9 @@ namespace dxvk {
         samplerFeedbackStamp,
         secondaryTextureIndex,
         albedoTextureIsSrgb, emissiveTextureIsSrgb,
-        useLegacySpecular
+        useLegacySpecular,
+        specularColorTextureIndex,
+        opaqueMaterialData.getSpecularColorScale()
       };
 
       surfaceMaterial.emplace(opaqueSurfaceMaterial);

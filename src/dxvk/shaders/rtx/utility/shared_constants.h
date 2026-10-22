@@ -64,6 +64,9 @@ static const uint8_t surfaceMaterialTypeMask = uint8_t(0x3u);
 // Must stay inside OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_MASK so it survives the GBuffer round trip
 // and reaches the Fresnel evaluations done after the primary hit (indirect, ReSTIR GI, PSR).
 #define OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_LEGACY_SPECULAR (1 << 2)
+// Fork: the base reflectivity came from a specular colour map. Such games shade without Fresnel, so the
+// Schlick ceiling (F90) is the base reflectivity itself. Must stay inside the mask below (GBuffer).
+#define OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_SPECULAR_COLOR (1 << 3)
 // flags overlap with type field when in gbuffer, which occupies last 2 bits.
 #define OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_MASK 0x3F
 

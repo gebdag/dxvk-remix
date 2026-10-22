@@ -688,7 +688,9 @@ struct RtOpaqueSurfaceMaterial {
     uint16_t samplerFeedbackStamp,
     uint32_t secondaryTextureIndex = 0,
     bool albedoTextureIsSrgb = false, bool emissiveTextureIsSrgb = false,
-    bool useLegacySpecular = false
+    bool useLegacySpecular = false,
+    uint32_t specularColorTextureIndex = kSurfaceMaterialInvalidTextureIndex,
+    float specularColorScale = 1.0f
   ) :
     m_albedoOpacityTextureIndex{ albedoOpacityTextureIndex }, m_secondaryTextureIndex{secondaryTextureIndex}, m_normalTextureIndex{ normalTextureIndex },
     m_tangentTextureIndex { tangentTextureIndex }, m_heightTextureIndex { heightTextureIndex }, m_roughnessTextureIndex{ roughnessTextureIndex },
@@ -707,7 +709,8 @@ struct RtOpaqueSurfaceMaterial {
     m_subsurfaceMaterialIndex(subsurfaceMaterialIndex), m_isRaytracedRenderTarget(isRaytracedRenderTarget),
     m_isHairCard(isHairCard), m_samplerFeedbackStamp{ samplerFeedbackStamp },
     m_albedoTextureIsSrgb{ albedoTextureIsSrgb }, m_emissiveTextureIsSrgb{ emissiveTextureIsSrgb },
-    m_useLegacySpecular{ useLegacySpecular }
+    m_useLegacySpecular{ useLegacySpecular },
+    m_specularColorTextureIndex{ specularColorTextureIndex }, m_specularColorScale{ specularColorScale }
   {
     updateCachedData();
     updateCachedHash();
@@ -813,13 +816,17 @@ struct RtOpaqueSurfaceMaterial {
     // data[24-25]
     writeGPUHelper(data, offset, m_subsurfaceMaterialIndex < MATERIAL_INDEX_MAX_VALUE ? m_subsurfaceMaterialIndex : MATERIAL_INDEX_INVALID);
 
-    // data[26]
+    // data[26 - 27]
     writeGPUHelperExplicit<2>(data, offset, m_samplerFeedbackStamp);
-    writeGPUPadding<2>(data, offset);
+    writeGPUHelperExplicit<2>(data, offset, m_specularColorTextureIndex);
 
+    // data[28 - 29]
     writeGPUHelper(data, offset, m_cachedDLSSControlMask);
 
-    writeGPUPadding<4>(data, offset);
+    // data[30 - 31]
+    assert(m_specularColorScale <= FLOAT16_MAX);
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_specularColorScale));
+    writeGPUPadding<2>(data, offset);
     assert(offset - oldOffset == kSurfaceMaterialGPUSize);
   }
 
@@ -830,7 +837,8 @@ struct RtOpaqueSurfaceMaterial {
                             m_heightTextureIndex != kSurfaceMaterialInvalidTextureIndex ||
                             m_roughnessTextureIndex != kSurfaceMaterialInvalidTextureIndex ||
                             m_metallicTextureIndex != kSurfaceMaterialInvalidTextureIndex ||
-                            m_emissiveColorTextureIndex != kSurfaceMaterialInvalidTextureIndex;
+                            m_emissiveColorTextureIndex != kSurfaceMaterialInvalidTextureIndex ||
+                            m_specularColorTextureIndex != kSurfaceMaterialInvalidTextureIndex;
 
     return !hasTexture || m_samplerIndex != kSurfaceMaterialInvalidTextureIndex;
   }
@@ -930,12 +938,13 @@ struct RtOpaqueSurfaceMaterial {
     fn(m_roughnessTextureIndex);
     fn(m_metallicTextureIndex);
     fn(m_emissiveColorTextureIndex);
+    fn(m_specularColorTextureIndex);
   }
 
 private:
   void updateCachedHash() {
     static_assert(
-      sizeof(*this) == 152,
+      sizeof(*this) == 160,
       "add new member for hashing if needed: add a MEMBER into the struct + add a VALUE into the list-init"
     );
     struct HashStruct {
@@ -969,6 +978,8 @@ private:
       uint32_t albedoTextureIsSrgb;       // NOTE: uint32_t to avoid padding
       uint32_t emissiveTextureIsSrgb;     // NOTE: uint32_t to avoid padding
       uint32_t useLegacySpecular;         // NOTE: uint32_t to avoid padding
+      uint32_t specularColorTextureIndex;
+      float specularColorScale;
       // NOTE: There must be NO padding between members, as the struct is used for hashing
     };
     HashStruct hashData = HashStruct{
@@ -1002,6 +1013,8 @@ private:
       m_albedoTextureIsSrgb,
       m_emissiveTextureIsSrgb,
       m_useLegacySpecular,
+      m_specularColorTextureIndex,
+      m_specularColorScale,
     };
     m_cachedHash = hashStructByMemory<HashStruct,
       &HashStruct::albedoOpacityTextureIndex,
@@ -1033,7 +1046,9 @@ private:
       &HashStruct::secondaryTextureIndex,
       &HashStruct::albedoTextureIsSrgb,
       &HashStruct::emissiveTextureIsSrgb,
-      &HashStruct::useLegacySpecular>(hashData);
+      &HashStruct::useLegacySpecular,
+      &HashStruct::specularColorTextureIndex,
+      &HashStruct::specularColorScale>(hashData);
   }
 
   void updateCachedData() {
@@ -1101,6 +1116,11 @@ private:
   // authors neither a roughness constant nor a roughness map. Gates rtx.legacyMaterial.specularLevel
   // and rtx.legacyMaterial.fresnelF90 on the GPU. Computed in SceneManager::createSurfaceMaterial.
   bool m_useLegacySpecular;
+
+  // Fork: specular colour workflow. When the texture is bound, base reflectivity is
+  // sRGB-decode(texture * scale) instead of the metallic-derived value.
+  uint32_t m_specularColorTextureIndex;
+  float m_specularColorScale;
 
   uint16_t m_samplerFeedbackStamp;
 

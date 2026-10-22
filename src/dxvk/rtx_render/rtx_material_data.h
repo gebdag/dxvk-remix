@@ -52,7 +52,10 @@
   X(SubsurfaceThicknessTexture,              subsurface_thickness_texture,         TextureRef, void, void, {}) \
   X(SubsurfaceSingleScatteringAlbedoTexture, subsurface_single_scattering_texture, TextureRef, void, void, {}) \
   X(SubsurfaceRadiusTexture,                 subsurface_radius_texture,            TextureRef, void, void, {}) \
-  X(SecondaryTexture,                        secondary_texture,                    TextureRef, void, void, {})
+  X(SecondaryTexture,                        secondary_texture,                    TextureRef, void, void, {}) \
+  /* Fork: specular colour (spec-gloss) workflow for games whose shaders read a specular colour map. When */ \
+  /* present it replaces the metallic-derived base reflectivity: F0 = sRGB-decode(rgb * specular_color_scale). */ \
+  X(SpecularColorTexture,                    specular_color_texture,               TextureRef, void, void, {})
 
 
 #define LIST_OPAQUE_MATERIAL_CONSTANTS(X) \
@@ -104,7 +107,10 @@
   X(DLSSControlMaskIntensity,         dlss_control_mask_intensity,            float,          0.f,                        1.f,                        1.f) \
   X(DLSSControlMaskToneStrength,      dlss_control_mask_tone_strength,        float,          0.f,                        1.f,                        0.3f) \
   X(DLSSControlMaskStructuralStrength, dlss_control_mask_structural_strength, float,          0.f,                        1.f,                        0.7f) \
-  LIST_TEXTURE_TRANSFORM_CONSTANTS(X)
+  LIST_TEXTURE_TRANSFORM_CONSTANTS(X) \
+  /* Fork: multiplies specular_color_texture before its sRGB decode (a game's specular colour power). */ \
+  /* Note: Maximum clamped to float 16 max due to GPU encoding requirements. */ \
+  X(SpecularColorScale,               specular_color_scale,                   float,          0.f,                        65504.0f,                   1.f)
 
 #define LIST_OPAQUE_MATERIAL_PARAMS(X)\
   LIST_OPAQUE_MATERIAL_TEXTURES(X) \

@@ -625,6 +625,8 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   const bool tangentLoaded = surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.tangentTextureIndex, opaqueSurfaceMaterial.samplerIndex, surfaceInteraction, tangentSample, materialLodBias);
   const bool roughnessLoaded = surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.roughnessTextureIndex, opaqueSurfaceMaterial.samplerIndex, surfaceInteraction, roughnessSample, materialLodBias);
   const bool metallicLoaded = surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.metallicTextureIndex, opaqueSurfaceMaterial.samplerIndex, surfaceInteraction, metallicSample, materialLodBias);
+  vec4 specularColorSample;
+  const bool specularColorLoaded = surfaceMaterialInteractionTextureReadHelper(opaqueSurfaceMaterial.specularColorTextureIndex, opaqueSurfaceMaterial.samplerIndex, surfaceInteraction, specularColorSample, materialLodBias);
 
   // Load Albedo/Opacity
 
@@ -863,7 +865,18 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   const bool noReflectance = surface.isMatte || surface.isUnlit;
   opaqueSurfaceMaterialInteraction.albedo = noReflectance ? vec3(0) : albedoToAdjustedAlbedo(albedo, metallic, opacity);
   opaqueSurfaceMaterialInteraction.baseReflectivity = noReflectance ? vec3(0) : calcBaseReflectivity(albedo, metallic, opacity, dielectricSpecularLevel);
-   
+
+  // Fork: specular colour workflow. A game that shades with a specular colour map (diffuse = albedo,
+  // specular = specColour * power) keeps both: the map, scaled and decoded like a colour, is the base
+  // reflectivity, and the diffuse keeps the albedo minus the energy the specular layer takes.
+  if (specularColorLoaded && !noReflectance)
+  {
+    opaqueSurfaceMaterialInteraction.flags |= OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_SPECULAR_COLOR;
+    const vec3 specularColor = gammaToLinear(saturate(specularColorSample.rgb * float(opaqueSurfaceMaterial.specularColorScale)));
+    opaqueSurfaceMaterialInteraction.baseReflectivity = specularColor * opacity;
+    opaqueSurfaceMaterialInteraction.albedo = albedo * (1.0f - max(specularColor.r, max(specularColor.g, specularColor.b))) * opacity;
+  }
+
   // Note: Roughness loaded from texture is a perceptual roughness value (for optimal encoding), so this works as intended.
   calcRoughness(roughness, opaqueSurfaceMaterial.anisotropy,
     opaqueSurfaceMaterialInteraction.isotropicRoughness,
@@ -1063,6 +1076,12 @@ float opaqueSurfaceMaterialInteractionGetFresnelF90(
 {
   const bool useLegacySpecular =
     opaqueSurfaceMaterialInteraction.flags & OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_USE_LEGACY_SPECULAR;
+
+  if (opaqueSurfaceMaterialInteraction.flags & OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_SPECULAR_COLOR)
+  {
+    const vec3 f0 = opaqueSurfaceMaterialInteraction.baseReflectivity;
+    return max(f0.r, max(f0.g, f0.b));
+  }
 
   return useLegacySpecular ? cb.opaqueMaterialArgs.legacyFresnelF90 : 1.0f;
 }
