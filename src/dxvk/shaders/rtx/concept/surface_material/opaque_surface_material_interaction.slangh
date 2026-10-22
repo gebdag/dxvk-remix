@@ -868,13 +868,15 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
 
   // Fork: specular colour workflow. A game that shades with a specular colour map (diffuse = albedo,
   // specular = specColour * power) keeps both: the map, scaled and decoded like a colour, is the base
-  // reflectivity, and the diffuse keeps the albedo minus the energy the specular layer takes.
+  // reflectivity. Such shaders add the specular on top of the full diffuse, so the diffuse keeps the
+  // albedo, limited only where albedo + F0 would reflect more than all the light. Taking F0 out of every
+  // diffuse instead greys out a dark, shiny surface (polished leather turns into its own reflection).
   if (specularColorLoaded && !noReflectance)
   {
     opaqueSurfaceMaterialInteraction.flags |= OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_SPECULAR_COLOR;
     const vec3 specularColor = gammaToLinear(saturate(specularColorSample.rgb * float(opaqueSurfaceMaterial.specularColorScale)));
     opaqueSurfaceMaterialInteraction.baseReflectivity = specularColor * opacity;
-    opaqueSurfaceMaterialInteraction.albedo = albedo * (1.0f - max(specularColor.r, max(specularColor.g, specularColor.b))) * opacity;
+    opaqueSurfaceMaterialInteraction.albedo = min(albedo, vec3(1.0f) - specularColor) * opacity;
   }
 
   // Note: Roughness loaded from texture is a perceptual roughness value (for optimal encoding), so this works as intended.
