@@ -82,6 +82,7 @@ namespace dxvk {
 
     // The DS1 post passes draw their own headers.
     DxvkPostFx& postFx = ctx->getCommonObjects()->metaPostFx();
+    postFx.darkSoulsLook().showImguiSettings();
     DxvkDarkSoulsExposure::showImguiSettings();
     DxvkDarkSoulsAmbient::showImguiSettings();
     postFx.darkSoulsHaze().showImguiSettings();

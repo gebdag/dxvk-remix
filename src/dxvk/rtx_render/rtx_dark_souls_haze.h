@@ -36,6 +36,11 @@ namespace dxvk {
 
     bool isEnabled() const { return enable() && active(); }
 
+    // The haze constants for this frame, also used by the DS1 look's scene pass. False when the
+    // game has sent no haze values (the args are then zeroed: no fog, no scattering).
+    bool fillArgs(PostFxDarkSoulsHazeArgs& args, const VkExtent3D& extent, const Resources::Resource& linearViewZ,
+                  const Camera& camera, const float jitterOffset[2], float missLinearViewZ) const;
+
   private:
     DxvkDevice* m_device;
     Rc<DxvkBuffer> m_constants;

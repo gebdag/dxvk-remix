@@ -31,6 +31,8 @@
 #include "rtx_options.h"
 #include "rtx_ray_reconstruction.h"
 #include "rtx_restir_gi_rayquery.h"
+#include "rtx_dark_souls_look.h"
+#include "rtx_dark_souls_exposure.h"
 #include "rtx_debug_view.h"
 #include "rtx_sparse_rendering.h"
 
@@ -508,6 +510,15 @@ namespace dxvk {
     compositeArgs.domeLightArgs = domeLightArgs;
     compositeArgs.skyBrightness = RtxOptions::skyBrightness();
     compositeArgs.skyUseProbeForPrimaryRays = skyUseProbeForPrimaryRays();
+    // DS1 look: the sky raster comes from the game's own sky shader, exposure included; same mapping
+    // as RaytraceArgs::ds1Ambient (RtxContext::updateRaytraceArgs) for the sky composited here.
+    compositeArgs.ds1SkyGamma = 0;
+    compositeArgs.ds1SkyUnexpose = 1.0f;
+    if (DxvkDarkSoulsLook::isActive()) {
+      const float exposure = DxvkDarkSoulsExposure::gameExposureValue();
+      compositeArgs.ds1SkyGamma = RtxOptions::skyForceHDR() ? 1u : 2u;
+      compositeArgs.ds1SkyUnexpose = exposure > 0.0f ? 1.0f / exposure : 1.0f;
+    }
 
     const bool sparseRenderingEnabled = rtOutput.m_raytraceArgs.sparseRenderingArgs.mode != SparseRenderingMode::Off;
 

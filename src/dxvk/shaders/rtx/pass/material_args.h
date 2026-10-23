@@ -55,7 +55,9 @@ struct OpaqueMaterialArgs {
   // Fork: 1 / the exposure the tonemapper applies (exposure bias x auto exposure as read back), for
   // unlit surfaces (Surface::isUnlit), whose emission is display-referred like the game's particles.
   float unlitExposureCompensation = 1.f;
-  uint pad0 = 0;
+  // Fork (DS1 look): 1 = the game multiplies its textures' stored, gamma-encoded values, so the
+  // albedo becomes that stored value raised to 2.2 (see rtx_dark_souls_look.h).
+  uint ds1GammaAlbedo = 0;
   uint pad1 = 0;
   uint pad2 = 0;
 };

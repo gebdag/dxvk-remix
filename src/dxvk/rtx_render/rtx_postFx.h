@@ -30,6 +30,7 @@
 #include "rtx_dark_souls_dof.h"
 #include "rtx_dark_souls_grading.h"
 #include "rtx_dark_souls_haze.h"
+#include "rtx_dark_souls_look.h"
 
 #include "../spirv/spirv_code_buffer.h"
 #include "../util/util_matrix.h"
@@ -78,6 +79,7 @@ namespace dxvk {
     DxvkDarkSoulsDof& darkSoulsDof() { return m_darkSoulsDof; }
     DxvkDarkSoulsGrading& darkSoulsGrading() { return m_darkSoulsGrading; }
     DxvkDarkSoulsHaze& darkSoulsHaze() { return m_darkSoulsHaze; }
+    DxvkDarkSoulsLook& darkSoulsLook() { return m_darkSoulsLook; }
 
     inline bool isPostFxEnabled() const { return enable(); }
     inline bool isMotionBlurEnabled() const { return enable() && enableMotionBlur() && motionBlurSampleCount() > 0 && exposureFraction() > 0.0f; }
@@ -120,6 +122,7 @@ namespace dxvk {
     DxvkDarkSoulsDof m_darkSoulsDof;
     DxvkDarkSoulsGrading m_darkSoulsGrading;
     DxvkDarkSoulsHaze m_darkSoulsHaze;
+    DxvkDarkSoulsLook m_darkSoulsLook;
   };
 
 }

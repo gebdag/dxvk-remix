@@ -2036,7 +2036,7 @@ void updateSharcOnGBufferMiss(
     }
     else
     {
-      skyRadiance = cb.skyBrightness * SkyProbe.SampleLevel(direction, 0);
+      skyRadiance = cb.skyBrightness * ds1SkyRadiance(cb.ds1Ambient, SkyProbe.SampleLevel(direction, 0));
     }
   }
 
@@ -2930,8 +2930,7 @@ void geometryPSRResolverVertex(
     }
     else
     {
-      // Output radiance from sky probe
-      skyRadiance = cb.skyBrightness * SkyProbe.SampleLevel(ray.direction, 0);
+      skyRadiance = cb.skyBrightness * ds1SkyRadiance(cb.ds1Ambient, SkyProbe.SampleLevel(ray.direction, 0));
     }
 
     emissiveRadiance += skyRadiance * radianceAttenuation;

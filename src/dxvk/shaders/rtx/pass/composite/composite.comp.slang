@@ -22,6 +22,7 @@
 #include "rtx/pass/composite/composite_bindings.slangh"
 
 #include "rtx/pass/composite/composite_args.h"
+#include "rtx/pass/fork_ds1_ambient.h"
 #include "rtx/pass/composite/composite.slangh"
 
 #include "rtx/utility/common.slangh"
@@ -628,12 +629,12 @@ void applySkyContribution(
   }
   else if (cb.skyUseProbeForPrimaryRays)
   {
-    skyContribution = cb.skyBrightness * SkyProbe.SampleLevel(primaryRayDirections.worldDirection, 0) * volumeAttenuation;
+    skyContribution = cb.skyBrightness * ds1SkyRadiance(cb.ds1SkyGamma, cb.ds1SkyUnexpose, SkyProbe.SampleLevel(primaryRayDirections.worldDirection, 0)) * volumeAttenuation;
   }
   else
   {
     vec2 screenUV = cameraPixelCoordinateToScreenUV(cb.camera, pixelCoordinate);
-    skyContribution = cb.skyBrightness * SkyLight.SampleLevel(screenUV, 0) * volumeAttenuation;
+    skyContribution = cb.skyBrightness * ds1SkyRadiance(cb.ds1SkyGamma, cb.ds1SkyUnexpose, SkyLight.SampleLevel(screenUV, 0)) * volumeAttenuation;
   }
 
   if (cb.sparseRenderingArgs.mode != SparseRenderingMode::Off &&

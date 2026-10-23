@@ -114,4 +114,7 @@ struct CompositeArgs {
 
   uint isZUp;
   uint enableCoverageAov;
+  // DS1 look: the sky raster mapping of Ds1AmbientArgs::skyGamma / skyUnexpose (fork_ds1_ambient.h).
+  uint ds1SkyGamma;
+  float ds1SkyUnexpose;
 };

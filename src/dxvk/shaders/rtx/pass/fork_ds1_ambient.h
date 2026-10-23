@@ -16,12 +16,36 @@ struct Ds1AmbientArgs {
   vec4 cube[6];
 
   uint enable;
+  // DS1 look (rtx_dark_souls_look.h): 0 = sky radiance as rasterized; 1 = the sky raster holds the
+  // game's 8-bit sky value as is (skyForceHDR), 2 = sRGB-decoded (8-bit sky target). Either way it
+  // becomes (value * skyUnexpose)^2.2, the radiance the DS1 scene pass maps back to that value.
+  uint skyGamma;
+  // c135.y / c135.x: the game's sky shader already applied its exposure.
+  float skyUnexpose;
   uint pad0;
-  uint pad1;
-  uint pad2;
 };
 
 #ifndef __cplusplus
+// The game's own sky raster as radiance in the space the DS1 look's scene pass expects.
+vec3 ds1SkyRadiance(uint skyGamma, float skyUnexpose, vec3 raster)
+{
+  if (skyGamma == 0)
+  {
+    return raster;
+  }
+  vec3 s = max(raster, vec3(0.0f));
+  if (skyGamma == 2)
+  {
+    s = lerp(s * 12.92f, 1.055f * pow(s, vec3(1.0f / 2.4f)) - 0.055f, step(vec3(0.0031308f), s));
+  }
+  return pow(max(s * skyUnexpose, vec3(0.0f)), vec3(2.2f));
+}
+
+vec3 ds1SkyRadiance(Ds1AmbientArgs args, vec3 raster)
+{
+  return ds1SkyRadiance(args.skyGamma, args.skyUnexpose, raster);
+}
+
 // Ambient-cube radiance for a direction: each axis weighted by its squared component.
 vec3 ds1AmbientRadiance(Ds1AmbientArgs args, vec3 direction)
 {

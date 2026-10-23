@@ -114,6 +114,7 @@ namespace dxvk {
   , m_darkSoulsDof(device)
   , m_darkSoulsGrading(device)
   , m_darkSoulsHaze(device)
+  , m_darkSoulsLook(device)
   {
   }
 

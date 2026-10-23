@@ -239,6 +239,8 @@ dxvk_src = files([
   'rtx_render/rtx_dark_souls_exposure.h',
   'rtx_render/rtx_dark_souls_haze.cpp',
   'rtx_render/rtx_dark_souls_haze.h',
+  'rtx_render/rtx_dark_souls_look.cpp',
+  'rtx_render/rtx_dark_souls_look.h',
   'rtx_render/rtx_ds1_menu.cpp',
   'rtx_render/rtx_ds1_menu.h',
   'rtx_render/rtx_legacy_specular.cpp',

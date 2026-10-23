@@ -747,6 +747,14 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   {
     albedo = gammaToLinear(albedo);
   }
+  // Fork (DS1 look): the game lights its textures' stored values in gamma space; that stored value
+  // to the 2.2 power keeps a gamma-space product a linear-space product exactly (x^(1/2.2) output).
+  if (cb.opaqueMaterialArgs.ds1GammaAlbedo != 0)
+  {
+    const vec3 lo = albedo * 12.92f;
+    const vec3 hi = 1.055f * pow(max(albedo, vec3(0.0f)), vec3(1.0f / 2.4f)) - 0.055f;
+    albedo = pow(max(lerp(lo, hi, step(vec3(0.0031308f), albedo)), vec3(0.0f)), vec3(2.2f));
+  }
 
   // Apply material modifiers/overrides
   albedo = saturate(albedo * cb.opaqueMaterialArgs.albedoScale + cb.opaqueMaterialArgs.albedoBias);
