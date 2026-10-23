@@ -554,6 +554,10 @@ namespace dxvk {
     RemixGui::Checkbox("Game Bloom", &bloomEnableObject());
     RemixGui::Checkbox("Game Depth of Field", &dofEnableObject());
     RemixGui::Checkbox("Gamma-Space Albedo (game texture multiply)", &gammaAlbedoObject());
+    ImGui::BeginDisabled(!gammaAlbedo());
+    RemixGui::DragFloat("Bounce Albedo Power (2.2 = game)", &bounceAlbedoGammaObject(), 0.01f, 0.5f, 2.2f, "%.2f",
+                        ImGuiSliderFlags_AlwaysClamp);
+    ImGui::EndDisabled();
     if (!gameActive()) {
       ImGui::TextDisabled("No ColAdj values from the game yet.");
     } else {

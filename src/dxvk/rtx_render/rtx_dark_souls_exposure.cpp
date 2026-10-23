@@ -45,9 +45,15 @@ namespace dxvk {
       ImGui::Text("game exposure %.3f (gamma)  ->  Remix exposure %.3f (linear)", gameExposure(), factor());
     }
     RemixGui::Checkbox("Meter Remix's Frame (the game's meter)", &meterFrameObject());
+    ImGui::BeginDisabled(!meterFrame());
+    RemixGui::DragFloat("Exposure Floor (1 = game's limit)", &minLumScaleObject(), 0.005f, 0.05f, 1.0f, "%.2f",
+                        ImGuiSliderFlags_AlwaysClamp);
+    ImGui::EndDisabled();
     if (metering()) {
       ImGui::Text("metered lum %.4f  ->  E %.3f, exposure %.3f (game's own value %.3f)",
                   s_meteredLum, s_adapted, gameExposureValue(), gameExposure());
+      ImGui::Text("luminance clamp %.3f .. %.3f (game's %.3f .. %.3f)", adaptMinLum() * std::max(minLumScale(), 0.01f),
+                  adaptMaxLum(), adaptMinLum(), adaptMaxLum());
     }
     ImGui::Unindent();
   }
