@@ -1543,6 +1543,7 @@ namespace dxvk {
       const float exposure = exp2f(DxvkToneMapping::exposureBias() + RtxOptions::calcUserEVBias()) * DxvkDarkSoulsExposure::factor() * metered;
       constants.opaqueMaterialArgs.unlitExposureCompensation = exposure > 0.f ? 1.0f / exposure : 1.0f;
       constants.opaqueMaterialArgs.ds1GammaAlbedo = DxvkDarkSoulsLook::isActive() && DxvkDarkSoulsLook::gammaAlbedo() ? 1u : 0u;
+      constants.opaqueMaterialArgs.ds1BounceAlbedoGamma = std::max(DxvkDarkSoulsLook::bounceAlbedoGamma(), 0.1f);
     }
     TranslucentMaterialOptions::fillShaderParams(constants.translucentMaterialArgs);
     {

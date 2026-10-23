@@ -69,6 +69,10 @@ namespace dxvk {
     RTX_OPTION("rtx.ds1Look", bool, gammaAlbedo, true,
                "Albedo = the texture's stored value^2.2 instead of its sRGB decode, so the path tracer's linear product "
                "albedo * light is the game's gamma-space product raised to 2.2 (output is encoded with x^(1/2.2)).");
+    RTX_OPTION("rtx.ds1Look", float, bounceAlbedoGamma, 2.2f,
+               "With gammaAlbedo: the power the stored value is raised to on the surfaces indirect light bounces off. "
+               "2.2 = the same albedo as surfaces seen directly; lower carries more light into enclosed spaces, where "
+               "the game's baked ambient has no path-traced counterpart. Surfaces seen directly are unaffected.");
 
     // Game state, set by the proxy from the ColAdj draw. Never saved.
     RTX_OPTION_FLAG("rtx.ds1Look", bool, gameActive, false, RtxOptionFlags::NoSave,

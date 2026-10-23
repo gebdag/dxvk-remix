@@ -19,7 +19,7 @@ namespace dxvk {
       s_adapted = (gameActive() ? gameExposure() : 1.0f) * exposureDivisor();
       s_haveAdapted = true;
     }
-    const float clamped = std::min(std::max(lum, adaptMinLum()), adaptMaxLum());
+    const float clamped = std::min(std::max(lum, adaptMinLum() * std::max(minLumScale(), 0.01f)), adaptMaxLum());
     const float target = adaptKey() / (clamped + 0.001f);
     const float k = 1.0f - std::exp2(-0.874390364f * adaptRate());
     s_adapted += k * (target - s_adapted);

@@ -753,7 +753,14 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   {
     const vec3 lo = albedo * 12.92f;
     const vec3 hi = 1.055f * pow(max(albedo, vec3(0.0f)), vec3(1.0f / 2.4f)) - 0.055f;
-    albedo = pow(max(lerp(lo, hi, step(vec3(0.0031308f), albedo)), vec3(0.0f)), vec3(2.2f));
+    const vec3 stored = max(lerp(lo, hi, step(vec3(0.0031308f), albedo)), vec3(0.0f));
+#ifdef INTEGRATE_INDIRECT
+    // The surfaces indirect light bounces off: rtx.ds1Look.bounceAlbedoGamma (below 2.2 carries more
+    // light through enclosed spaces; surfaces seen directly keep the game's albedo).
+    albedo = pow(stored, vec3(cb.opaqueMaterialArgs.ds1BounceAlbedoGamma));
+#else
+    albedo = pow(stored, vec3(2.2f));
+#endif
   }
 
   // Apply material modifiers/overrides

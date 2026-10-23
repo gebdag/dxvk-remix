@@ -58,7 +58,9 @@ struct OpaqueMaterialArgs {
   // Fork (DS1 look): 1 = the game multiplies its textures' stored, gamma-encoded values, so the
   // albedo becomes that stored value raised to 2.2 (see rtx_dark_souls_look.h).
   uint ds1GammaAlbedo = 0;
-  uint pad1 = 0;
+  // Fork (DS1 look): with ds1GammaAlbedo, the power the stored value is raised to on the surfaces
+  // indirect light bounces off (INTEGRATE_INDIRECT); 2.2 = the same albedo as primary surfaces.
+  float ds1BounceAlbedoGamma = 2.2f;
   uint pad2 = 0;
 };
 

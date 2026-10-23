@@ -82,6 +82,9 @@ namespace dxvk {
                     "Set by the DS1 proxy once it has read the game's adaptation constants.");
     RTX_OPTION_FLAG("rtx.ds1Exposure", float, adaptRate, 0.05f, RtxOptionFlags::NoSave, "Adaptation rate (PS c54.x).");
     RTX_OPTION_FLAG("rtx.ds1Exposure", float, adaptMinLum, 0.1f, RtxOptionFlags::NoSave, "Luminance clamp minimum (PS c54.y).");
+    RTX_OPTION("rtx.ds1Exposure", float, minLumScale, 1.0f,
+               "Scale on the game's luminance clamp minimum while metering Remix's frame: below 1 the exposure can rise "
+               "past the game's limit where the path-traced frame is darker than the game's baked one.");
     RTX_OPTION_FLAG("rtx.ds1Exposure", float, adaptMaxLum, 0.15f, RtxOptionFlags::NoSave, "Luminance clamp maximum (PS c54.z).");
     RTX_OPTION_FLAG("rtx.ds1Exposure", float, adaptKey, 0.19f, RtxOptionFlags::NoSave, "Key (PS c54.w).");
     RTX_OPTION_FLAG("rtx.ds1Exposure", float, exposureDivisor, 1.3f, RtxOptionFlags::NoSave,
