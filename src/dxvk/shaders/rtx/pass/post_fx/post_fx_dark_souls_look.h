@@ -62,6 +62,26 @@
 
 #define DS_LOOK_MAX_TAPS 64
 
+// Meter: the game's luminance meter (FRPG_Fil_SampleLumInitial / SampleLumFinal) on the scene pass
+// output, which is what the game meters: its 8-bit scene, downsampled to the bright pass size
+// (256x180), decoded by c56.z * c56.w = c135.y / c135.x, luminance (0.2125, 0.7154, 0.0721),
+// ln with a floor of ln(1e-4), averaged and exponentiated. One thread per grid cell; each group
+// writes the sum of its cells' ln to Partials, the CPU adds them up.
+#define POST_FX_DS_LOOK_METER_SCENE          0
+#define POST_FX_DS_LOOK_METER_PARTIALS       1
+#define POST_FX_DS_LOOK_METER_CONSTANTS      2
+#define DS_LOOK_METER_GROUP                  16
+
+struct PostFxDarkSoulsLookMeterArgs {
+  uvec2 gridSize;       // the game's meter source size, its bright pass size
+  uvec2 sceneSize;
+
+  float exposure;       // the frame's exposure, c135.x / c135.y: the decode divides by it
+  uint groupsX;
+  uint pad0;
+  uint pad1;
+};
+
 struct PostFxDarkSoulsLookSceneArgs {
   // The game's c135.x / c135.y: Remix radiance^(1/2.2) times this is the 8-bit scene value.
   float exposure;

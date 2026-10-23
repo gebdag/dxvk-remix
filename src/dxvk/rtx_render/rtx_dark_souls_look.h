@@ -107,6 +107,9 @@ namespace dxvk {
                              const Resources::Resource& output, float sigmaX, float sigmaY);
     void dispatchFilter(Rc<DxvkContext>& ctx, const Rc<DxvkBuffer>& constants, const Resources::Resource& input,
                         const Resources::Resource& output, const vec4* taps, uint32_t tapCount, bool gated = false);
+    // The game's luminance meter on the scene pass output; adapts DxvkDarkSoulsExposure with the
+    // value read back kMeterSlots - 1 frames later.
+    void dispatchMeter(Rc<DxvkContext>& ctx, const Resources::Resource& scene, float exposure);
     Rc<DxvkBuffer> makeConstants(size_t size, const char* name);
 
     DxvkDevice* m_device;
@@ -133,6 +136,16 @@ namespace dxvk {
     VkExtent3D m_dofExtent = { 0, 0, 0 };
     uint32_t m_baseWidth = 0;
     uint32_t m_baseHeight = 0;
+
+    // Meter: per-group ln sums, and a ring of host copies read kMeterSlots - 1 frames later
+    // (long finished on the GPU), as DxvkAutoExposure reads its exposure back.
+    static constexpr uint32_t kMeterSlots = 4;
+    Rc<DxvkBuffer> m_meterConstants;
+    Rc<DxvkBuffer> m_meterPartials;
+    Rc<DxvkBuffer> m_meterReadback;
+    uint32_t m_meterGroups = 0;                // partials per slot
+    uint32_t m_meterCells[kMeterSlots] = {};   // grid cells each slot's sums cover, 0 = empty
+    uint32_t m_meterFrame = 0;
   };
 
 } // namespace dxvk
