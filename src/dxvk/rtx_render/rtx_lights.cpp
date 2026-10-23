@@ -252,7 +252,10 @@ void RtSphereLight::writeGPUData(unsigned char* data, std::size_t& offset) const
 
   m_shaping.writeGPUData(data, offset);
 
-  writeGPUPadding<24>(data, offset);
+  // Fork (DS1): the game's falloff range (data2.xy), end 0 = inverse square as usual.
+  writeGPUHelper(data, offset, m_ds1FalloffBegin);
+  writeGPUHelper(data, offset, m_ds1FalloffEnd);
+  writeGPUPadding<16>(data, offset);
 
   writeGPUDataVolumetricRadianceScale(data, oldOffset, offset, m_volumetricRadianceScale);
 

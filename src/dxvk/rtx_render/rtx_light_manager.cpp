@@ -26,6 +26,7 @@
 #include <limits>
 
 #include "rtx_light_manager.h"
+#include "rtx_dark_souls_light_falloff.h"
 #include "rtx_context.h"
 #include "rtx_options.h"
 #include "rtx_utils.h"
@@ -371,6 +372,8 @@ namespace dxvk {
     for (auto& handle : m_externalActiveLightList) {
       auto found = m_externalLights.find(handle);
       if (found != m_externalLights.end()) {
+        // Fork (DS1): the game's falloff for the lights the proxy lists (by API hash = handle).
+        DxvkDarkSoulsLightFalloff::apply(reinterpret_cast<uint64_t>(handle), found->second);
         m_linearizedLights.emplace_back(&found->second);
      }
     }

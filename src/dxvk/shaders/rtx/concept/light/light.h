@@ -67,6 +67,10 @@ struct SphereLight
   float radius; // Note: Assumed to be >0 always to avoid point light case
   vec3 radiance;
   LightShaping shaping;
+  // Fork (DS1): the game's point light falloff, flat to begin and linear to zero at end, instead of
+  // inverse square while ds1FalloffEnd > 0 (rtx_dark_souls_light_falloff.h).
+  float ds1FalloffBegin;
+  float ds1FalloffEnd;
 };
 
 struct RectLight

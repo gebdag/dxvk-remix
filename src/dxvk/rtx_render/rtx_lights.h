@@ -163,6 +163,14 @@ struct RtSphereLight {
     return m_volumetricRadianceScale;
   }
 
+  // Fork (DS1): light with the game's point light falloff, saturate((end - d) / (end - begin)),
+  // instead of inverse square while end > 0 (rtx_dark_souls_light_falloff.h). Written into the
+  // light's GPU padding; not part of its hash.
+  void setDs1Falloff(float begin, float end) {
+    m_ds1FalloffBegin = begin;
+    m_ds1FalloffEnd = end;
+  }
+
 private:
   static constexpr float kVolumetricRadianceScaleDefaultValue{ 1.0f };
   static constexpr XXH64_hash_t kForceHashDefaultValue{ kEmptyHash };
@@ -178,6 +186,8 @@ private:
   float m_radius;
   RtLightShaping m_shaping;
   float m_volumetricRadianceScale;
+  float m_ds1FalloffBegin = 0.0f;
+  float m_ds1FalloffEnd = 0.0f;
 
   XXH64_hash_t m_cachedHash;
 };
@@ -486,6 +496,13 @@ struct RtLight {
   void applyTransform(const Matrix4& lightToWorld);
 
   void writeGPUData(unsigned char* data, std::size_t& offset) const;
+
+  // Fork (DS1): see RtSphereLight::setDs1Falloff. Other light types ignore it.
+  void setDs1Falloff(float begin, float end) {
+    if (m_type == RtLightType::Sphere) {
+      m_sphereLight.setDs1Falloff(begin, end);
+    }
+  }
 
   RtLight& operator=(const RtLight& rtLight);
   

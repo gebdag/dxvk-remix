@@ -23,12 +23,27 @@
 
 // Sphere Light Helper Functions
 
+// Fork (DS1): the game's point light falloff in linear space, att^2.2 with
+// att = saturate((end - d) / (end - begin)) (rtx_dark_souls_light_falloff.h).
+float sphereLightCalcDs1Attenuation(SphereLight sphereLight, float lightDistance)
+{
+  const float range = max(sphereLight.ds1FalloffEnd - sphereLight.ds1FalloffBegin, 1e-4f);
+  const float att = saturate((sphereLight.ds1FalloffEnd - lightDistance) / range);
+  return pow(att, 2.2f);
+}
+
 // Note: Light vector information outputted to allow for no duplicate math for visibility weighting.
 float sphereLightCalcPositionalWeight(SphereLight sphereLight, vec3 position, inout vec3 lightVector)
 {
   lightVector = sphereLight.position - position;
 
   const float lightDistance2 = squareLength(lightVector);
+
+  // Fork (DS1): with the game's falloff the irradiance is pi * radiance * att^2.2, zero past its end.
+  if (sphereLight.ds1FalloffEnd > 0.0f)
+  {
+    return calcBt709Luminance(pi * sphereLight.radiance) * sphereLightCalcDs1Attenuation(sphereLight, sqrt(lightDistance2));
+  }
 
   // Note: Treat the light as a point light and get the incoming luminance to the viewer
   return safePositiveDivide(
@@ -64,6 +79,8 @@ SphereLight sphereLightCreate(DecodedPolymorphicLight decodedPolymorphicLight)
   sphereLight.radius = uint16BitsToF32(data03.x);
   sphereLight.radiance = decodedPolymorphicLight.radiance;
   sphereLight.shaping = decodedPolymorphicLight.shaping;
+  sphereLight.ds1FalloffBegin = uintBitsToFloat(decodedPolymorphicLight.data2.x);
+  sphereLight.ds1FalloffEnd = uintBitsToFloat(decodedPolymorphicLight.data2.y);
 
   return sphereLight;
 }
@@ -175,6 +192,13 @@ LightSample sphereLightSampleArea(SphereLight sphereLight, vec2 sampleCoordinate
   lightSample.normal = sphereNormalSample;
   lightSample.radiance = sphereLight.radiance * lightShaping;
   lightSample.solidAnglePdf = solidAnglePdf;
+
+  // Fork (DS1): the game's falloff instead of inverse square. Sampled over the cone (radiance / pdf),
+  // radiance * pi * att^2.2 * pdf integrates to pi * radiance * att^2.2 at any distance.
+  if (sphereLight.ds1FalloffEnd > 0.0f)
+  {
+    lightSample.radiance *= pi * solidAnglePdf * sphereLightCalcDs1Attenuation(sphereLight, lightDistance);
+  }
 
   return lightSample;
 }
