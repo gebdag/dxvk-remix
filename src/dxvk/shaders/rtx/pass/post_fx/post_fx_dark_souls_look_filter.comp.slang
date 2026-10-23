@@ -1,6 +1,7 @@
 // Fork: the game's bloom filter passes (FRPG_Fil_GaussBlur5x5, FRPG_Fil_Dof_DownSample,
-// FRPG_Fil_Bloom): a weighted sum of bilinear taps at offsets in input texels, rgba alike
-// (alpha carries the bright pass's depth rate). See post_fx_dark_souls_look.h.
+// FRPG_Fil_Bloom) and the DoF level blurs: a weighted sum of bilinear taps at offsets in input
+// texels, rgba alike (alpha carries the bloom depth rate or the DoF rate). See
+// post_fx_dark_souls_look.h.
 
 #include "rtx/pass/post_fx/post_fx_dark_souls_look.h"
 #include "rtx/utility/common.slangh"

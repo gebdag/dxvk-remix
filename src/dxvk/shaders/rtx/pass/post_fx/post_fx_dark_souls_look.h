@@ -26,17 +26,13 @@
 #define POST_FX_DS_LOOK_BRIGHT_OUTPUT        2
 #define POST_FX_DS_LOOK_BRIGHT_CONSTANTS     3
 
-// Box reduce: the game's one-tap downsample of the full frame, as a footprint average.
-#define POST_FX_DS_LOOK_REDUCE_INPUT         0
-#define POST_FX_DS_LOOK_REDUCE_OUTPUT        1
-#define POST_FX_DS_LOOK_REDUCE_CONSTANTS     2
-
 // Near rate: FRPG_Fil_Dof_NearRate and UnfocusNearRate3x3 (rate from depth, dilated).
 #define POST_FX_DS_LOOK_NEAR_LINEAR_VIEW_Z   0
 #define POST_FX_DS_LOOK_NEAR_OUTPUT          1
 #define POST_FX_DS_LOOK_NEAR_CONSTANTS       2
 
-// DoF blend: FRPG_Fil_Dof.
+// DoF blend: FRPG_Fil_Dof. Its three blur levels are full-resolution Gaussians with the spread
+// the game's 512x360 / 256x180 chain has on screen (rtx_dark_souls_look.cpp), not low-res copies.
 #define POST_FX_DS_LOOK_DOF_INOUT            0
 #define POST_FX_DS_LOOK_DOF_LEVEL1           1
 #define POST_FX_DS_LOOK_DOF_LEVEL2           2
@@ -55,7 +51,7 @@
 #define POST_FX_DS_LOOK_COMPOSITE_BLOOM      1
 #define POST_FX_DS_LOOK_COMPOSITE_CONSTANTS  2
 
-#define DS_LOOK_MAX_TAPS 16
+#define DS_LOOK_MAX_TAPS 64
 
 struct PostFxDarkSoulsLookSceneArgs {
   // The game's c135.x / c135.y: Remix radiance^(1/2.2) times this is the 8-bit scene value.
@@ -73,11 +69,6 @@ struct PostFxDarkSoulsLookSceneArgs {
   uint pad2;
 };
 
-struct PostFxDarkSoulsLookReduceArgs {
-  uvec2 outputSize;
-  uvec2 inputSize;
-};
-
 struct PostFxDarkSoulsLookNearArgs {
   uvec2 outputSize;
   vec2 depthJitterUv;
@@ -86,6 +77,11 @@ struct PostFxDarkSoulsLookNearArgs {
   float nearBegin;      // c10.x: near rate = sat((viewZ - c10.x) / (c10.y - c10.x)) * c10.z
   float nearEnd;        // c10.y
   float nearStrength;   // c10.z
+
+  // The UnfocusNearRate3x3 dilation footprint: one texel of the game's half-size DoF level, in UV.
+  vec2 dilationUv;
+  uint pad0;
+  uint pad1;
 };
 
 struct PostFxDarkSoulsLookDofArgs {

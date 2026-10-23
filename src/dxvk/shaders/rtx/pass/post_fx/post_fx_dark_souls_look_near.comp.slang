@@ -1,6 +1,7 @@
 // Fork: FRPG_Fil_Dof_NearRate then FRPG_Fil_Dof_UnfocusNearRate3x3 (see post_fx_dark_souls_look.h):
-// the near DoF rate sat((viewZ - c10.x) / (c10.y - c10.x)) * c10.z at the texel and its four
-// Unfocus3x3 neighbours, taking the largest (the game dilates the rate it wrote).
+// the near DoF rate sat((viewZ - c10.x) / (c10.y - c10.x)) * c10.z at the pixel and at its four
+// Unfocus3x3 neighbours one half-size DoF texel away (the game's footprint), taking the largest.
+// Computed at full resolution.
 
 #include "rtx/pass/post_fx/post_fx_dark_souls_look.h"
 #include "rtx/utility/common.slangh"
@@ -9,7 +10,7 @@ layout(binding = POST_FX_DS_LOOK_NEAR_LINEAR_VIEW_Z)
 Texture2D<float> LinearViewZ;
 
 layout(binding = POST_FX_DS_LOOK_NEAR_OUTPUT)
-RWTexture2D<float4> Output;
+RWTexture2D<float> Output;
 
 layout(binding = POST_FX_DS_LOOK_NEAR_CONSTANTS)
 ConstantBuffer<PostFxDarkSoulsLookNearArgs> cb;
@@ -37,13 +38,13 @@ void main(uint2 texel : SV_DispatchThreadID)
     return;
   }
 
-  const vec2 texelSize = 1.0f / vec2(cb.outputSize);
-  const vec2 uv = (vec2(texel) + 0.5f) * texelSize;
+  const vec2 uv = (vec2(texel) + 0.5f) / vec2(cb.outputSize);
+  const vec2 step = cb.dilationUv;
   // The Unfocus3x3 tap pattern (its vertex shader): (1, 0.28) and that rotated by 90 degrees.
   float rate = nearRate(uv);
-  rate = max(rate, nearRate(uv + vec2(1.0f, 0.28f) * texelSize));
-  rate = max(rate, nearRate(uv - vec2(1.0f, 0.28f) * texelSize));
-  rate = max(rate, nearRate(uv + vec2(0.28f, -1.0f) * texelSize));
-  rate = max(rate, nearRate(uv - vec2(0.28f, -1.0f) * texelSize));
-  Output[texel] = vec4(0.0f, 0.0f, 0.0f, rate);
+  rate = max(rate, nearRate(uv + vec2(1.0f, 0.28f) * step));
+  rate = max(rate, nearRate(uv - vec2(1.0f, 0.28f) * step));
+  rate = max(rate, nearRate(uv + vec2(0.28f, -1.0f) * step));
+  rate = max(rate, nearRate(uv - vec2(0.28f, -1.0f) * step));
+  Output[texel] = rate;
 }

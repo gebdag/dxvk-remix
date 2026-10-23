@@ -100,6 +100,11 @@ namespace dxvk {
 
   private:
     void ensureResources(Rc<DxvkContext>& ctx, uint32_t width, uint32_t height);
+    void ensureDofResources(Rc<DxvkContext>& ctx, const VkExtent3D& extent);
+    // One separable Gaussian pass pair (horizontal then vertical) of the given spread in pixels,
+    // gated by the DoF rate in alpha like the game's Unfocus3x3.
+    void dispatchDofGaussian(Rc<DxvkContext>& ctx, int constantsIndex, const Resources::Resource& input,
+                             const Resources::Resource& output, float sigmaX, float sigmaY);
     void dispatchFilter(Rc<DxvkContext>& ctx, const Rc<DxvkBuffer>& constants, const Resources::Resource& input,
                         const Resources::Resource& output, const vec4* taps, uint32_t tapCount, bool gated = false);
     Rc<DxvkBuffer> makeConstants(size_t size, const char* name);
@@ -112,18 +117,18 @@ namespace dxvk {
     Rc<DxvkBuffer> m_brightConstants;
     Rc<DxvkBuffer> m_filterConstants[5];
     Rc<DxvkBuffer> m_compositeConstants;
-    Rc<DxvkBuffer> m_reduceConstants;
     Rc<DxvkBuffer> m_nearConstants;
-    Rc<DxvkBuffer> m_dofFilterConstants[4];
+    Rc<DxvkBuffer> m_dofFilterConstants[6];
     Rc<DxvkBuffer> m_dofConstants;
 
     // Bright pass size (the game's 256x180 for a 512x360 DoF buffer) and half that.
     Resources::Resource m_base[2];
     Resources::Resource m_half[2];
-    // DoF levels: the full frame's downsample (twice the bright pass size), its Unfocus3x3, the
-    // half-size unfocus brought back up; at half size the downsample, its unfocus, the near rate.
-    Resources::Resource m_dofDown, m_dofUnfocus, m_dofUp;
-    Resources::Resource m_dofHalfDown, m_dofHalfUnfocus, m_dofNear;
+    // DoF: three full-resolution blur levels, a scratch target for the separable passes, the near rate.
+    Resources::Resource m_dofLevel[3];
+    Resources::Resource m_dofScratch;
+    Resources::Resource m_dofNear;
+    VkExtent3D m_dofExtent = { 0, 0, 0 };
     uint32_t m_baseWidth = 0;
     uint32_t m_baseHeight = 0;
   };

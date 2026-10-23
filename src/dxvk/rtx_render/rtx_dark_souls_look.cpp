@@ -13,7 +13,6 @@
 #include <rtx_shaders/post_fx_dark_souls_look_bright.h>
 #include <rtx_shaders/post_fx_dark_souls_look_filter.h>
 #include <rtx_shaders/post_fx_dark_souls_look_composite.h>
-#include <rtx_shaders/post_fx_dark_souls_look_reduce.h>
 #include <rtx_shaders/post_fx_dark_souls_look_near.h>
 #include <rtx_shaders/post_fx_dark_souls_look_dof.h>
 
@@ -66,17 +65,6 @@ namespace dxvk {
     };
     PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookCompositeShader);
 
-    class PostFxDarkSoulsLookReduceShader : public ManagedShader {
-      SHADER_SOURCE(PostFxDarkSoulsLookReduceShader, VK_SHADER_STAGE_COMPUTE_BIT, post_fx_dark_souls_look_reduce)
-
-      BEGIN_PARAMETER()
-        TEXTURE2D(POST_FX_DS_LOOK_REDUCE_INPUT)
-        RW_TEXTURE2D(POST_FX_DS_LOOK_REDUCE_OUTPUT)
-        CONSTANT_BUFFER(POST_FX_DS_LOOK_REDUCE_CONSTANTS)
-      END_PARAMETER()
-    };
-    PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookReduceShader);
-
     class PostFxDarkSoulsLookNearShader : public ManagedShader {
       SHADER_SOURCE(PostFxDarkSoulsLookNearShader, VK_SHADER_STAGE_COMPUTE_BIT, post_fx_dark_souls_look_near)
 
@@ -101,17 +89,6 @@ namespace dxvk {
       END_PARAMETER()
     };
     PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookDofShader);
-
-    // FRPG_Fil_Dof_Unfocus3x3: four taps, (1, 0.28) texels and that rotated, each weighted 0.212121.
-    constexpr float kUnfocusWeight = 0.212120995f;
-    const vec4 kUnfocus[4] = {
-      { 1.0f, 0.28f, kUnfocusWeight, 0 }, { -1.0f, -0.28f, kUnfocusWeight, 0 },
-      { 0.28f, -1.0f, kUnfocusWeight, 0 }, { -0.28f, 1.0f, kUnfocusWeight, 0 },
-    };
-    // FRPG_Fil_Dof_BlurUpSample: the four half-texel diagonals of the half-size input, 0.25 each.
-    const vec4 kBlurUpSample[4] = {
-      { 0.5f, 0.5f, 0.25f, 0 }, { -0.5f, -0.5f, 0.25f, 0 }, { 0.5f, -0.5f, 0.25f, 0 }, { -0.5f, 0.5f, 0.25f, 0 },
-    };
 
     // The game's kernels, read from its draws (PS c22..c36 offsets, c38..c52 weights). Offsets
     // are in texels of the pass's input.
@@ -139,6 +116,35 @@ namespace dxvk {
     }
 
     vec4 toVec4(const Vector4& v) { return vec4 { v.x, v.y, v.z, v.w }; }
+
+    // Spread (standard deviation per axis, in texels of the game's 512x360 DoF level) of the
+    // game's three DoF levels as they reach the screen, measured by running its chain on point
+    // sources: the downsample read back bilinearly, that after Unfocus3x3, and the 256x180
+    // Unfocus3x3 after BlurUpSample.
+    constexpr float kDofLevelSigma[3] = { 0.41f, 0.84f, 2.02f };
+
+    // One side of a normalised Gaussian as bilinear taps (pairs of texels merged into one tap at
+    // their weighted position); the centre texel is not a tap, the gated filter keeps its weight.
+    uint32_t gaussianTaps(float sigma, bool vertical, vec4* taps, uint32_t maxTaps) {
+      if (sigma <= 0.0f) {
+        return 0;
+      }
+      const int radius = std::max(1, int(std::ceil(3.0f * sigma)));
+      float norm = 0.0f;
+      for (int k = -radius; k <= radius; ++k) {
+        norm += std::exp(-0.5f * float(k * k) / (sigma * sigma));
+      }
+      uint32_t count = 0;
+      for (int k = 1; k <= radius && count + 2 <= maxTaps; k += 2) {
+        const float w0 = std::exp(-0.5f * float(k * k) / (sigma * sigma)) / norm;
+        const float w1 = k + 1 <= radius ? std::exp(-0.5f * float((k + 1) * (k + 1)) / (sigma * sigma)) / norm : 0.0f;
+        const float w = w0 + w1;
+        const float o = (float(k) * w0 + float(k + 1) * w1) / w;
+        taps[count++] = vertical ? vec4 { 0.0f, o, w, 0.0f } : vec4 { o, 0.0f, w, 0.0f };
+        taps[count++] = vertical ? vec4 { 0.0f, -o, w, 0.0f } : vec4 { -o, 0.0f, w, 0.0f };
+      }
+      return count;
+    }
   }
 
   DxvkDarkSoulsLook::DxvkDarkSoulsLook(DxvkDevice* device)
@@ -171,7 +177,6 @@ namespace dxvk {
         c = makeConstants(sizeof(PostFxDarkSoulsLookFilterArgs), "DS1 Look Filter Constants");
       }
       m_compositeConstants = makeConstants(sizeof(PostFxDarkSoulsLookCompositeArgs), "DS1 Look Composite Constants");
-      m_reduceConstants = makeConstants(sizeof(PostFxDarkSoulsLookReduceArgs), "DS1 Look Reduce Constants");
       m_nearConstants = makeConstants(sizeof(PostFxDarkSoulsLookNearArgs), "DS1 Look Near Constants");
       for (auto& c : m_dofFilterConstants) {
         c = makeConstants(sizeof(PostFxDarkSoulsLookFilterArgs), "DS1 Look DoF Filter Constants");
@@ -189,14 +194,29 @@ namespace dxvk {
       m_base[i] = Resources::createImageResource(ctx, "DS1 look bloom base", base, VK_FORMAT_R16G16B16A16_SFLOAT);
       m_half[i] = Resources::createImageResource(ctx, "DS1 look bloom half", half, VK_FORMAT_R16G16B16A16_SFLOAT);
     }
-    // The game's DoF buffers are twice the bright pass size (512x360 for its 256x180).
-    const VkExtent3D dof { 2 * width, 2 * height, 1 };
-    m_dofDown = Resources::createImageResource(ctx, "DS1 look DoF down", dof, VK_FORMAT_R16G16B16A16_SFLOAT);
-    m_dofUnfocus = Resources::createImageResource(ctx, "DS1 look DoF unfocus", dof, VK_FORMAT_R16G16B16A16_SFLOAT);
-    m_dofUp = Resources::createImageResource(ctx, "DS1 look DoF up", dof, VK_FORMAT_R16G16B16A16_SFLOAT);
-    m_dofHalfDown = Resources::createImageResource(ctx, "DS1 look DoF half down", base, VK_FORMAT_R16G16B16A16_SFLOAT);
-    m_dofHalfUnfocus = Resources::createImageResource(ctx, "DS1 look DoF half unfocus", base, VK_FORMAT_R16G16B16A16_SFLOAT);
-    m_dofNear = Resources::createImageResource(ctx, "DS1 look DoF near", base, VK_FORMAT_R16G16B16A16_SFLOAT);
+
+  }
+
+  void DxvkDarkSoulsLook::ensureDofResources(Rc<DxvkContext>& ctx, const VkExtent3D& extent) {
+    if (m_dofLevel[0].isValid() && extent.width == m_dofExtent.width && extent.height == m_dofExtent.height) {
+      return;
+    }
+    m_dofExtent = extent;
+    const VkExtent3D size { extent.width, extent.height, 1 };
+    for (auto& level : m_dofLevel) {
+      level = Resources::createImageResource(ctx, "DS1 look DoF level", size, VK_FORMAT_R16G16B16A16_SFLOAT);
+    }
+    m_dofScratch = Resources::createImageResource(ctx, "DS1 look DoF scratch", size, VK_FORMAT_R16G16B16A16_SFLOAT);
+    m_dofNear = Resources::createImageResource(ctx, "DS1 look DoF near rate", size, VK_FORMAT_R16_SFLOAT);
+  }
+
+  void DxvkDarkSoulsLook::dispatchDofGaussian(Rc<DxvkContext>& ctx, int constantsIndex, const Resources::Resource& input,
+                                              const Resources::Resource& output, float sigmaX, float sigmaY) {
+    vec4 taps[DS_LOOK_MAX_TAPS];
+    const uint32_t horizontal = gaussianTaps(sigmaX, false, taps, DS_LOOK_MAX_TAPS);
+    dispatchFilter(ctx, m_dofFilterConstants[constantsIndex], input, m_dofScratch, taps, horizontal, true);
+    const uint32_t vertical = gaussianTaps(sigmaY, true, taps, DS_LOOK_MAX_TAPS);
+    dispatchFilter(ctx, m_dofFilterConstants[constantsIndex + 1], m_dofScratch, output, taps, vertical, true);
   }
 
   void DxvkDarkSoulsLook::dispatchScene(
@@ -274,47 +294,42 @@ namespace dxvk {
     ScopedGpuProfileZone(ctx, "Dark Souls 1 Look: DoF");
     ensureResources(ctx, std::max(bloomWidth(), 2), std::max(bloomHeight(), 2));
     const VkExtent3D extent = inOutColor.image->mipLevelExtent(0);
-    const VkExtent3D dofExtent = m_dofDown.image->mipLevelExtent(0);
-    const VkExtent3D halfExtent = m_dofHalfDown.image->mipLevelExtent(0);
+    ensureDofResources(ctx, extent);
 
-    // FRPG_Fil_Dof_DownSample of the frame (rgb, far rate in alpha).
-    {
-      PostFxDarkSoulsLookReduceArgs args = {};
-      args.outputSize = { dofExtent.width, dofExtent.height };
-      args.inputSize = { extent.width, extent.height };
-      ctx->writeToBuffer(m_reduceConstants, 0, sizeof(args), &args);
-      ctx->getCommandList()->trackResource<DxvkAccess::Read>(m_reduceConstants);
-      ctx->bindResourceView(POST_FX_DS_LOOK_REDUCE_INPUT, inOutColor.view, nullptr);
-      ctx->bindResourceView(POST_FX_DS_LOOK_REDUCE_OUTPUT, m_dofDown.view, nullptr);
-      ctx->bindResourceBuffer(POST_FX_DS_LOOK_REDUCE_CONSTANTS, DxvkBufferSlice(m_reduceConstants, 0, m_reduceConstants->info().size));
-      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookReduceShader::getShader());
-      const VkExtent3D workgroups = util::computeBlockCount(dofExtent, VkExtent3D { 16, 8, 1 });
-      ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
+    // The game's DoF level is twice its bright pass size (512x360 for 256x180): one of its texels
+    // covers this many output pixels.
+    const float texelX = float(extent.width) / float(2 * m_baseWidth);
+    const float texelY = float(extent.height) / float(2 * m_baseHeight);
+
+    // Three levels, each from the one before: the increment is the Gaussian that takes the
+    // previous spread to the next.
+    float previous = 0.0f;
+    for (int level = 0; level < 3; ++level) {
+      const float step = std::sqrt(std::max(kDofLevelSigma[level] * kDofLevelSigma[level] - previous * previous, 0.0f));
+      dispatchDofGaussian(ctx, 2 * level, level == 0 ? inOutColor : m_dofLevel[level - 1], m_dofLevel[level],
+                          step * texelX, step * texelY);
+      previous = kDofLevelSigma[level];
     }
 
-    // The game's order: Unfocus3x3, DownSample, Unfocus3x3, BlurUpSample.
-    dispatchFilter(ctx, m_dofFilterConstants[0], m_dofDown, m_dofUnfocus, kUnfocus, 4, true);
-    dispatchFilter(ctx, m_dofFilterConstants[1], m_dofDown, m_dofHalfDown, kDownsample2x, 1);
-    dispatchFilter(ctx, m_dofFilterConstants[2], m_dofHalfDown, m_dofHalfUnfocus, kUnfocus, 4, true);
-    dispatchFilter(ctx, m_dofFilterConstants[3], m_dofHalfUnfocus, m_dofUp, kBlurUpSample, 4, true);
-
-    // FRPG_Fil_Dof_NearRate + UnfocusNearRate3x3.
+    // FRPG_Fil_Dof_NearRate + UnfocusNearRate3x3, at full resolution with the game's footprint
+    // (one texel of its half-size level).
     {
       const VkExtent3D viewZExtent = linearViewZ.image->mipLevelExtent(0);
       PostFxDarkSoulsLookNearArgs args = {};
-      args.outputSize = { halfExtent.width, halfExtent.height };
+      args.outputSize = { extent.width, extent.height };
       args.depthJitterUv = { jitterOffset[0] / float(viewZExtent.width), jitterOffset[1] / float(viewZExtent.height) };
       args.missLinearViewZ = missLinearViewZ;
       args.nearBegin = dofNearBegin();
       args.nearEnd = dofNearEnd();
       args.nearStrength = dofNearStrength();
+      args.dilationUv = { 1.0f / float(m_baseWidth), 1.0f / float(m_baseHeight) };
       ctx->writeToBuffer(m_nearConstants, 0, sizeof(args), &args);
       ctx->getCommandList()->trackResource<DxvkAccess::Read>(m_nearConstants);
       ctx->bindResourceView(POST_FX_DS_LOOK_NEAR_LINEAR_VIEW_Z, linearViewZ.view, nullptr);
       ctx->bindResourceView(POST_FX_DS_LOOK_NEAR_OUTPUT, m_dofNear.view, nullptr);
       ctx->bindResourceBuffer(POST_FX_DS_LOOK_NEAR_CONSTANTS, DxvkBufferSlice(m_nearConstants, 0, m_nearConstants->info().size));
       ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookNearShader::getShader());
-      const VkExtent3D workgroups = util::computeBlockCount(halfExtent, VkExtent3D { 16, 8, 1 });
+      const VkExtent3D workgroups = util::computeBlockCount(extent, VkExtent3D { 16, 8, 1 });
       ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
     }
 
@@ -328,11 +343,11 @@ namespace dxvk {
       ctx->writeToBuffer(m_dofConstants, 0, sizeof(args), &args);
       ctx->getCommandList()->trackResource<DxvkAccess::Read>(m_dofConstants);
       ctx->bindResourceView(POST_FX_DS_LOOK_DOF_INOUT, inOutColor.view, nullptr);
-      ctx->bindResourceView(POST_FX_DS_LOOK_DOF_LEVEL1, m_dofDown.view, nullptr);
+      ctx->bindResourceView(POST_FX_DS_LOOK_DOF_LEVEL1, m_dofLevel[0].view, nullptr);
       ctx->bindResourceSampler(POST_FX_DS_LOOK_DOF_LEVEL1, m_linearSampler);
-      ctx->bindResourceView(POST_FX_DS_LOOK_DOF_LEVEL2, m_dofUnfocus.view, nullptr);
+      ctx->bindResourceView(POST_FX_DS_LOOK_DOF_LEVEL2, m_dofLevel[1].view, nullptr);
       ctx->bindResourceSampler(POST_FX_DS_LOOK_DOF_LEVEL2, m_linearSampler);
-      ctx->bindResourceView(POST_FX_DS_LOOK_DOF_LEVEL3, m_dofUp.view, nullptr);
+      ctx->bindResourceView(POST_FX_DS_LOOK_DOF_LEVEL3, m_dofLevel[2].view, nullptr);
       ctx->bindResourceSampler(POST_FX_DS_LOOK_DOF_LEVEL3, m_linearSampler);
       ctx->bindResourceView(POST_FX_DS_LOOK_DOF_NEAR, m_dofNear.view, nullptr);
       ctx->bindResourceSampler(POST_FX_DS_LOOK_DOF_NEAR, m_linearSampler);
