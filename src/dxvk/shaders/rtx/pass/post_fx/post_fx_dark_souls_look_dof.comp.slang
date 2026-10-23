@@ -1,5 +1,5 @@
 // Fork: FRPG_Fil_Dof (see post_fx_dark_souls_look.h). The blur rate is the larger of the far rate
-// in the scene's alpha and the dilated near rate; c66/c67 turn it into blend weights over four
+// (the scene pass's DoF rate texture) and the dilated near rate; c66/c67 turn it into blend weights over four
 // levels: the scene and three blurs. The game's levels are a 512x360 downsample, that unfocused,
 // and a 256x180 unfocus brought back up; here they are full-resolution Gaussians of the same
 // spread on screen, without the low-resolution blocks.
@@ -27,6 +27,9 @@ Sampler2D<float> Near;
 layout(binding = POST_FX_DS_LOOK_DOF_CONSTANTS)
 ConstantBuffer<PostFxDarkSoulsLookDofArgs> cb;
 
+layout(binding = POST_FX_DS_LOOK_DOF_RATE)
+Texture2D<float> Rate;
+
 [shader("compute")]
 [numthreads(16, 8, 1)]
 void main(uint2 pixel : SV_DispatchThreadID)
@@ -38,7 +41,7 @@ void main(uint2 pixel : SV_DispatchThreadID)
 
   const vec2 uv = (vec2(pixel) + 0.5f) * cb.invImageSize;
   const vec4 scene = InOutColor[pixel];
-  const float rate = max(scene.a, Near.SampleLevel(uv, 0));
+  const float rate = max(Rate[pixel], Near.SampleLevel(uv, 0));
   const vec4 w = saturate(rate * cb.blendScale + cb.blendBias);
   const vec3 col = scene.rgb * w.x
     + Level1.SampleLevel(uv, 0).rgb * (w.y - w.x)

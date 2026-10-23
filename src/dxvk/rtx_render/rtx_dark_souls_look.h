@@ -128,6 +128,8 @@ namespace dxvk {
     Resources::Resource m_dofLevel[3];
     Resources::Resource m_dofScratch;
     Resources::Resource m_dofNear;
+    // The far DoF rate, written by the scene pass (the frame's alpha belongs to whatever runs after it).
+    Resources::Resource m_dofRate;
     VkExtent3D m_dofExtent = { 0, 0, 0 };
     uint32_t m_baseWidth = 0;
     uint32_t m_baseHeight = 0;

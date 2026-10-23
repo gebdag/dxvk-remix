@@ -27,6 +27,9 @@ ConstantBuffer<PostFxDarkSoulsHazeArgs> haze;
 layout(binding = POST_FX_DS_LOOK_SCENE_CONSTANTS)
 ConstantBuffer<PostFxDarkSoulsLookSceneArgs> cb;
 
+layout(binding = POST_FX_DS_LOOK_SCENE_DOF_RATE)
+RWTexture2D<float> DofRate;
+
 [shader("compute")]
 [numthreads(16, 8, 1)]
 void main(uint2 pixel : SV_DispatchThreadID)
@@ -64,9 +67,10 @@ void main(uint2 pixel : SV_DispatchThreadID)
     g = lerp(g, g * ext * haze.surfaceTint + inscatter * haze.displayScale, haze.scatterBlend);
   }
 
-  // FRPG_Fil_Dof_DofRate: the far DoF rate into alpha (a miss is the sky, at the far plane).
+  // FRPG_Fil_Dof_DofRate: the far DoF rate (a miss is the sky, at the far plane), in its own
+  // texture: the game keeps it in its scene's alpha, but here other passes run before the DoF.
   const float rateZ = viewZ == haze.missLinearViewZ ? 1e9f : abs(viewZ);
-  const float farRate = saturate(saturate((rateZ - cb.dofFarBegin) / max(cb.dofFarEnd - cb.dofFarBegin, 1e-6f)) * cb.dofFarStrength);
+  DofRate[pixel] = saturate(saturate((rateZ - cb.dofFarBegin) / max(cb.dofFarEnd - cb.dofFarBegin, 1e-6f)) * cb.dofFarStrength);
 
-  InOutColor[pixel] = vec4(saturate(g), farRate);
+  InOutColor[pixel] = vec4(saturate(g), frame.a);
 }

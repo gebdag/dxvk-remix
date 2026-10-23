@@ -19,6 +19,7 @@
 #define POST_FX_DS_LOOK_SCENE_LINEAR_VIEW_Z  1
 #define POST_FX_DS_LOOK_SCENE_HAZE           2
 #define POST_FX_DS_LOOK_SCENE_CONSTANTS      3
+#define POST_FX_DS_LOOK_SCENE_DOF_RATE       4
 
 // Bright pass: scene -> bloom base buffer (thresholded, alpha = depth rate).
 #define POST_FX_DS_LOOK_BRIGHT_SCENE         0
@@ -31,6 +32,13 @@
 #define POST_FX_DS_LOOK_NEAR_OUTPUT          1
 #define POST_FX_DS_LOOK_NEAR_CONSTANTS       2
 
+// DoF prepare: the frame as it is when the DoF runs, with the far DoF rate in alpha for the
+// rate-gated level blurs. The rate lives in its own texture from the scene pass on, so passes in
+// between (any Remix effect) may write the frame's alpha freely.
+#define POST_FX_DS_LOOK_DOF_PREPARE_FRAME    0
+#define POST_FX_DS_LOOK_DOF_PREPARE_RATE     1
+#define POST_FX_DS_LOOK_DOF_PREPARE_OUTPUT   2
+
 // DoF blend: FRPG_Fil_Dof. Its three blur levels are full-resolution Gaussians with the spread
 // the game's 512x360 / 256x180 chain has on screen (rtx_dark_souls_look.cpp), not low-res copies.
 #define POST_FX_DS_LOOK_DOF_INOUT            0
@@ -39,6 +47,7 @@
 #define POST_FX_DS_LOOK_DOF_LEVEL3           3
 #define POST_FX_DS_LOOK_DOF_NEAR             4
 #define POST_FX_DS_LOOK_DOF_CONSTANTS        5
+#define POST_FX_DS_LOOK_DOF_RATE             6
 
 // Tap filter: GaussBlur5x5, the 2x downsample and the Bloom passes; gated, the DoF's
 // Unfocus3x3 and BlurUpSample.
@@ -59,7 +68,7 @@ struct PostFxDarkSoulsLookSceneArgs {
   // 1: run the haze (fog and scattering) on surfaces. Primary misses are never hazed: the sky
   // raster is the game's sky shader output, haze included, mapped to radiance by ds1SkyRadiance.
   uint hazeEnable;
-  // FRPG_Fil_Dof_DofRate, into the scene's alpha: sat(sat((viewZ - c9.x) / (c9.y - c9.x)) * c9.z).
+  // FRPG_Fil_Dof_DofRate, into the DoF rate texture: sat(sat((viewZ - c9.x) / (c9.y - c9.x)) * c9.z).
   float dofFarBegin;
   float dofFarEnd;
 

@@ -15,6 +15,7 @@
 #include <rtx_shaders/post_fx_dark_souls_look_composite.h>
 #include <rtx_shaders/post_fx_dark_souls_look_near.h>
 #include <rtx_shaders/post_fx_dark_souls_look_dof.h>
+#include <rtx_shaders/post_fx_dark_souls_look_dof_prepare.h>
 
 namespace dxvk {
 
@@ -27,6 +28,7 @@ namespace dxvk {
         TEXTURE2D(POST_FX_DS_LOOK_SCENE_LINEAR_VIEW_Z)
         CONSTANT_BUFFER(POST_FX_DS_LOOK_SCENE_HAZE)
         CONSTANT_BUFFER(POST_FX_DS_LOOK_SCENE_CONSTANTS)
+        RW_TEXTURE2D(POST_FX_DS_LOOK_SCENE_DOF_RATE)
       END_PARAMETER()
     };
     PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookSceneShader);
@@ -86,9 +88,21 @@ namespace dxvk {
         SAMPLER2D(POST_FX_DS_LOOK_DOF_LEVEL3)
         SAMPLER2D(POST_FX_DS_LOOK_DOF_NEAR)
         CONSTANT_BUFFER(POST_FX_DS_LOOK_DOF_CONSTANTS)
+        TEXTURE2D(POST_FX_DS_LOOK_DOF_RATE)
       END_PARAMETER()
     };
     PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookDofShader);
+
+    class PostFxDarkSoulsLookDofPrepareShader : public ManagedShader {
+      SHADER_SOURCE(PostFxDarkSoulsLookDofPrepareShader, VK_SHADER_STAGE_COMPUTE_BIT, post_fx_dark_souls_look_dof_prepare)
+
+      BEGIN_PARAMETER()
+        TEXTURE2D(POST_FX_DS_LOOK_DOF_PREPARE_FRAME)
+        TEXTURE2D(POST_FX_DS_LOOK_DOF_PREPARE_RATE)
+        RW_TEXTURE2D(POST_FX_DS_LOOK_DOF_PREPARE_OUTPUT)
+      END_PARAMETER()
+    };
+    PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookDofPrepareShader);
 
     // The game's kernels, read from its draws (PS c22..c36 offsets, c38..c52 weights). Offsets
     // are in texels of the pass's input.
@@ -208,6 +222,7 @@ namespace dxvk {
     }
     m_dofScratch = Resources::createImageResource(ctx, "DS1 look DoF scratch", size, VK_FORMAT_R16G16B16A16_SFLOAT);
     m_dofNear = Resources::createImageResource(ctx, "DS1 look DoF near rate", size, VK_FORMAT_R16_SFLOAT);
+    m_dofRate = Resources::createImageResource(ctx, "DS1 look DoF far rate", size, VK_FORMAT_R16_SFLOAT);
   }
 
   void DxvkDarkSoulsLook::dispatchDofGaussian(Rc<DxvkContext>& ctx, int constantsIndex, const Resources::Resource& input,
@@ -231,6 +246,7 @@ namespace dxvk {
     ensureResources(ctx, std::max(bloomWidth(), 2), std::max(bloomHeight(), 2));
 
     const VkExtent3D extent = inOutColor.image->mipLevelExtent(0);
+    ensureDofResources(ctx, extent);
     PostFxDarkSoulsHazeArgs hazeArgs;
     const bool hazeValid = haze.fillArgs(hazeArgs, extent, linearViewZ, camera, jitterOffset, missLinearViewZ);
 
@@ -251,6 +267,7 @@ namespace dxvk {
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_LINEAR_VIEW_Z, linearViewZ.view, nullptr);
     ctx->bindResourceBuffer(POST_FX_DS_LOOK_SCENE_HAZE, DxvkBufferSlice(m_hazeConstants, 0, m_hazeConstants->info().size));
     ctx->bindResourceBuffer(POST_FX_DS_LOOK_SCENE_CONSTANTS, DxvkBufferSlice(m_sceneConstants, 0, m_sceneConstants->info().size));
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_DOF_RATE, m_dofRate.view, nullptr);
     ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookSceneShader::getShader());
     const VkExtent3D workgroups = util::computeBlockCount(extent, VkExtent3D { 16, 8, 1 });
     ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
@@ -301,12 +318,23 @@ namespace dxvk {
     const float texelX = float(extent.width) / float(2 * m_baseWidth);
     const float texelY = float(extent.height) / float(2 * m_baseHeight);
 
+    // The level source: the frame as it is now (passes may have run since the scene pass) with the
+    // far rate in alpha, staged in the last level, which is only written after the first two.
+    {
+      ctx->bindResourceView(POST_FX_DS_LOOK_DOF_PREPARE_FRAME, inOutColor.view, nullptr);
+      ctx->bindResourceView(POST_FX_DS_LOOK_DOF_PREPARE_RATE, m_dofRate.view, nullptr);
+      ctx->bindResourceView(POST_FX_DS_LOOK_DOF_PREPARE_OUTPUT, m_dofLevel[2].view, nullptr);
+      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookDofPrepareShader::getShader());
+      const VkExtent3D workgroups = util::computeBlockCount(extent, VkExtent3D { 16, 8, 1 });
+      ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
+    }
+
     // Three levels, each from the one before: the increment is the Gaussian that takes the
     // previous spread to the next.
     float previous = 0.0f;
     for (int level = 0; level < 3; ++level) {
       const float step = std::sqrt(std::max(kDofLevelSigma[level] * kDofLevelSigma[level] - previous * previous, 0.0f));
-      dispatchDofGaussian(ctx, 2 * level, level == 0 ? inOutColor : m_dofLevel[level - 1], m_dofLevel[level],
+      dispatchDofGaussian(ctx, 2 * level, level == 0 ? m_dofLevel[2] : m_dofLevel[level - 1], m_dofLevel[level],
                           step * texelX, step * texelY);
       previous = kDofLevelSigma[level];
     }
@@ -352,6 +380,7 @@ namespace dxvk {
       ctx->bindResourceView(POST_FX_DS_LOOK_DOF_NEAR, m_dofNear.view, nullptr);
       ctx->bindResourceSampler(POST_FX_DS_LOOK_DOF_NEAR, m_linearSampler);
       ctx->bindResourceBuffer(POST_FX_DS_LOOK_DOF_CONSTANTS, DxvkBufferSlice(m_dofConstants, 0, m_dofConstants->info().size));
+      ctx->bindResourceView(POST_FX_DS_LOOK_DOF_RATE, m_dofRate.view, nullptr);
       ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookDofShader::getShader());
       const VkExtent3D workgroups = util::computeBlockCount(extent, VkExtent3D { 16, 8, 1 });
       ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
