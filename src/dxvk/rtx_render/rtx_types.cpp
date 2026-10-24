@@ -342,6 +342,15 @@ namespace dxvk {
         }
         transformData.objectToWorld = pLastCamera->getViewToWorld(false) * transformData.objectToView;
         transformData.worldToView = pLastCamera->getWorldToView(false);
+      } else if (RtxOptions::fusedWorldViewMode() == FusedWorldViewMode::None) {
+        // Fork: no camera yet this frame (its first draw is skinned: a character drawn before any
+        // map piece). Indexed vertex blending puts each vertex in world space through the bone
+        // palette (D3DTS_WORLD is only bone 0), so the object needs no transform of its own and
+        // the view is the draw's: the same result the camera branch reaches through the camera.
+        // Left as is, the draw kept bone 0 as its object transform on top of the bones, and the
+        // mesh landed far from the character (DS1: Oscar's helmet in the Asylum intro).
+        transformData.objectToView = transformData.worldToView;
+        transformData.objectToWorld = Matrix4();
       } else {
         ONCE(Logger::warn("[RTX-Compatibility-Warn] Cannot decompose the matrices for a skinned mesh because the camera is not set."));
       }
