@@ -1082,10 +1082,12 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     {
       emissiveBlendOverrideInfluence *= opacity;
     }
-    // Fork: and it is display-referred, so it is divided by the exposure the tonemapper will apply.
+    // Fork: and it is display-referred, so it is divided by the exposure the tonemapper will apply,
+    // except as often as the game's own sprite shaders apply their exposure to it
+    // (Surface::ds1UnlitExposurePower): those sprites take the frame's exposure that many times.
     if (surface.isUnlit)
     {
-      emissiveBlendOverrideInfluence *= cb.opaqueMaterialArgs.unlitExposureCompensation;
+      emissiveBlendOverrideInfluence *= pow(cb.opaqueMaterialArgs.unlitExposureCompensation, 1.0f - float(surface.ds1UnlitExposurePower));
     }
     emissiveRadiance = emissiveBlendOverrideInfluence * emissiveColor * opaqueSurfaceMaterial.emissiveIntensity;
   }

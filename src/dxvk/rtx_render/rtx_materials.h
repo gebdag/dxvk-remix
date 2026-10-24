@@ -356,10 +356,12 @@ struct RtSurface {
     textureFlags |= isTextureFactorAlphaBlend ? (1 << 15) : 0;
     textureFlags |= isUnlit ? (1 << 16) : 0;
     textureFlags |= isDs1Swamp ? (1 << 19) : 0;
+    textureFlags |= (static_cast<uint32_t>(ds1HazeSet) & 0xF) << 20;
+    textureFlags |= (static_cast<uint32_t>(ds1UnlitExposurePower) & 0x3) << 24;
 
     static_assert(static_cast<uint32_t>(TexGenMode::Count) <= 4);
     textureFlags |= ((static_cast<uint32_t>(texgenMode) & 0x3) << 17);
-    // textureFlags bits 20-30 unused
+    // textureFlags bits 26-30 unused
 
     writeGPUHelper(data, offset, textureFlags);
 
@@ -421,6 +423,10 @@ struct RtSurface {
   bool isUnlit = false;
   // Fork: drawn with the DS1 swamp marker (FRPG_Snow, see fork_ds1_swamp.h).
   bool isDs1Swamp = false;
+  // Fork: DS1 haze set slot (1-15, 0 = none), see post_fx_dark_souls_haze.h.
+  uint8_t ds1HazeSet = 0;
+  // Fork: exposure power of a DS1 unlit sprite (0-2), see Surface::ds1UnlitExposurePower.
+  uint8_t ds1UnlitExposurePower = 0;
   bool isVertexColorBakedLighting = true;
   bool isMotionBlurMaskOut = false;
   bool skipSurfaceInteractionSpritesheetAdjustment = false;
@@ -2053,6 +2059,11 @@ struct LegacyMaterialData {
   bool isTextureFactorAlphaBlend = false;
   bool isUnlit = false; // fork: unlit marker, see RtxOptions::fixedFunctionUnlitMarkerEnabled
   bool isDs1Swamp = false; // fork: DS1 swamp marker, see fork_ds1_swamp.h
+  // Fork: DS1 haze set slot from the haze marker (not part of the material's identity: the same
+  // material is drawn in several regions).
+  uint8_t ds1HazeSet = 0;
+  // Fork: how many times the game's sprite shaders apply the exposure to this unlit sprite (0-2).
+  uint8_t ds1UnlitExposurePower = 0;
   bool isVertexColorBakedLighting = true;
 
   void setHashOverride(XXH64_hash_t hash) {

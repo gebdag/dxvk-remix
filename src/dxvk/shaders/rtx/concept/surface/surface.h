@@ -486,6 +486,22 @@ struct Surface
     set { data13.z = newValue ? packedFlagSet(data13.z, 1 << 19) : packedFlagUnset(data13.z, 1 << 19); }
   }
 
+  // Fork: the DS1 haze set the draw was tagged with (1-15, 0 = none): the slot of its own fog and
+  // scattering constants in the DS1 look's scene pass (post_fx_dark_souls_haze.h).
+  property uint ds1HazeSet
+  {
+    get { return (data13.z >> 20) & 0xF; }
+    set { data13.z = (data13.z & ~(0xFu << 20)) | ((newValue & 0xF) << 20); }
+  }
+
+  // Fork: how many times the game's sprite shaders apply the exposure (c135.x / c135.y) to this
+  // unlit sprite's colour (0-2): Remix applies its own exposure that many times.
+  property uint ds1UnlitExposurePower
+  {
+    get { return (data13.z >> 24) & 0x3; }
+    set { data13.z = (data13.z & ~(0x3u << 24)) | ((newValue & 0x3) << 24); }
+  }
+
   property bool isEye
   {
     get { return packedFlagGet(data13.z, 1 << 14); }

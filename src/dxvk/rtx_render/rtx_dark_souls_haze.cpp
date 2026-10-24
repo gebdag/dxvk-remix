@@ -24,6 +24,63 @@ namespace dxvk {
     PREWARM_SHADER_PIPELINE(PostFxDarkSoulsHazeShader);
 
     vec3 toVec3(const Vector3& v) { return vec3 { v.x, v.y, v.z }; }
+
+    // rtx.ds1Haze.sets, parsed when it changes: per slot, the slot number, PS c103..c111 and
+    // VS c128.xy, 39 numbers.
+    std::string s_setsText;
+    Ds1HazeSet s_sets[DS1_HAZE_SET_COUNT] = {};
+    // Packed like the shader's scalar layout: no member may carry C++ alignment padding.
+    static_assert(sizeof(Ds1HazeSet) == 36 * sizeof(float) && alignof(Ds1HazeSet) == alignof(float));
+
+    void parseSets(const std::string& text) {
+      s_setsText = text;
+      for (auto& s : s_sets) {
+        s = {};
+      }
+      constexpr size_t kValues = 39;
+      float v[kValues];
+      size_t n = 0;
+      const char* p = text.c_str();
+      while (*p) {
+        char* next = nullptr;
+        const float value = std::strtof(p, &next);
+        if (next == p) {
+          ++p;
+          continue;
+        }
+        p = next;
+        v[n++] = value;
+        if (n < kValues) {
+          continue;
+        }
+        n = 0;
+        const int slot = int(v[0]);
+        if (slot <= 0 || slot >= DS1_HAZE_SET_COUNT) {
+          continue;
+        }
+        const float* c = &v[1]; // c[4 * i + j] = c(103 + i)[j]
+        auto rgb = [c](int r) { const float* q = &c[4 * (r - 103)]; return vec3 { q[0], q[1], q[2] }; };
+        auto w = [c](int r) { return c[4 * (r - 103) + 3]; };
+        Ds1HazeSet& s = s_sets[slot];
+        s.fogColor = rgb(103);
+        s.fogStrength = w(103);
+        s.extinction = rgb(104);
+        // The game's shaders scale the extinction exponent by this constant (1 / ln(2)^2).
+        s.extinctionScale = w(111) * 2.08136892f;
+        s.sunDirection = rgb(111);
+        s.fogStart = v[37];
+        s.phase = rgb(107);
+        s.fogInvRange = v[38];
+        s.rayleigh = rgb(108);
+        s.inscatterScale = w(105);
+        s.mie = rgb(109);
+        s.scatterBlend = w(110);
+        s.inverseExtinction = rgb(106);
+        s.valid = 1.0f;
+        s.surfaceTint = rgb(105);
+        s.sunColor = rgb(110);
+      }
+    }
   }
 
   DxvkDarkSoulsHaze::DxvkDarkSoulsHaze(DxvkDevice* device)
@@ -60,6 +117,12 @@ namespace dxvk {
     args.sunColor = toVec3(sunColor());
     args.scatterBlend = scatterBlend();
     args.displayScale = DxvkDarkSoulsExposure::gameExposureValue() * displayGain();
+    if (sets() != s_setsText) {
+      parseSets(sets());
+    }
+    for (int i = 0; i < DS1_HAZE_SET_COUNT; ++i) {
+      args.sets[i] = s_sets[i];
+    }
     return active();
   }
 

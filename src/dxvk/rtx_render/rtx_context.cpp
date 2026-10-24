@@ -821,6 +821,7 @@ namespace dxvk {
           setFramePassStage(RtxFramePassStage::ToneMapping);
           m_common->metaPostFx().darkSoulsLook().dispatchScene(this,
             rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite), rtOutput.m_primaryLinearViewZ,
+            rtOutput.m_primarySurfaceFlags,
             m_common->metaPostFx().darkSoulsHaze(), getSceneManager().getCamera().getShaderConstants(),
             ds1Jitter, ds1MissLinearViewZ);
         } else {

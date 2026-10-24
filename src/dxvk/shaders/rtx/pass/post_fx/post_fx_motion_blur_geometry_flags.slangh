@@ -36,12 +36,18 @@ struct MotionBlurSurfaceFlags
 // which a pixel without SharedFlags cannot otherwise tell from a PSR lobe that missed.
 static const uint kPrimarySurfaceFlagPrimaryRayMiss = 1 << 4;
 
+// Fork: bits 8-11 carry the primary surface's DS1 haze set (Surface::ds1HazeSet) to the DS1 look's
+// scene pass. The primary surface flags texture is R16_UINT for this (R8 upstream).
+static const uint kPrimarySurfaceFlagDs1HazeSetShift = 8;
+
 void motionBlurSurfaceFlagsWriteToGBuffer(
   MotionBlurSurfaceFlags motionBlurSurfaceFlags,
   ivec2 position,
-  RWTexture2D<uint> motionBlurSurfaceFlagsTexture)
+  RWTexture2D<uint> motionBlurSurfaceFlagsTexture,
+  uint ds1HazeSet = 0)
 {
-  uint encodedFlags = 0;
+  // Fork: the DS1 haze set (bits 8-11); motion blur reads only bits 0-3.
+  uint encodedFlags = (ds1HazeSet & 0xF) << kPrimarySurfaceFlagDs1HazeSetShift;
   encodedFlags = packedFlagSet(encodedFlags, motionBlurSurfaceFlags.isViewModel ? (1 << 0) : 0);
   encodedFlags = packedFlagSet(encodedFlags, motionBlurSurfaceFlags.isStatic ? (1 << 1) : 0);
   encodedFlags = packedFlagSet(encodedFlags, motionBlurSurfaceFlags.isEmissive ? (1 << 2) : 0);

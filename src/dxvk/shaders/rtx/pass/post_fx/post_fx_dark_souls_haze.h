@@ -11,6 +11,35 @@
 #define POST_FX_DS_HAZE_LINEAR_VIEW_Z 1
 #define POST_FX_DS_HAZE_CONSTANTS     2
 
+// DS1 applies its per-region DrawParams per draw: every lit draw carries its own fog and
+// scattering constants. The proxy tags each draw with a slot (Surface::ds1HazeSet, 1-15) and sends
+// the slots' constants (rtx.ds1Haze.sets); a pixel is hazed with its primary surface's set. Slot 0
+// (untagged surfaces) uses the single set below (the one most of the frame uses).
+#define DS1_HAZE_SET_COUNT 16
+
+// vec3 + float pairs, not vec4: C++'s vec4 is alignas(16) while the shaders use scalar block
+// layout, so a vec4 member would be padded differently on the two sides.
+struct Ds1HazeSet {
+  vec3 fogColor;          // c103.rgb
+  float fogStrength;      // c103.w: fog factor at full range
+  vec3 extinction;        // c104.rgb per world unit
+  float extinctionScale;  // c111.w * 2.0813689
+  vec3 sunDirection;      // c111.xyz
+  float fogStart;         // VS c128.x
+  vec3 phase;             // c107.xyz
+  float fogInvRange;      // VS c128.y
+  vec3 rayleigh;          // c108.rgb
+  float inscatterScale;   // c105.w
+  vec3 mie;               // c109.rgb
+  float scatterBlend;     // c110.w
+  vec3 inverseExtinction; // c106.rgb
+  float valid;            // 1 when the slot holds a set
+  vec3 surfaceTint;       // c105.rgb
+  float pad0;
+  vec3 sunColor;          // c110.rgb
+  float pad1;
+};
+
 struct PostFxDarkSoulsHazeArgs {
   Camera camera;
 
@@ -53,4 +82,7 @@ struct PostFxDarkSoulsHazeArgs {
 
   vec3 sunColor;        // c110.rgb
   float pad1;
+
+  // The per-draw sets by slot ([0] unused: untagged surfaces use the values above).
+  Ds1HazeSet sets[DS1_HAZE_SET_COUNT];
 };

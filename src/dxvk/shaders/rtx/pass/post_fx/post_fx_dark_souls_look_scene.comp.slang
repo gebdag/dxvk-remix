@@ -14,6 +14,7 @@
 #include "rtx/utility/common.slangh"
 #include "rtx/utility/color.slangh"
 #include "rtx/concept/camera/camera.slangh"
+#include "rtx/pass/post_fx/post_fx_motion_blur_geometry_flags.slangh"
 
 layout(binding = POST_FX_DS_LOOK_SCENE_INOUT)
 RWTexture2D<float4> InOutColor;
@@ -29,6 +30,69 @@ ConstantBuffer<PostFxDarkSoulsLookSceneArgs> cb;
 
 layout(binding = POST_FX_DS_LOOK_SCENE_DOF_RATE)
 RWTexture2D<float> DofRate;
+
+// The G-buffer's primary surface flags: bits 8-11 hold the surface's haze set (Surface::ds1HazeSet,
+// kPrimarySurfaceFlagDs1HazeSetShift).
+layout(binding = POST_FX_DS_LOOK_SCENE_SURFACE_FLAGS)
+Texture2D<uint> PrimarySurfaceFlags;
+
+// The haze constants of a pixel: those of its surface's own set (the game hazes each draw with
+// its region's DrawParams), or the frame's single set for untagged surfaces.
+struct HazeTerms
+{
+  vec4 fog;               // rgb colour, w strength
+  vec3 extinction;
+  float extinctionScale;
+  vec3 sunDirection;
+  float fogStart;
+  vec3 phase;
+  float fogInvRange;
+  vec3 rayleigh;
+  float inscatterScale;
+  vec3 mie;
+  float scatterBlend;
+  vec3 inverseExtinction;
+  vec3 surfaceTint;
+  vec3 sunColor;
+};
+
+HazeTerms hazeTermsFor(uint set)
+{
+  HazeTerms t;
+  if (set != 0 && set < DS1_HAZE_SET_COUNT && haze.sets[set].valid != 0.0f)
+  {
+    t.fog = vec4(haze.sets[set].fogColor, haze.sets[set].fogStrength);
+    t.extinction = haze.sets[set].extinction;
+    t.extinctionScale = haze.sets[set].extinctionScale;
+    t.sunDirection = haze.sets[set].sunDirection;
+    t.fogStart = haze.sets[set].fogStart;
+    t.phase = haze.sets[set].phase;
+    t.fogInvRange = haze.sets[set].fogInvRange;
+    t.rayleigh = haze.sets[set].rayleigh;
+    t.inscatterScale = haze.sets[set].inscatterScale;
+    t.mie = haze.sets[set].mie;
+    t.scatterBlend = haze.sets[set].scatterBlend;
+    t.inverseExtinction = haze.sets[set].inverseExtinction;
+    t.surfaceTint = haze.sets[set].surfaceTint;
+    t.sunColor = haze.sets[set].sunColor;
+    return t;
+  }
+  t.fog = vec4(haze.fogColor, haze.fogStrength);
+  t.extinction = haze.extinction;
+  t.extinctionScale = haze.extinctionScale;
+  t.sunDirection = haze.sunDirection;
+  t.fogStart = haze.fogStart;
+  t.phase = haze.phase;
+  t.fogInvRange = haze.fogInvRange;
+  t.rayleigh = haze.rayleigh;
+  t.inscatterScale = haze.inscatterScale;
+  t.mie = haze.mie;
+  t.scatterBlend = haze.scatterBlend;
+  t.inverseExtinction = haze.inverseExtinction;
+  t.surfaceTint = haze.surfaceTint;
+  t.sunColor = haze.sunColor;
+  return t;
+}
 
 [shader("compute")]
 [numthreads(16, 8, 1)]
@@ -55,16 +119,17 @@ void main(uint2 pixel : SV_DispatchThreadID)
     const CameraDirections directions = cameraScreenUVToDirection(haze.camera, screenUV, false);
     const float z = abs(viewZ);
     const float dist = length(cameraReconstructViewPosition(haze.camera, directions.viewDirection, z));
+    const HazeTerms t = hazeTermsFor((PrimarySurfaceFlags[viewZTexel] >> kPrimarySurfaceFlagDs1HazeSetShift) & 0xF);
 
-    const float fog = saturate(saturate((z - haze.fogStart) * haze.fogInvRange) * haze.fogStrength);
-    g = lerp(g, haze.fogColor * haze.displayScale, fog);
+    const float fog = saturate(saturate((z - t.fogStart) * t.fogInvRange) * t.fog.w);
+    g = lerp(g, t.fog.rgb * haze.displayScale, fog);
 
-    const vec3 ext = exp2(-haze.extinction * dist * haze.extinctionScale);
-    const float cosTheta = dot(-directions.worldDirection, haze.sunDirection);
-    const float miePhase = haze.phase.x * pow(max(haze.phase.y - haze.phase.z * cosTheta, 1e-4f), -1.5f);
-    const vec3 inscatter = (haze.rayleigh * (1.0f + cosTheta * cosTheta) + haze.mie * miePhase)
-      * (1.0f - ext) * haze.inverseExtinction * haze.inscatterScale * haze.sunColor;
-    g = lerp(g, g * ext * haze.surfaceTint + inscatter * haze.displayScale, haze.scatterBlend);
+    const vec3 ext = exp2(-t.extinction * dist * t.extinctionScale);
+    const float cosTheta = dot(-directions.worldDirection, t.sunDirection);
+    const float miePhase = t.phase.x * pow(max(t.phase.y - t.phase.z * cosTheta, 1e-4f), -1.5f);
+    const vec3 inscatter = (t.rayleigh * (1.0f + cosTheta * cosTheta) + t.mie * miePhase)
+      * (1.0f - ext) * t.inverseExtinction * t.inscatterScale * t.sunColor;
+    g = lerp(g, g * ext * t.surfaceTint + inscatter * haze.displayScale, t.scatterBlend);
   }
 
   // FRPG_Fil_Dof_DofRate: the far DoF rate (a miss is the sky, at the far plane), in its own

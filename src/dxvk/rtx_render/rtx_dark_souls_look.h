@@ -37,6 +37,7 @@ namespace dxvk {
       Rc<DxvkContext> ctx,
       const Resources::Resource& inOutColor,
       const Resources::Resource& linearViewZ,
+      const Resources::Resource& surfaceFlags,
       const DxvkDarkSoulsHaze& haze,
       const Camera& camera,
       const float jitterOffset[2],

@@ -192,7 +192,7 @@ RWTexture2D<float> SecondaryPositionError;
 layout(rg16f, binding = GBUFFER_BINDING_PRIMARY_SCREEN_SPACE_MOTION_OUTPUT)
 RWTexture2D<float2> PrimaryScreenSpaceMotionVector;
 
-layout(r8ui, binding = GBUFFER_BINDING_PRIMARY_SURFACE_FLAGS_OUTPUT)
+layout(r16ui, binding = GBUFFER_BINDING_PRIMARY_SURFACE_FLAGS_OUTPUT)
 RWTexture2D<uint> PrimarySurfaceFlags;
 
 layout(r16f, binding = GBUFFER_BINDING_PRIMARY_DISOCCLUSION_THRESHOLD_MIX_OUTPUT)

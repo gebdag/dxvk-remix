@@ -71,6 +71,9 @@ namespace dxvk {
     RTX_OPTION_FLAG("rtx.ds1Haze", float, inscatterScale, 0.0f, RtxOptionFlags::NoSave, "In-scatter scale (PS c105.w).");
     RTX_OPTION_FLAG("rtx.ds1Haze", Vector3, sunColor, Vector3(1.0f), RtxOptionFlags::NoSave, "Scattering sun colour (PS c110.rgb).");
     RTX_OPTION_FLAG("rtx.ds1Haze", float, scatterBlend, 0.0f, RtxOptionFlags::NoSave, "Weight of the scattered colour (PS c110.w).");
+    RTX_OPTION_FLAG("rtx.ds1Haze", std::string, sets, "", RtxOptionFlags::NoSave,
+                    "The per-draw haze sets by slot (Surface::ds1HazeSet): 'slot: c103..c111 (36 values), VS c128.x, c128.y;' "
+                    "for each slot in use.");
   };
 
 } // namespace dxvk

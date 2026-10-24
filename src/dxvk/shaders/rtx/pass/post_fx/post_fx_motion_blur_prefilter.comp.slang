@@ -24,7 +24,8 @@
 #include "rtx/utility/math.slangh"
 #include "rtx/utility/packing.slangh"
 
-layout(r8ui, binding = POST_FX_MOTION_BLUR_PREFILTER_PRIMARY_SURFACE_FLAGS_INPUT)
+// DS1 port: no format: the first pass reads the R16 primary surface flags, the second an R8 intermediate.
+layout(binding = POST_FX_MOTION_BLUR_PREFILTER_PRIMARY_SURFACE_FLAGS_INPUT)
 Texture2D<uint> PrimarySurfaceFlags;
 
 layout(r8ui, binding = POST_FX_MOTION_BLUR_PREFILTER_PRIMARY_SURFACE_FLAGS_FILTERED_OUTPUT)

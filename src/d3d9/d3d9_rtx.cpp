@@ -1183,10 +1183,15 @@ namespace dxvk {
           m_activeDrawCallState.setCategory(InstanceCategories::DecalStatic, true);
         }
         // Fork: unlit tag (see RtxOptions::fixedFunctionUnlitMarkerEnabled).
+        // 0xD15D0E21 and 0xD15D0E22 are the same tag for sprites whose game shaders apply the
+        // exposure once or twice to their colour (Surface::ds1UnlitExposurePower).
         constexpr uint32_t kFixedFunctionUnlitMarker = 0xD15D0E1D;
+        const uint32_t unlitTag = d3d9State().textureStages[firstStage][DXVK_TSS_CONSTANT];
+        const bool unlitExposed = unlitTag == 0xD15D0E21 || unlitTag == 0xD15D0E22;
         if (RtxOptions::fixedFunctionUnlitMarkerEnabled() &&
-            d3d9State().textureStages[firstStage][DXVK_TSS_CONSTANT] == kFixedFunctionUnlitMarker) {
+            (unlitTag == kFixedFunctionUnlitMarker || unlitExposed)) {
           m_activeDrawCallState.materialData.isUnlit = true;
+          m_activeDrawCallState.materialData.ds1UnlitExposurePower = unlitExposed ? static_cast<uint8_t>(unlitTag & 0x3) : 0;
           // An unlit surface's vertex colour is its colour (particles fade and tint through it),
           // never baked lighting to normalise away.
           m_activeDrawCallState.materialData.isVertexColorBakedLighting = false;
@@ -1200,6 +1205,13 @@ namespace dxvk {
         if (d3d9State().textureStages[firstStage][DXVK_TSS_CONSTANT] == kFixedFunctionDs1SwampMarker) {
           m_activeDrawCallState.materialData.isDs1Swamp = true;
         }
+        // Fork: DS1 haze set tag in stage 7's D3DTSS_CONSTANT (0xD15DA000 | slot): the slot of the
+        // draw's own fog and scattering constants (rtx.ds1Haze.sets, post_fx_dark_souls_haze.h).
+        // Stage 7 so it can sit beside the stage-0 markers above.
+        constexpr uint32_t kDs1HazeMarker = 0xD15DA000;
+        const uint32_t hazeTag = d3d9State().textureStages[7][DXVK_TSS_CONSTANT];
+        m_activeDrawCallState.materialData.ds1HazeSet =
+          (hazeTag & ~0xFu) == kDs1HazeMarker ? static_cast<uint8_t>(hazeTag & 0xF) : 0;
       }
 
       if (m_activeDrawCallState.testCategoryFlags(InstanceCategories::Terrain)) {

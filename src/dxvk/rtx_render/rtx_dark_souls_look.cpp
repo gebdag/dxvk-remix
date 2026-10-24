@@ -30,6 +30,7 @@ namespace dxvk {
         CONSTANT_BUFFER(POST_FX_DS_LOOK_SCENE_HAZE)
         CONSTANT_BUFFER(POST_FX_DS_LOOK_SCENE_CONSTANTS)
         RW_TEXTURE2D(POST_FX_DS_LOOK_SCENE_DOF_RATE)
+        TEXTURE2D(POST_FX_DS_LOOK_SCENE_SURFACE_FLAGS)
       END_PARAMETER()
     };
     PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookSceneShader);
@@ -250,6 +251,7 @@ namespace dxvk {
     Rc<DxvkContext> ctx,
     const Resources::Resource& inOutColor,
     const Resources::Resource& linearViewZ,
+    const Resources::Resource& surfaceFlags,
     const DxvkDarkSoulsHaze& haze,
     const Camera& camera,
     const float jitterOffset[2],
@@ -280,6 +282,7 @@ namespace dxvk {
     ctx->bindResourceBuffer(POST_FX_DS_LOOK_SCENE_HAZE, DxvkBufferSlice(m_hazeConstants, 0, m_hazeConstants->info().size));
     ctx->bindResourceBuffer(POST_FX_DS_LOOK_SCENE_CONSTANTS, DxvkBufferSlice(m_sceneConstants, 0, m_sceneConstants->info().size));
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_DOF_RATE, m_dofRate.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_SURFACE_FLAGS, surfaceFlags.view, nullptr);
     ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookSceneShader::getShader());
     const VkExtent3D workgroups = util::computeBlockCount(extent, VkExtent3D { 16, 8, 1 });
     ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);

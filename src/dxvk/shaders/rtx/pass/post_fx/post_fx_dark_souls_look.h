@@ -20,6 +20,7 @@
 #define POST_FX_DS_LOOK_SCENE_HAZE           2
 #define POST_FX_DS_LOOK_SCENE_CONSTANTS      3
 #define POST_FX_DS_LOOK_SCENE_DOF_RATE       4
+#define POST_FX_DS_LOOK_SCENE_SURFACE_FLAGS  5
 
 // Bright pass: scene -> bloom base buffer (thresholded, alpha = depth rate).
 #define POST_FX_DS_LOOK_BRIGHT_SCENE         0
