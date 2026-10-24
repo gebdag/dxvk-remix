@@ -216,7 +216,11 @@ namespace dxvk::vk {
     m_info.format       = pickFormat(formats.size(), formats.data(), desc.numFormats, desc.formats);
     m_info.presentMode  = pickPresentMode(modes.size(), modes.data(), desc.numPresentModes, desc.presentModes);
     m_info.imageExtent  = pickImageExtent(caps, desc.imageExtent);
-    m_info.imageCount   = pickImageCount(caps, m_info.presentMode, desc.imageCount);
+    // NV-DXVK start: m_info.imageCount counts the images m_images holds. It stays 0
+    // until they exist, so a failed recreation leaves no images to index
+    // (D3D9SwapChainEx::CreateRenderTargetViews reads info().imageCount of them).
+    const uint32_t imageCount = pickImageCount(caps, m_info.presentMode, desc.imageCount);
+    // NV-DXVK end
 
     // NV-DXVK start: App controlled FSE
     m_info.appOwnedFSE  = m_device.features.fullScreenExclusive && (desc.fullScreenExclusive == VK_FULL_SCREEN_EXCLUSIVE_APPLICATION_CONTROLLED_EXT);
@@ -248,7 +252,7 @@ namespace dxvk::vk {
     swapInfo.pNext                  = nullptr;
     swapInfo.flags                  = 0;
     swapInfo.surface                = m_surface;
-    swapInfo.minImageCount          = m_info.imageCount;
+    swapInfo.minImageCount          = imageCount;
     swapInfo.imageFormat            = m_info.format.format;
     swapInfo.imageColorSpace        = m_info.format.colorSpace;
     swapInfo.imageExtent            = m_info.imageExtent;
@@ -276,7 +280,7 @@ namespace dxvk::vk {
       "\n  Format:       ", m_info.format.format,
       "\n  Present mode: ", m_info.presentMode,
       "\n  Buffer size:  ", m_info.imageExtent.width, "x", m_info.imageExtent.height,
-      "\n  Image count:  ", m_info.imageCount,
+      "\n  Image count:  ", imageCount,
       "\n  Exclusive FS: ", desc.fullScreenExclusive);
     Logger::info(actualSwapChainText);
     sentry::setContext("actual_swap_chain", actualSwapChainText);
@@ -312,8 +316,13 @@ namespace dxvk::vk {
     // Acquire images and create views
     std::vector<VkImage> images;
 
-    if ((status = getSwapImages(images)) != VK_SUCCESS)
+    // NV-DXVK start: a failure past this point destroys the new swap chain again,
+    // so the presenter is left without one rather than with a partial one
+    if ((status = getSwapImages(images)) != VK_SUCCESS) {
+      destroySwapchain();
       return status;
+    }
+    // NV-DXVK end
     
     // Update actual image count
     m_info.imageCount = images.size();
@@ -337,8 +346,11 @@ namespace dxvk::vk {
         0, 1, 0, 1 };
       
       if ((status = m_vkd->vkCreateImageView(m_vkd->device(),
-          &viewInfo, nullptr, &m_images[i].view)) != VK_SUCCESS)
+          &viewInfo, nullptr, &m_images[i].view)) != VK_SUCCESS) {
+        m_images[i].view = VK_NULL_HANDLE; // undefined after a failed create
+        destroySwapchain();
         return status;
+      }
     }
 
     // Create one set of semaphores per swap image
@@ -351,12 +363,18 @@ namespace dxvk::vk {
       semInfo.flags = 0;
 
       if ((status = m_vkd->vkCreateSemaphore(m_vkd->device(),
-          &semInfo, nullptr, &m_semaphores[i].acquire)) != VK_SUCCESS)
+          &semInfo, nullptr, &m_semaphores[i].acquire)) != VK_SUCCESS) {
+        m_semaphores[i].acquire = VK_NULL_HANDLE; // undefined after a failed create
+        destroySwapchain();
         return status;
+      }
 
       if ((status = m_vkd->vkCreateSemaphore(m_vkd->device(),
-          &semInfo, nullptr, &m_semaphores[i].present)) != VK_SUCCESS)
+          &semInfo, nullptr, &m_semaphores[i].present)) != VK_SUCCESS) {
+        m_semaphores[i].present = VK_NULL_HANDLE; // undefined after a failed create
+        destroySwapchain();
         return status;
+      }
 
       // NV-DXVK start: add debug names to VkImage objects
       if (m_vkd->vkSetDebugUtilsObjectNameEXT) {
@@ -649,6 +667,9 @@ namespace dxvk::vk {
 
     m_images.clear();
     m_semaphores.clear();
+    // NV-DXVK start: no images left to count
+    m_info.imageCount = 0;
+    // NV-DXVK end
 
     m_swapchain = VK_NULL_HANDLE;
   }

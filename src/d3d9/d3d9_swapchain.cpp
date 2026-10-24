@@ -1191,7 +1191,17 @@ namespace dxvk {
       // NV-DXVK start: DLFG integration
       vk::Presenter* presenter = GetPresenter();
       // NV-DXVK end
-      
+
+      // NV-DXVK start: a recreation in SynchronizePresent can leave no swap chain
+      // (window minimised, or the recreation failed); then there is nothing to
+      // acquire. The frame is skipped as Present() skips it without a swap chain,
+      // and its id is taken back, since its latency signal will never come.
+      if (!presenter->hasSwapChain()) {
+        --m_frameId;
+        break;
+      }
+      // NV-DXVK end
+
       // Presentation semaphores and WSI swap chain image
       // NV-DXVK start: DLFG integration
       vk::PresenterInfo info = presenter->info();
@@ -1204,9 +1214,20 @@ namespace dxvk {
       VkResult status = presenter->acquireNextImage(sync, imageIndex);
       // NV-DXVK end
 
+      // NV-DXVK start: as above, when a recreation here leaves no swap chain
+      bool swapChainLost = false;
+      // NV-DXVK end
+
       while (status != VK_SUCCESS) {
         RecreateSwapChain(m_vsync);
-        
+
+        // NV-DXVK start
+        if (!presenter->hasSwapChain()) {
+          swapChainLost = true;
+          break;
+        }
+        // NV-DXVK end
+
         // NV-DXVK start: DLFG integration
         info = presenter->info();
         status = presenter->acquireNextImage(sync, imageIndex);
@@ -1215,6 +1236,13 @@ namespace dxvk {
         if (status == VK_SUBOPTIMAL_KHR)
           break;
       }
+
+      // NV-DXVK start
+      if (swapChainLost) {
+        --m_frameId;
+        break;
+      }
+      // NV-DXVK end
 
       m_context->beginRecording(
         m_device->createCommandList());
@@ -1364,8 +1392,11 @@ namespace dxvk {
     presenterDesc.numPresentModes = PickPresentModes(Vsync, presenterDesc.presentModes);
     presenterDesc.fullScreenExclusive = PickFullscreenMode();
 
+    // A failed recreation (e.g. the window minimised) leaves no swap chain and an image count of
+    // 0, so CreateRenderTargetViews makes no views and PresentImage skips frames until a later
+    // recreation succeeds.
     if (GetPresenter()->recreateSwapChain(presenterDesc) != VK_SUCCESS)
-      throw DxvkError("D3D9SwapChainEx: Failed to recreate swap chain");
+      Logger::warn("D3D9SwapChainEx: Failed to recreate swap chain");
     // NV-DXVK end
     
 

@@ -2769,7 +2769,7 @@ void ProcessDeviceCommandQueue() {
         PULL_U(i);
         const int length = DeviceBridge::getReaderChannel().data->peek();
         void* text = nullptr;
-        const int size = DeviceBridge::getReaderChannel().data->pull(&text);
+        const int size = DeviceBridge::get_data(&text);
         std::stringstream ss;
         ss << "DebugMessage. i = " << i << ", length = " << length << " = " << size << ", text = '" << (char*) text << "'";
         Logger::info(ss.str().c_str());
@@ -3156,11 +3156,11 @@ void ProcessDeviceCommandQueue() {
       case RemixApi_SetConfigVariable:
       {
         void* var_ptr = nullptr;
-        const uint32_t var_size = DeviceBridge::getReaderChannel().data->pull(&var_ptr);
+        const uint32_t var_size = DeviceBridge::get_data(&var_ptr);
         std::string var_str((const char*) var_ptr, var_size);
 
         void* value_ptr = nullptr;
-        const uint32_t value_size = DeviceBridge::getReaderChannel().data->pull(&value_ptr);
+        const uint32_t value_size = DeviceBridge::get_data(&value_ptr);
         std::string value_str((const char*) value_ptr, value_size);
 
         remixapi::g_remix.SetConfigVariable(var_str.c_str(), value_str.c_str());
