@@ -355,10 +355,11 @@ struct RtSurface {
     textureFlags |= eyeParams ? (1 << 14) : 0;
     textureFlags |= isTextureFactorAlphaBlend ? (1 << 15) : 0;
     textureFlags |= isUnlit ? (1 << 16) : 0;
+    textureFlags |= isDs1Swamp ? (1 << 19) : 0;
 
     static_assert(static_cast<uint32_t>(TexGenMode::Count) <= 4);
     textureFlags |= ((static_cast<uint32_t>(texgenMode) & 0x3) << 17);
-    // textureFlags bits 19-30 unused
+    // textureFlags bits 20-30 unused
 
     writeGPUHelper(data, offset, textureFlags);
 
@@ -418,6 +419,8 @@ struct RtSurface {
   bool isTextureFactorBlend = false;
   bool isTextureFactorAlphaBlend = false;
   bool isUnlit = false;
+  // Fork: drawn with the DS1 swamp marker (FRPG_Snow, see fork_ds1_swamp.h).
+  bool isDs1Swamp = false;
   bool isVertexColorBakedLighting = true;
   bool isMotionBlurMaskOut = false;
   bool skipSurfaceInteractionSpritesheetAdjustment = false;
@@ -2049,6 +2052,7 @@ struct LegacyMaterialData {
   bool isTextureFactorBlend = false;
   bool isTextureFactorAlphaBlend = false;
   bool isUnlit = false; // fork: unlit marker, see RtxOptions::fixedFunctionUnlitMarkerEnabled
+  bool isDs1Swamp = false; // fork: DS1 swamp marker, see fork_ds1_swamp.h
   bool isVertexColorBakedLighting = true;
 
   void setHashOverride(XXH64_hash_t hash) {

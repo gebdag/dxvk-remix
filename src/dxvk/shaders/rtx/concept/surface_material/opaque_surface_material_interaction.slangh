@@ -533,6 +533,70 @@ void overrideMaterialInteractionForEye(
 
 // Opaque Surface Material Interaction Functions
 
+// Fork (DS1): FRPG_Snow surfaces, the Blighttown swamp (Surface::isDs1Swamp, fork_ds1_swamp.h).
+
+// A texture's stored value: sRGB-format textures are decoded by the sampler, so encode them back.
+vec3 ds1SwampStored(vec3 sample, bool srgb)
+{
+  if (!srgb)
+  {
+    return sample;
+  }
+  const vec3 lo = sample * 12.92f;
+  const vec3 hi = 1.055f * pow(max(sample, vec3(0.0f)), vec3(1.0f / 2.4f)) - 0.055f;
+  return max(lerp(lo, hi, step(vec3(0.0031308f), sample)), vec3(0.0f));
+}
+
+// A texture read at the surface's texture coordinates (plus an offset) times a scale, its footprint scaled to match.
+vec4 ds1SwampRead(uint16_t textureIndex, uint16_t samplerIndex, SurfaceInteraction surfaceInteraction, vec2 offset, float scale, float lodBias)
+{
+  SurfaceInteraction scaled = surfaceInteraction;
+  scaled.textureCoordinates = (surfaceInteraction.textureCoordinates + offset) * scale;
+  scaled.textureGradientX = surfaceInteraction.textureGradientX * scale;
+  scaled.textureGradientY = surfaceInteraction.textureGradientY * scale;
+  return textureRead(textureIndex, samplerIndex, scaled, lodBias);
+}
+
+// The wake rings' depth at a world position (x, z): the ring texture (the colour texture's alpha) on each ring.
+float ds1SwampRingDepth(uint16_t textureIndex, uint16_t samplerIndex, SurfaceInteraction surfaceInteraction, vec3 position)
+{
+  float depth = 0.0f;
+  const vec3 xz1 = vec3(position.x, position.z, 1.0f);
+  for (uint i = 0; i < cb.ds1Swamp.ringCount; ++i)
+  {
+    const vec4 rowU = cb.ds1Swamp.rings[i * 2];
+    const vec4 rowV = cb.ds1Swamp.rings[i * 2 + 1];
+    const vec2 uv = vec2(dot(rowU.xyz, xz1), dot(rowV.xyz, xz1));
+    if (any(uv < vec2(0.0f)) || any(uv > vec2(1.0f)))
+    {
+      continue;
+    }
+    // The ring texture's footprint: ring texture units per surface texture unit.
+    const float scale = length(rowU.xy) / max(cb.ds1Swamp.uvPerMetre, 1e-6f);
+    SurfaceInteraction ring = surfaceInteraction;
+    ring.textureCoordinates = uv;
+    ring.textureGradientX = surfaceInteraction.textureGradientX * scale;
+    ring.textureGradientY = surfaceInteraction.textureGradientY * scale;
+    depth += min(textureRead(textureIndex, samplerIndex, ring, 0.0f).a * rowU.w, 1.0f);
+  }
+  return depth;
+}
+
+// The game's height field (FRPG_Snow_HeightMap): three layers of the colour texture, faded with
+// view depth, less the wake rings.
+float ds1SwampHeight(uint16_t textureIndex, uint16_t samplerIndex, SurfaceInteraction surfaceInteraction, bool srgb,
+                     vec2 uvOffset, vec3 position, float fade)
+{
+  float h = 0.0f;
+  [unroll]
+  for (uint i = 0; i < 3; ++i)
+  {
+    const vec3 stored = ds1SwampStored(ds1SwampRead(textureIndex, samplerIndex, surfaceInteraction, uvOffset, cb.ds1Swamp.layerScale[i], 0.0f).rgb, srgb);
+    h += cb.ds1Swamp.layerWeight[i] * (stored.r + stored.g + stored.b);
+  }
+  return h * fade - ds1SwampRingDepth(textureIndex, samplerIndex, surfaceInteraction, position);
+}
+
 // Note: EnablePom can be set to false by callers that do not need the parallax-displaced texture coordinates, such as visibility rays.
 OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let EnablePom : bool>(
   OpaqueSurfaceMaterial opaqueSurfaceMaterial,
@@ -826,6 +890,65 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     storeColorOverlayedWithTextureResolutionCheckersInDebugView(normal, opaqueSurfaceMaterial.normalTextureIndex, surfaceInteraction);
   }
 #endif
+  // Fork (DS1): an FRPG_Snow surface takes the game's colour, slope normal and reflection, all from
+  // its height field (fork_ds1_swamp.h).
+  const bool ds1Swamp = surface.isDs1Swamp && cb.ds1Swamp.enable != 0 && albedoOpacityLoaded;
+  vec3 ds1SwampReflectivity = vec3(0.0f);
+  if (ds1Swamp)
+  {
+    const bool srgb = (opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_ALBEDO_TEXTURE_IS_SRGB) != 0;
+    const vec3 position = surfaceInteraction.position;
+    const float viewDepth = length(position - cameraGetWorldPosition(cb.camera));
+    const float fade = saturate(1.0f - viewDepth * cb.ds1Swamp.invFadeDistance);
+    // The slope is the height difference to a point a span away along each texture axis.
+    const float span = max(viewDepth * cb.ds1Swamp.spanPerDepth, 1e-3f);
+    const vec3 axisU = sanitize(normalize(surfaceInteraction.rawTangent), vec3(surfaceInteraction.geometryTangent));
+    const vec3 axisV = sanitize(normalize(surfaceInteraction.rawBitangent), vec3(surfaceInteraction.geometryBitangent));
+    const float uvStep = span * cb.ds1Swamp.uvPerMetre;
+    const uint16_t textureIndex = opaqueSurfaceMaterial.albedoOpacityTextureIndex;
+    const uint16_t samplerIndex = opaqueSurfaceMaterial.samplerIndex;
+    const float h = ds1SwampHeight(textureIndex, samplerIndex, surfaceInteraction, srgb, vec2(0.0f), position, fade);
+    const float hu = ds1SwampHeight(textureIndex, samplerIndex, surfaceInteraction, srgb, vec2(uvStep, 0.0f), position + axisU * span, fade);
+    const float hv = ds1SwampHeight(textureIndex, samplerIndex, surfaceInteraction, srgb, vec2(0.0f, uvStep), position + axisV * span, fade);
+    // The game tilts its tangents by the clamped height difference over twice the span.
+    const float slopeU = clamp(hu - h, -cb.ds1Swamp.slopeClamp, cb.ds1Swamp.slopeClamp) / (2.0f * span);
+    const float slopeV = clamp(hv - h, -cb.ds1Swamp.slopeClamp, cb.ds1Swamp.slopeClamp) / (2.0f * span);
+    vec3 swampNormal = normalize(vec3(surfaceInteraction.geometryNormal) - slopeU * axisU - slopeV * axisV);
+    // The tar detail normal (the material's normal map) on top: its x, y as tangent offsets.
+    normalDetail = 0.0f;
+    if (opaqueSurfaceMaterial.normalTextureIndex != BINDING_INDEX_INVALID)
+    {
+      const vec4 detailSample = ds1SwampRead(opaqueSurfaceMaterial.normalTextureIndex, samplerIndex, surfaceInteraction,
+                                             vec2(0.0f), cb.ds1Swamp.detailUvScale, materialLodBias);
+      const vec3 detail = unsignedOctahedralToHemisphereDirection(vec2(detailSample.xy), 1.0f);
+      const vec2 offset = detail.xy / max(detail.z, 1e-3f) * cb.ds1Swamp.detailStrength;
+      swampNormal = normalize(swampNormal + offset.x * vec3(surfaceInteraction.geometryTangent) + offset.y * vec3(surfaceInteraction.geometryBitangent));
+      normalDetail = 1.0f - detail.z;
+    }
+    normal = swampNormal;
+
+    // Colour: the textured crust where the field is low, the deep colour where it is high.
+    const vec3 crust = ds1SwampStored(ds1SwampRead(textureIndex, samplerIndex, surfaceInteraction, vec2(0.0f), cb.ds1Swamp.colourUvScale, materialLodBias).rgb, srgb);
+    const float deep = saturate((h - cb.ds1Swamp.deepOffset) * cb.ds1Swamp.deepScale);
+    // Divided by the scene's c100, which Remix leaves out of every other map material (fork_ds1_swamp.h).
+    const vec3 stored = saturate(lerp(crust * cb.ds1Swamp.crustColour, cb.ds1Swamp.deepColour, deep) * cb.ds1Swamp.invSceneDiffuseScale);
+    if (cb.opaqueMaterialArgs.ds1GammaAlbedo != 0)
+    {
+#ifdef INTEGRATE_INDIRECT
+      albedo = pow(stored, vec3(cb.opaqueMaterialArgs.ds1BounceAlbedoGamma));
+#else
+      albedo = pow(stored, vec3(2.2f));
+#endif
+    }
+    else
+    {
+      albedo = gammaToLinear(stored);
+    }
+    opacity = 1.0f;
+    const float mask = saturate((h - cb.ds1Swamp.reflectOffset) * cb.ds1Swamp.reflectScale);
+    ds1SwampReflectivity = pow(saturate(cb.ds1Swamp.reflectColour * mask), vec3(2.2f));
+  }
+
   // Load Tangent
 
   // Todo
@@ -848,6 +971,10 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   // Apply material modifiers
   const float roughnessScale = cb.opaqueMaterialArgs.roughnessScale * (isHairCardMaterial ? cb.hairCardRoughnessScale : 1.0f);
   roughness = saturate(roughness * roughnessScale + cb.opaqueMaterialArgs.roughnessBias);
+  if (ds1Swamp)
+  {
+    roughness = cb.ds1Swamp.roughness;
+  }
 
   // Load Metallic
 
@@ -892,6 +1019,13 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     const vec3 specularColor = gammaToLinear(saturate(specularColorSample.rgb * float(opaqueSurfaceMaterial.specularColorScale)));
     opaqueSurfaceMaterialInteraction.baseReflectivity = specularColor * opacity;
     opaqueSurfaceMaterialInteraction.albedo = min(albedo, vec3(1.0f) - specularColor) * opacity;
+  }
+  // Fork (DS1): the swamp's reflection is the game's, added on top without Fresnel (see above).
+  if (ds1Swamp && !noReflectance)
+  {
+    opaqueSurfaceMaterialInteraction.flags |= OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_SPECULAR_COLOR;
+    opaqueSurfaceMaterialInteraction.baseReflectivity = ds1SwampReflectivity;
+    opaqueSurfaceMaterialInteraction.albedo = min(albedo, vec3(1.0f) - ds1SwampReflectivity);
   }
 
   // Note: Roughness loaded from texture is a perceptual roughness value (for optimal encoding), so this works as intended.
@@ -1167,6 +1301,17 @@ bool opaqueSurfaceMaterialInteractionCalcLobeProbability(
   specularReflectionProbability = specularReflectionAlbedoApprox;
   opacityTransmissionProbability = opacityTransmissionAlbedoApprox;
   diffuseTransmissionProbability = isThinOpaqueSubsurface ? diffuseTransmissionAlbedoApprox : 0.0f;
+
+  // Fork (DS1 look): albedo there is the game's stored value to the 2.2 power, and the look maps radiance
+  // back with a 1/2.2 power, so a lobe matters as much as its gamma-space weight. Judged linearly, the zero
+  // threshold below would drop the diffuse lobe of every surface stored darker than about 0.12 (the
+  // Blighttown swamp's tar is 0.094), and its indirect light would never be gathered. The weights only steer
+  // sampling (every evaluation divides by them), so this changes noise, not the result.
+  if (cb.opaqueMaterialArgs.ds1GammaAlbedo != 0)
+  {
+    diffuseReflectionProbability = pow(max(diffuseReflectionProbability, 0.0f), 1.0f / 2.2f);
+    specularReflectionProbability = pow(max(specularReflectionProbability, 0.0f), 1.0f / 2.2f);
+  }
 
   // Todo: Pass raytraceArgs in in the future if accessing these constants poses a problem later.
   adjustProbabilityValue(

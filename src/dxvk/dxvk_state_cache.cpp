@@ -1070,7 +1070,10 @@ namespace dxvk {
 
 // NV-DXVK start
       if (item.isRemixShader) {
-        --m_workerCompilingRemixShaders;
+        // Fork: the last of a batch of Remix shaders: keep what was compiled for the next launch.
+        if (--m_workerCompilingRemixShaders == 0) {
+          m_pipeManager->savePipelineCache();
+        }
       }
 // NV-DXVK end
 

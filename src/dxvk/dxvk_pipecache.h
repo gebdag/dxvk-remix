@@ -32,12 +32,22 @@ namespace dxvk {
     VkPipelineCache handle() const {
       return m_handle;
     }
-    
+
+    /**
+     * \brief Writes the cache to disk if it grew since the last save
+     *
+     * Fork: the cache persists across launches (see dxvk_pipecache.cpp).
+     */
+    void save();
+
   private:
-    
+
     Rc<vk::DeviceFn>        m_vkd;
     VkPipelineCache         m_handle;
-    
+    std::string             m_path;
+    size_t                  m_savedSize = 0;
+    dxvk::mutex             m_saveMutex;
+
   };
   
 }

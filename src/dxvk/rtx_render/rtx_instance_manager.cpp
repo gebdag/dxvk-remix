@@ -1116,6 +1116,7 @@ namespace dxvk {
         currentInstance.surface.isTextureFactorBlend = drawCall.getMaterialData().isTextureFactorBlend;
         currentInstance.surface.isTextureFactorAlphaBlend = drawCall.getMaterialData().isTextureFactorAlphaBlend;
         currentInstance.surface.isUnlit = drawCall.getMaterialData().isUnlit;
+        currentInstance.surface.isDs1Swamp = drawCall.getMaterialData().isDs1Swamp;
         currentInstance.surface.isVertexColorBakedLighting = drawCall.getMaterialData().isVertexColorBakedLighting;
         currentInstance.surface.isMotionBlurMaskOut = currentInstance.testCategoryFlags(InstanceCategories::IgnoreMotionBlur);
 

@@ -1194,6 +1194,12 @@ namespace dxvk {
           // meet geometry, as the game's soft sprites do, and skip untrustworthy motion vectors.
           m_activeDrawCallState.setCategory(InstanceCategories::Particle, true);
         }
+        // Fork: DS1 swamp tag, an FRPG_Snow surface shaded from the game's height field
+        // (rtx.ds1Swamp, fork_ds1_swamp.h).
+        constexpr uint32_t kFixedFunctionDs1SwampMarker = 0xD15D5A4F;
+        if (d3d9State().textureStages[firstStage][DXVK_TSS_CONSTANT] == kFixedFunctionDs1SwampMarker) {
+          m_activeDrawCallState.materialData.isDs1Swamp = true;
+        }
       }
 
       if (m_activeDrawCallState.testCategoryFlags(InstanceCategories::Terrain)) {

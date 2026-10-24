@@ -146,6 +146,13 @@ namespace dxvk {
 // NV-DXVK end
 
     /**
+     * \brief Writes the pipeline cache to disk (fork: it persists across launches)
+     */
+    void savePipelineCache() const {
+      m_cache->save();
+    }
+
+    /**
      * \brief Stops async compiler threads
      */
     void stopWorkerThreads() const;

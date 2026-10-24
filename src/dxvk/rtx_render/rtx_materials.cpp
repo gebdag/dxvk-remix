@@ -57,7 +57,8 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
     uint8_t isTextureFactorAlphaBlend;
     uint8_t isUnlit;
     uint8_t isVertexColorBakedLighting;
-    uint8_t padding[5];
+    uint8_t isDs1Swamp;
+    uint8_t padding[4];
   };
 
   LegacyMaterialIdentityHashData data{};
@@ -86,6 +87,7 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
   data.isTextureFactorAlphaBlend = isTextureFactorAlphaBlend ? 1u : 0u;
   data.isUnlit = isUnlit ? 1u : 0u;
   data.isVertexColorBakedLighting = isVertexColorBakedLighting ? 1u : 0u;
+  data.isDs1Swamp = isDs1Swamp ? 1u : 0u;
 
   return hashStructByMemory<LegacyMaterialIdentityHashData,
       &LegacyMaterialIdentityHashData::colorTextureHash0,
@@ -113,6 +115,7 @@ XXH64_hash_t LegacyMaterialData::computeIdentityHash() const {
       &LegacyMaterialIdentityHashData::isTextureFactorAlphaBlend,
       &LegacyMaterialIdentityHashData::isUnlit,
       &LegacyMaterialIdentityHashData::isVertexColorBakedLighting,
+      &LegacyMaterialIdentityHashData::isDs1Swamp,
       &LegacyMaterialIdentityHashData::padding>(data);
 }
 

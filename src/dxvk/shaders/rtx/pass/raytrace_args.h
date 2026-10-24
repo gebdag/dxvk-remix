@@ -37,6 +37,7 @@
 #include "rtx/pass/material_args.h"
 #include "rtx/pass/view_distance_args.h"
 #include "rtx/pass/fork_ds1_ambient.h"
+#include "rtx/pass/fork_ds1_swamp.h"
 #include "rtx/concept/light/light_types.h"
 #include "rtx/concept/surface/surface_shared.h"
 #include "rtx/algorithm/nee_cache_data.h"
@@ -179,6 +180,8 @@ struct RaytraceArgs {
   DomeLightArgs domeLightArgs;
   // Fork: Dark Souls' ambient light for bounce rays that escape to the sky (fork_ds1_ambient.h).
   Ds1AmbientArgs ds1Ambient;
+  // Fork: Dark Souls' FRPG_Snow surfaces, the Blighttown swamp (fork_ds1_swamp.h).
+  Ds1SwampArgs ds1Swamp;
   NrcArgs nrcArgs;
   SharcArgs sharcArgs;
   SssArgs sssArgs;

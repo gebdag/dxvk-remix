@@ -846,6 +846,10 @@ float resolveVertexUnorderedParticles<
   float alphaTransProd = 1.0f;
   // Fork: display-referred gamma-space sum of the unlit additive layers (see below).
   float3 unlitAdditiveGammaSum = 0..xxx;
+  // Fork: the unlit alpha-blended layers, composited in gamma space (see below).
+  float3 unlitBlendGammaSum = 0..xxx;
+  float unlitBlendWeightSum = 0.0f;
+  float unlitBlendTransProd = 1.0f;
 #else
   mat4 binnedRadiancesAndAttenuation = mat4(
     vec4(0.0f, 0.0f, 0.0f, 1.0f),
@@ -1073,6 +1077,17 @@ float resolveVertexUnorderedParticles<
         emissiveRadiance += src;
       }
     }
+    else if (surface.isUnlit)
+    {
+      // Fork: the game alpha-blends particle layers into its gamma-encoded target, so a layer covers
+      // alpha of the display value; blended in linear and encoded afterwards it shows alpha^(1/2.2) of it
+      // (a 5% smoke layer read as 25%), and the WBOIT energy-loss compensation (x4) thickened it again.
+      // They are display-referred (scaled by 1 / exposure), so undo that first, as for additive layers.
+      const float alphaVal = saturate(1.f - currentRadianceAttenuation);
+      unlitBlendGammaSum += linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation) * alphaVal * w;
+      unlitBlendWeightSum += alphaVal * w;
+      unlitBlendTransProd *= (1.f - alphaVal);
+    }
     else
     {
       float alphaVal = saturate(1.f - currentRadianceAttenuation);
@@ -1138,6 +1153,16 @@ float resolveVertexUnorderedParticles<
 
   // Fork: the unlit additive layers' gamma-space sum, back to linear and scene-referred.
   emissiveRadiance += pow(unlitAdditiveGammaSum, kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation;
+
+  // Fork: the unlit alpha-blended layers as the game composites them, in gamma space: their colour
+  // over coverage 1 - prod(1 - alpha), and what is behind them kept by prod(1 - alpha) of its display
+  // value, i.e. to the 2.2 power of it in linear.
+  if (unlitBlendWeightSum > 0.f)
+  {
+    const float3 unlitAvg = unlitBlendGammaSum / unlitBlendWeightSum;
+    emissiveRadiance += pow(unlitAvg * (1.0f - unlitBlendTransProd), kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation;
+    radianceAttenuation *= pow(unlitBlendTransProd, kSRGBGamma);
+  }
 
   radianceAttenuation *= alphaTransProd;
 #else
@@ -1226,6 +1251,10 @@ void resolveVertexUnordered<
   float alphaTransProd = 1.0f;
   // Fork: display-referred gamma-space sum of the unlit additive layers (see below).
   float3 unlitAdditiveGammaSum = 0..xxx;
+  // Fork: the unlit alpha-blended layers, composited in gamma space (see below).
+  float3 unlitBlendGammaSum = 0..xxx;
+  float unlitBlendWeightSum = 0.0f;
+  float unlitBlendTransProd = 1.0f;
 #else
   // Note: Initialize bins to completely transparent with no radiance to be added in at an impossibly low distance. This
   // ensures these filler items are pulled out first in sorted order, giving the incoming elements a few iterations to populate
@@ -1552,6 +1581,17 @@ void resolveVertexUnordered<
           emissiveRadiance += src;
         }
       }
+      else if (surface.isUnlit)
+      {
+        // Fork: the game alpha-blends particle layers into its gamma-encoded target, so a layer covers
+        // alpha of the display value; blended in linear and encoded afterwards it shows alpha^(1/2.2) of it
+        // (a 5% smoke layer read as 25%), and the WBOIT energy-loss compensation (x4) thickened it again.
+        // They are display-referred (scaled by 1 / exposure), so undo that first, as for additive layers.
+        const float alphaVal = saturate(1.f - currentRadianceAttenuation);
+        unlitBlendGammaSum += linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation) * alphaVal * w;
+        unlitBlendWeightSum += alphaVal * w;
+        unlitBlendTransProd *= (1.f - alphaVal);
+      }
       else
       {
         // Extinction-based alpha
@@ -1639,6 +1679,16 @@ void resolveVertexUnordered<
 
   // Fork: the unlit additive layers' gamma-space sum, back to linear and scene-referred.
   emissiveRadiance += pow(unlitAdditiveGammaSum, kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation;
+
+  // Fork: the unlit alpha-blended layers as the game composites them, in gamma space: their colour
+  // over coverage 1 - prod(1 - alpha), and what is behind them kept by prod(1 - alpha) of its display
+  // value, i.e. to the 2.2 power of it in linear.
+  if (unlitBlendWeightSum > 0.f)
+  {
+    const float3 unlitAvg = unlitBlendGammaSum / unlitBlendWeightSum;
+    emissiveRadiance += pow(unlitAvg * (1.0f - unlitBlendTransProd), kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation;
+    radianceAttenuation *= pow(unlitBlendTransProd, kSRGBGamma);
+  }
 
   radianceAttenuation *= alphaTransProd;
 #else

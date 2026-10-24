@@ -78,6 +78,7 @@
 #include "rtx_legacy_specular.h"
 #include "rtx_dark_souls_exposure.h"
 #include "rtx_dark_souls_ambient.h"
+#include "rtx_dark_souls_swamp.h"
 #include "rtx_dark_souls_look.h"
 
 // Destructor requires the struct definitions
@@ -1577,6 +1578,7 @@ namespace dxvk {
 
     constants.domeLightArgs = getSceneManager().getLightManager().getDomeLightArgs();
     DxvkDarkSoulsAmbient::fillShaderArgs(constants.ds1Ambient);
+    DxvkDarkSoulsSwamp::fillShaderArgs(constants.ds1Swamp);
     // DS1 look: the sky raster comes from the game's own sky shader, exposure included.
     constants.ds1Ambient.skyGamma = 0;
     constants.ds1Ambient.skyUnexpose = 1.0f;

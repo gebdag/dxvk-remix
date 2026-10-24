@@ -18,6 +18,7 @@
 #include "rtx_dark_souls_grading.h"
 #include "rtx_dark_souls_exposure.h"
 #include "rtx_dark_souls_ambient.h"
+#include "rtx_dark_souls_swamp.h"
 #include "../dxvk_context.h"
 #include "../imgui/imgui.h"
 
@@ -88,6 +89,7 @@ namespace dxvk {
     postFx.darkSoulsHaze().showImguiSettings();
 
     showParticles();
+    DxvkDarkSoulsSwamp::showImguiSettings();
 
     postFx.darkSoulsGrading().showImguiSettings();
     postFx.darkSoulsDof().showImguiSettings();

@@ -478,6 +478,14 @@ struct Surface
     set { data13.z = newValue ? packedFlagSet(data13.z, 1 << 16) : packedFlagUnset(data13.z, 1 << 16); }
   }
 
+  // Fork: drawn with the DS1 swamp marker: an FRPG_Snow surface, shaded from the game's height
+  // field (fork_ds1_swamp.h).
+  property bool isDs1Swamp
+  {
+    get { return packedFlagGet(data13.z, 1 << 19); }
+    set { data13.z = newValue ? packedFlagSet(data13.z, 1 << 19) : packedFlagUnset(data13.z, 1 << 19); }
+  }
+
   property bool isEye
   {
     get { return packedFlagGet(data13.z, 1 << 14); }
