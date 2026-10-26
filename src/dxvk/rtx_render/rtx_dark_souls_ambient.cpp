@@ -6,6 +6,10 @@ namespace dxvk {
 
   void DxvkDarkSoulsAmbient::fillShaderArgs(Ds1AmbientArgs& args) {
     args = {};
+    // The sun's lightmap scale works whether or not the ambient is the sky.
+    args.sunFollowsLightmap = sunFollowsLightmap() ? 1u : 0u;
+    args.sunBase = vec4 { sunBase().x, sunBase().y, sunBase().z, 0.0f };
+    args.sunLobe = vec4 { sunLobe().x, sunLobe().y, sunLobe().z, 0.0f };
     if (!enable() || !active()) {
       return;
     }
@@ -23,6 +27,7 @@ namespace dxvk {
     ImGui::Indent();
     RemixGui::Checkbox("Game Ambient as Sky Light", &enableObject());
     RemixGui::DragFloat("Ambient Gain", &gainObject(), 0.01f, 0.0f, 8.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+    RemixGui::Checkbox("Sun Follows the Lightmap", &sunFollowsLightmapObject());
     if (!active()) {
       ImGui::TextDisabled("No ambient from the game yet (needs the DS1 proxy and a probe-lit draw).");
     } else {

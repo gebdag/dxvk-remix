@@ -494,6 +494,20 @@ void integrateDirectPath(
 
     const bool isDiffusionProfileSss = (cb.sssArgs.enableDiffusionProfile && isSubsurfaceDiffusionProfileMaterial(opaqueSurfaceMaterialInteraction));
 
+    // Fork (DS1): the sun on a lightmapped map surface takes the share of it the surface's lightmap
+    // gives in the game (Surface::ds1SunLightmap, fork_ds1_ambient.h). The DS1 proxy's sun is the
+    // only distant light.
+    if ((rtxdiLightSampleValid || risLightSampleValid) && cb.ds1Ambient.sunFollowsLightmap != 0
+        && lightIdx != kInvalidLightIdx)
+    {
+      const uint surfaceIndex = uint(SharedSurfaceIndex[compactedCoordinate]);
+      if (surfaceIndex != SURFACE_INDEX_INVALID
+          && decodePolymorphicLight(lights[lightIdx]).polymorphicType == lightTypeDistant)
+      {
+        lightSample.radiance *= ds1SunLightmapScale(cb.ds1Ambient, surfaces[surfaceIndex].ds1SunLightmap);
+      }
+    }
+
     // Evaluate NEE
     if (rtxdiLightSampleValid || risLightSampleValid || isDiffusionProfileSss)
     {

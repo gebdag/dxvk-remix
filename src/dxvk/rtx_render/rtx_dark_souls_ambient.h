@@ -17,6 +17,9 @@ namespace dxvk {
                "Bounce rays that escape to the sky take the game's ambient light for the area (its irradiance probe and "
                "hemisphere ambient, set each frame by the DS1 proxy) instead of the sky texture.");
     RTX_OPTION("rtx.ds1Ambient", float, gain, 1.0f, "Scale on the game's ambient light.");
+    RTX_OPTION("rtx.ds1Ambient", bool, sunFollowsLightmap, true,
+               "Scale the sun on lightmapped map surfaces by their lightmap, as the game's lightmapped shaders do "
+               "(the DS1 proxy tags each lightmapped draw with its lightmap's level).");
 
     // Game state, set by the proxy. Never saved.
     RTX_OPTION_FLAG("rtx.ds1Ambient", bool, active, false, RtxOptionFlags::NoSave,
@@ -27,6 +30,10 @@ namespace dxvk {
     RTX_OPTION_FLAG("rtx.ds1Ambient", Vector3, negY, Vector3(0.0f), RtxOptionFlags::NoSave, "Ambient light towards -Y (down).");
     RTX_OPTION_FLAG("rtx.ds1Ambient", Vector3, posZ, Vector3(0.0f), RtxOptionFlags::NoSave, "Ambient light towards +Z.");
     RTX_OPTION_FLAG("rtx.ds1Ambient", Vector3, negZ, Vector3(0.0f), RtxOptionFlags::NoSave, "Ambient light towards -Z.");
+    RTX_OPTION_FLAG("rtx.ds1Ambient", Vector3, sunBase, Vector3(0.0f), RtxOptionFlags::NoSave,
+                    "The game's ambient on a surface facing the sun, gamma space (for the lightmap scale).");
+    RTX_OPTION_FLAG("rtx.ds1Ambient", Vector3, sunLobe, Vector3(0.0f), RtxOptionFlags::NoSave,
+                    "The sun's colour as the DS1 proxy submits it, gamma space (for the lightmap scale).");
   };
 
 } // namespace dxvk

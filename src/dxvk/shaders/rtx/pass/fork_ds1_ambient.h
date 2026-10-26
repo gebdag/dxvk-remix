@@ -22,7 +22,13 @@ struct Ds1AmbientArgs {
   uint skyGamma;
   // c135.y / c135.x: the game's sky shader already applied its exposure.
   float skyUnexpose;
-  uint pad0;
+  // Scale the DS1 sun on lightmapped surfaces by their lightmap (Surface::ds1SunLightmap).
+  uint sunFollowsLightmap;
+
+  // The sun as the proxy submits it, in the game's gamma space: the ambient on a surface facing it
+  // (rgb) and its colour (rgb). Its radiance is (sunBase + sunLobe)^2.2 - sunBase^2.2.
+  vec4 sunBase;
+  vec4 sunLobe;
 };
 
 #ifndef __cplusplus
@@ -44,6 +50,30 @@ vec3 ds1SkyRadiance(uint skyGamma, float skyUnexpose, vec3 raster)
 vec3 ds1SkyRadiance(Ds1AmbientArgs args, vec3 raster)
 {
   return ds1SkyRadiance(args.skyGamma, args.skyUnexpose, raster);
+}
+
+// The scale on the DS1 sun's radiance at a surface tagged with its lightmap level
+// (Surface::ds1SunLightmap, 0xD1rrggbb, anything else = not lightmapped). The game's lightmapped map
+// shaders add lightmap * lobe to the ambient in gamma space; the sun light adds
+// (base + lobe)^2.2 - base^2.2 in linear space, so a level l takes
+// ((base + l * lobe)^2.2 - base^2.2) / ((base + lobe)^2.2 - base^2.2) of it.
+vec3 ds1SunLightmapScale(Ds1AmbientArgs args, uint tag)
+{
+  if (args.sunFollowsLightmap == 0 || (tag >> 24) != 0xD1u)
+  {
+    return vec3(1.0f);
+  }
+  const vec3 level = vec3(float((tag >> 16) & 0xFFu), float((tag >> 8) & 0xFFu), float(tag & 0xFFu)) / 255.0f;
+  const vec3 base = max(args.sunBase.rgb, vec3(0.0f));
+  const vec3 lobe = max(args.sunLobe.rgb, vec3(0.0f));
+  const vec3 baseLinear = pow(base, vec3(2.2f));
+  const vec3 full = pow(base + lobe, vec3(2.2f)) - baseLinear;
+  const vec3 part = pow(base + level * lobe, vec3(2.2f)) - baseLinear;
+  vec3 scale;
+  scale.x = full.x > 1e-6f ? part.x / full.x : level.x;
+  scale.y = full.y > 1e-6f ? part.y / full.y : level.y;
+  scale.z = full.z > 1e-6f ? part.z / full.z : level.z;
+  return clamp(scale, vec3(0.0f), vec3(1.0f));
 }
 
 // Ambient-cube radiance for a direction: each axis weighted by its squared component.

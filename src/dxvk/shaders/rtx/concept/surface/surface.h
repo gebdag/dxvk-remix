@@ -546,6 +546,14 @@ struct Surface
     get { return data15.w; }
     set { data15.w = newValue; }
   }
+
+  // Fork: the DS1 lightmap level of the draw (0xD1rrggbb, 0 = not lightmapped): the runtime scales
+  // the DS1 sun on this surface by it (ds1SunLightmapScale, fork_ds1_ambient.h). data15.x, flagged by
+  // textureFlags bit 28 (data15.w is the surface material index).
+  property uint ds1SunLightmap
+  {
+    get { return packedFlagGet(data13.z, 1 << 28) ? data15.x : 0u; }
+  }
 };
 
 // Note: Minimal version of typical Surface Interaction for transmission across passes.

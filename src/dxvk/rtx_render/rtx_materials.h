@@ -358,10 +358,13 @@ struct RtSurface {
     textureFlags |= isDs1Swamp ? (1 << 19) : 0;
     textureFlags |= (static_cast<uint32_t>(ds1HazeSet) & 0xF) << 20;
     textureFlags |= (static_cast<uint32_t>(ds1UnlitExposurePower) & 0x3) << 24;
+    // Fork: bit 28, data15.x holds the DS1 lightmap level (Surface::ds1SunLightmap). Upstream took
+    // data15.w for the surface material index, so the DS1 values share data15.xyz, which only eyes use.
+    textureFlags |= ds1SunLightmap != 0 && !eyeParams ? (1 << 28) : 0;
 
     static_assert(static_cast<uint32_t>(TexGenMode::Count) <= 4);
     textureFlags |= ((static_cast<uint32_t>(texgenMode) & 0x3) << 17);
-    // textureFlags bits 26-30 unused
+    // textureFlags bits 26-27, 29-30 unused
 
     writeGPUHelper(data, offset, textureFlags);
 
@@ -375,6 +378,11 @@ struct RtSurface {
       writeGPUHelper(data, offset, eyeParams->eyeballOrigin.x);
       writeGPUHelper(data, offset, eyeParams->eyeballOrigin.y);
       writeGPUHelper(data, offset, eyeParams->eyeballOrigin.z);
+    } else if (ds1SunLightmap != 0) {
+      // Fork: data15.x, the DS1 lightmap level (Surface::ds1SunLightmap, textureFlags bit 28).
+      writeGPUHelper(data, offset, ds1SunLightmap);
+      writeGPUHelper(data, offset, uint32_t{});
+      writeGPUHelper(data, offset, uint32_t{});
     } else {
       writeGPUHelper(data, offset, uint32_t{});
       writeGPUHelper(data, offset, uint32_t{});
@@ -427,6 +435,8 @@ struct RtSurface {
   uint8_t ds1HazeSet = 0;
   // Fork: exposure power of a DS1 unlit sprite (0-2), see Surface::ds1UnlitExposurePower.
   uint8_t ds1UnlitExposurePower = 0;
+  // Fork: DS1 lightmap level tag (0xD1rrggbb, 0 = none), see Surface::ds1SunLightmap.
+  uint32_t ds1SunLightmap = 0;
   bool isVertexColorBakedLighting = true;
   bool isMotionBlurMaskOut = false;
   bool skipSurfaceInteractionSpritesheetAdjustment = false;
@@ -2064,6 +2074,9 @@ struct LegacyMaterialData {
   uint8_t ds1HazeSet = 0;
   // Fork: how many times the game's sprite shaders apply the exposure to this unlit sprite (0-2).
   uint8_t ds1UnlitExposurePower = 0;
+  // Fork: DS1 lightmap level from the stage-6 tag (0xD1rrggbb, 0 = not lightmapped). Not part of the
+  // material's identity: it belongs to the draw (its lightmap), not to the texture.
+  uint32_t ds1SunLightmap = 0;
   bool isVertexColorBakedLighting = true;
 
   void setHashOverride(XXH64_hash_t hash) {

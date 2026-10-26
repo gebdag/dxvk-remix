@@ -693,6 +693,14 @@ void integratePathVertex(
 
 
       lightSample.solidAnglePdf = invSelectionPdf > 0 ? lightSample.solidAnglePdf / invSelectionPdf : 0.0;
+      // Fork (DS1): the sun on a lightmapped map surface, scaled by its lightmap as in
+      // integrator_direct.slangh.
+      if (lightSampleValid && cb.ds1Ambient.sunFollowsLightmap != 0 && lightIdx != kInvalidLightIdx
+          && decodePolymorphicLight(lights[lightIdx]).polymorphicType == lightTypeDistant)
+      {
+        lightSample.radiance *= ds1SunLightmapScale(cb.ds1Ambient, surface.ds1SunLightmap);
+      }
+
       vec3 diffuseLight = vec3(0.0f, 0.0f, 0.0f);
       vec3 specularLight = vec3(0.0f, 0.0f, 0.0f);
       const bool isDiffusionProfileSss = (cb.sssArgs.enableDiffusionProfile && isSubsurfaceDiffusionProfileMaterial(opaqueSurfaceMaterialInteraction));
