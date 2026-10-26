@@ -358,13 +358,14 @@ struct RtSurface {
     textureFlags |= isDs1Swamp ? (1 << 19) : 0;
     textureFlags |= (static_cast<uint32_t>(ds1HazeSet) & 0xF) << 20;
     textureFlags |= (static_cast<uint32_t>(ds1UnlitExposurePower) & 0x3) << 24;
+    textureFlags |= isDs1Water && !eyeParams ? (1 << 26) : 0;
     // Fork: bit 28, data15.x holds the DS1 lightmap level (Surface::ds1SunLightmap). Upstream took
     // data15.w for the surface material index, so the DS1 values share data15.xyz, which only eyes use.
-    textureFlags |= ds1SunLightmap != 0 && !eyeParams ? (1 << 28) : 0;
+    textureFlags |= ds1SunLightmap != 0 && !eyeParams && !isDs1Water ? (1 << 28) : 0;
 
     static_assert(static_cast<uint32_t>(TexGenMode::Count) <= 4);
     textureFlags |= ((static_cast<uint32_t>(texgenMode) & 0x3) << 17);
-    // textureFlags bits 26-27, 29-30 unused
+    // textureFlags bits 27, 29-30 unused
 
     writeGPUHelper(data, offset, textureFlags);
 
@@ -378,6 +379,15 @@ struct RtSurface {
       writeGPUHelper(data, offset, eyeParams->eyeballOrigin.x);
       writeGPUHelper(data, offset, eyeParams->eyeballOrigin.y);
       writeGPUHelper(data, offset, eyeParams->eyeballOrigin.z);
+    } else if (isDs1Water) {
+      // Fork: data15.xyz, a DS1 water surface's second wave layer (Surface::ds1WaterLayer2: uv * scale
+      // + offset) and its layer strengths. The scale is a half; the offsets are wrapped to [0, 1) and
+      // stored as unorm16 (the normal map repeats, so only the fraction matters, and an offset that grows
+      // every frame keeps its precision); the strengths are the two halves of the stage 1 constant.
+      auto wrapUnorm16 = [](float v) { return uint32_t(std::lround((v - std::floor(v)) * 65536.0f)) & 0xFFFFu; };
+      writeGPUHelper(data, offset, uint32_t(glm::packHalf1x16(ds1WaterLayer2[0])) | (wrapUnorm16(ds1WaterLayer2[1]) << 16));
+      writeGPUHelper(data, offset, wrapUnorm16(ds1WaterLayer2[2]));
+      writeGPUHelper(data, offset, ds1WaterStrength);
     } else if (ds1SunLightmap != 0) {
       // Fork: data15.x, the DS1 lightmap level (Surface::ds1SunLightmap, textureFlags bit 28).
       writeGPUHelper(data, offset, ds1SunLightmap);
@@ -437,6 +447,10 @@ struct RtSurface {
   uint8_t ds1UnlitExposurePower = 0;
   // Fork: DS1 lightmap level tag (0xD1rrggbb, 0 = none), see Surface::ds1SunLightmap.
   uint32_t ds1SunLightmap = 0;
+  // Fork: DS1 water's second wave layer and layer strengths, see Surface::isDs1Water.
+  bool isDs1Water = false;
+  float ds1WaterLayer2[3] = {};
+  uint32_t ds1WaterStrength = 0;
   bool isVertexColorBakedLighting = true;
   bool isMotionBlurMaskOut = false;
   bool skipSurfaceInteractionSpritesheetAdjustment = false;
@@ -2077,6 +2091,11 @@ struct LegacyMaterialData {
   // Fork: DS1 lightmap level from the stage-6 tag (0xD1rrggbb, 0 = not lightmapped). Not part of the
   // material's identity: it belongs to the draw (its lightmap), not to the texture.
   uint32_t ds1SunLightmap = 0;
+  // Fork: a DS1 water surface's second wave layer (scale, offset relative to layer 1's uv) and both
+  // layers' normal strengths (two halfs), see Surface::isDs1Water. Per draw, not part of the identity.
+  bool isDs1Water = false;
+  float ds1WaterLayer2[3] = {};
+  uint32_t ds1WaterStrength = 0;
   bool isVertexColorBakedLighting = true;
 
   void setHashOverride(XXH64_hash_t hash) {

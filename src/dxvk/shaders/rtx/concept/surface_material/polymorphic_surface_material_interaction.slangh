@@ -75,6 +75,9 @@ PolymorphicSurfaceMaterialInteraction polymorphicSurfaceMaterialInteractionCreat
   polymorphicSurfaceMaterialInteraction.fdata4 = translucentSurfaceMaterialInteraction.normalDetail;
   polymorphicSurfaceMaterialInteraction.idata0 = translucentSurfaceMaterialInteraction.sourceSurfaceMaterialIndex;
   polymorphicSurfaceMaterialInteraction.idata1 = translucentSurfaceMaterialInteraction.sourcePackedGammaEmissiveColor;
+  // Fork (DS1): the water reflection tint, in approximate gamma space so dark tints survive 8 bits.
+  polymorphicSurfaceMaterialInteraction.i32data0 =
+    float4x32ToUnorm4x8(vec4(linearToGammaFast(translucentSurfaceMaterialInteraction.ds1ReflectionTint), 1.0f));
   polymorphicSurfaceMaterialInteraction.dlssControlMask = float4x32ToUnorm4x8(1.0f.rrrr);
   polymorphicSurfaceMaterialInteraction.bdata0 = translucentSurfaceMaterialInteraction.flags;
   polymorphicSurfaceMaterialInteraction.type = surfaceMaterialTypeTranslucent;

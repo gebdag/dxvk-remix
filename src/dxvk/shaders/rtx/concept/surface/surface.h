@@ -554,6 +554,27 @@ struct Surface
   {
     get { return packedFlagGet(data13.z, 1 << 28) ? data15.x : 0u; }
   }
+
+  // Fork: a DS1 water surface. Its animated water normals follow the game's wave layers instead of
+  // the global motion: layer 1 at the texture coordinate (stage 0's transform places it), layer 2 at
+  // uv * ds1WaterLayer2.x + ds1WaterLayer2.yz, each with its own normal strength (ds1WaterStrength).
+  property bool isDs1Water
+  {
+    get { return packedFlagGet(data13.z, 1 << 26); }
+  }
+
+  // data15.xyz (data15.w is the surface material index): x = half scale | unorm16 offset u << 16,
+  // y = unorm16 offset v, both offsets wrapped to [0, 1); z = the two strength halves (RtSurface::writeGPUData).
+  property vec3 ds1WaterLayer2
+  {
+    get { return vec3(f16tof32(data15.x & 0xFFFFu), float(data15.x >> 16) / 65536.0f, float(data15.y & 0xFFFFu) / 65536.0f); }
+  }
+
+  // Layer 1 and layer 2 normal strengths, relative to the water normal map as authored.
+  property vec2 ds1WaterStrength
+  {
+    get { return vec2(f16tof32(data15.z & 0xFFFFu), f16tof32(data15.z >> 16)); }
+  }
 };
 
 // Note: Minimal version of typical Surface Interaction for transmission across passes.

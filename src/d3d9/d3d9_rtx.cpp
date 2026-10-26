@@ -1217,6 +1217,19 @@ namespace dxvk {
         // (Surface::ds1SunLightmap, fork_ds1_ambient.h).
         const uint32_t lightmapTag = d3d9State().textureStages[6][DXVK_TSS_CONSTANT];
         m_activeDrawCallState.materialData.ds1SunLightmap = (lightmapTag >> 24) == 0xD1u ? lightmapTag : 0;
+        // Fork: a DS1 water surface's second wave layer. Stage 0's texture transform places layer 1;
+        // the proxy puts layer 2's uv, relative to layer 1's, in stage 1's texture transform
+        // (D3DTTFF_COUNT2: uv2 = uv1 * _11 + (_31, _32)) and both layers' normal strengths in stage 1's
+        // D3DTSS_CONSTANT (two halfs, layer 1 low). See Surface::isDs1Water.
+        auto& water = m_activeDrawCallState.materialData;
+        water.isDs1Water = (d3d9State().textureStages[1][DXVK_TSS_TEXTURETRANSFORMFLAGS] & 0x3) == D3DTTFF_COUNT2;
+        if (water.isDs1Water) {
+          const Matrix4& layer2 = d3d9State().transforms[GetTransformIndex(D3DTS_TEXTURE1)];
+          water.ds1WaterLayer2[0] = layer2.data[0].x;
+          water.ds1WaterLayer2[1] = layer2.data[2].x;
+          water.ds1WaterLayer2[2] = layer2.data[2].y;
+          water.ds1WaterStrength = d3d9State().textureStages[1][DXVK_TSS_CONSTANT];
+        }
       }
 
       if (m_activeDrawCallState.testCategoryFlags(InstanceCategories::Terrain)) {

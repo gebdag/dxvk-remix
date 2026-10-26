@@ -262,6 +262,10 @@ struct TranslucentSurfaceMaterialInteraction
   uint8_t flags;
 
   bool isAnimatedWater;
+
+  // Fork (DS1): what a DS1 water surface's reflection is multiplied by, the game's reflection tint
+  // (Surface::isDs1Water); 1 for everything else.
+  vec3 ds1ReflectionTint;
 };
 
 struct RayPortalSurfaceMaterialInteraction

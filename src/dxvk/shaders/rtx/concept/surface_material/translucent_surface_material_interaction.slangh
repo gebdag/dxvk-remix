@@ -60,7 +60,19 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
 
   bool secondNormalLoaded = false;
   float primaryNormalLodBias = 0.0f;
-  if (cb.translucentMaterialArgs.animatedWaterEnable && surface.isAnimatedWater)
+  vec2 waterNormalStrength = vec2(1.0f);
+  if (cb.translucentMaterialArgs.animatedWaterEnable && surface.isAnimatedWater && surface.isDs1Water)
+  {
+    // Fork (DS1): the game's two wave layers of this water body, placed and scaled per surface.
+    primaryNormalLodBias = cb.translucentMaterialArgs.animatedWaterPrimaryNormalLodBias;
+    waterNormalStrength = surface.ds1WaterStrength;
+    const vec2 layer1UV = surfaceInteraction.textureCoordinates;
+    const vec3 layer2 = surface.ds1WaterLayer2;
+    surfaceInteraction.textureCoordinates = frac(layer1UV * layer2.x + layer2.yz);
+    secondNormalLoaded = surfaceMaterialInteractionTextureReadHelper(translucentSurfaceMaterial.normalTextureIndex, translucentSurfaceMaterial.samplerIndex, surfaceInteraction, secondNormalSample, cb.translucentMaterialArgs.animatedWaterSecondaryNormalLodBias);
+    surfaceInteraction.textureCoordinates = frac(layer1UV);
+  }
+  else if (cb.translucentMaterialArgs.animatedWaterEnable && surface.isAnimatedWater)
   {
     primaryNormalLodBias = cb.translucentMaterialArgs.animatedWaterPrimaryNormalLodBias;
     vec2 uvSize, uvBias;
@@ -104,11 +116,11 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
   if (normalLoaded)
   {
     // Note: Using f16 from texture to decode from is fine as the original texture is only 8 bits of precision.
-    vec3 tangentNormal = unsignedOctahedralToHemisphereDirection(vec2(normalSample.xy), cb.translucentMaterialArgs.normalIntensity);
+    vec3 tangentNormal = unsignedOctahedralToHemisphereDirection(vec2(normalSample.xy), cb.translucentMaterialArgs.normalIntensity * waterNormalStrength.x);
 
     if (secondNormalLoaded)
     {
-      const vec3 tangentNormal2 = unsignedOctahedralToHemisphereDirection(vec2(secondNormalSample.xy), cb.translucentMaterialArgs.normalIntensity);
+      const vec3 tangentNormal2 = unsignedOctahedralToHemisphereDirection(vec2(secondNormalSample.xy), cb.translucentMaterialArgs.normalIntensity * waterNormalStrength.y);
 
       tangentNormal = normalBlendRNM(tangentNormal2, tangentNormal);
     }
@@ -166,6 +178,16 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
   translucentSurfaceMaterialInteraction.shadingNormal = getBentNormal(surfaceInteraction.geometryNormal, normal, -minimalRayInteraction.viewDirection);
   translucentSurfaceMaterialInteraction.normalDetail = float(1.0 - dot(float3(translucentSurfaceMaterialInteraction.shadingNormal), float3(surfaceInteraction.geometryNormal)));
   translucentSurfaceMaterialInteraction.baseReflectivity = translucentSurfaceMaterial.baseReflectivity;
+  translucentSurfaceMaterialInteraction.ds1ReflectionTint = vec3(1.0f);
+  if (cb.translucentMaterialArgs.animatedWaterEnable && surface.isAnimatedWater && surface.isDs1Water)
+  {
+    // Fork (DS1): the game reflects each water body by its own weight, c130 * c131 seen face-on, tinted
+    // by c132; the proxy passes them per draw as D3DRS_TEXTUREFACTOR (alpha = weight, rgb = tint).
+    const uint reflection = surface.tFactor;
+    translucentSurfaceMaterialInteraction.baseReflectivity = float(reflection >> 24) / 255.0f;
+    translucentSurfaceMaterialInteraction.ds1ReflectionTint = gammaToLinear(
+      vec3(float((reflection >> 16) & 0xFFu), float((reflection >> 8) & 0xFFu), float(reflection & 0xFFu)) / 255.0f);
+  }
   translucentSurfaceMaterialInteraction.refractiveIndex = translucentSurfaceMaterial.refractiveIndex;
 
   translucentSurfaceMaterialInteraction.transmittanceColor = transmittanceColor;
@@ -207,6 +229,7 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
   translucentSurfaceMaterialInteraction.transmittanceColor = polymorphicSurfaceMaterialInteraction.vdata0;
   translucentSurfaceMaterialInteraction.diffuseColor = polymorphicSurfaceMaterialInteraction.vdata1;
   translucentSurfaceMaterialInteraction.baseReflectivity = polymorphicSurfaceMaterialInteraction.fdata0;
+  translucentSurfaceMaterialInteraction.ds1ReflectionTint = gammaToLinearFast(unorm4x8ToFloat4x32(polymorphicSurfaceMaterialInteraction.i32data0).rgb);
   translucentSurfaceMaterialInteraction.refractiveIndex = polymorphicSurfaceMaterialInteraction.fdata1;
   translucentSurfaceMaterialInteraction.thicknessOrMeasurementDistance = polymorphicSurfaceMaterialInteraction.fdata2;
   translucentSurfaceMaterialInteraction.diffuseOpacity = polymorphicSurfaceMaterialInteraction.fdata3;
@@ -252,6 +275,8 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
   translucentSurfaceMaterialInteraction.normalDetail = 0.0f;
   translucentSurfaceMaterialInteraction.baseReflectivity =
     gBufferMemoryPolymorphicSurfaceMaterialInteraction.baseReflectivity.x;
+  // Note: Not stored in the G-buffer; the reflection it tints is sampled before the G-buffer is written.
+  translucentSurfaceMaterialInteraction.ds1ReflectionTint = vec3(1.0f);
   translucentSurfaceMaterialInteraction.refractiveIndex = translucentSurfaceMaterial.refractiveIndex;
   translucentSurfaceMaterialInteraction.sourceSurfaceMaterialIndex = sourceSurfaceMaterialIndex;
   translucentSurfaceMaterialInteraction.thicknessOrMeasurementDistance =
@@ -499,7 +524,7 @@ SurfaceMaterialInteractionSample translucentSurfaceMaterialInteractionCalcSpecul
 
   if (!isThinWalled)
   {
-    throughput = outsideFresnel.xxx;
+    throughput = outsideFresnel * translucentSurfaceMaterialInteraction.ds1ReflectionTint;
   }
   else
   {
@@ -814,7 +839,7 @@ SurfaceMaterialInteractionPSRSample translucentSurfaceMaterialInteractionCalcPSR
 
   if (!isThinWalled)
   {
-    attenuation = outsideFresnel.xxx;
+    attenuation = outsideFresnel * translucentSurfaceMaterialInteraction.ds1ReflectionTint;
   }
   else
   {

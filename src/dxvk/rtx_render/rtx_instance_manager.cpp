@@ -157,7 +157,7 @@ namespace dxvk {
   namespace {
     template<int RtInstanceSize> struct CheckRtInstanceSize {
       // The second line of the build error should contain the new size of RtInstance in the template argument, i.e. `dxvk::CheckRtInstanceSize<newSize>`
-      static_assert(RtInstanceSize == 800, "RtInstance size has changed. Fix the copy constructor above this message, then update the expected size.");
+      static_assert(RtInstanceSize == 824, "RtInstance size has changed. Fix the copy constructor above this message, then update the expected size.");
     };
     CheckRtInstanceSize<sizeof(RtInstance)> _rtInstanceSizeTest;
   }
@@ -1120,6 +1120,10 @@ namespace dxvk {
         currentInstance.surface.ds1HazeSet = drawCall.getMaterialData().ds1HazeSet;
         currentInstance.surface.ds1UnlitExposurePower = drawCall.getMaterialData().ds1UnlitExposurePower;
         currentInstance.surface.ds1SunLightmap = drawCall.getMaterialData().ds1SunLightmap;
+        currentInstance.surface.isDs1Water = drawCall.getMaterialData().isDs1Water;
+        std::copy(std::begin(drawCall.getMaterialData().ds1WaterLayer2), std::end(drawCall.getMaterialData().ds1WaterLayer2),
+                  currentInstance.surface.ds1WaterLayer2);
+        currentInstance.surface.ds1WaterStrength = drawCall.getMaterialData().ds1WaterStrength;
         currentInstance.surface.isVertexColorBakedLighting = drawCall.getMaterialData().isVertexColorBakedLighting;
         currentInstance.surface.isMotionBlurMaskOut = currentInstance.testCategoryFlags(InstanceCategories::IgnoreMotionBlur);
 
@@ -1131,7 +1135,10 @@ namespace dxvk {
 
         materialData->getSpriteSheetData(currentInstance.surface.spriteSheetRows, currentInstance.surface.spriteSheetCols, currentInstance.surface.spriteSheetFPS);
         currentInstance.surface.textureScrollSpeed = textureScrollSpeed;
-        currentInstance.m_isAnimated = currentInstance.surface.spriteSheetFPS != 0 || currentInstance.surface.textureScrollSpeed != Vector2(0.f);
+        // Fork: a texture transform (DS1's scrolling materials, a new offset every frame) animates the
+        // cutout like a sprite sheet does: its opacity micromap would be rebuilt every frame.
+        currentInstance.m_isAnimated = currentInstance.surface.spriteSheetFPS != 0 || currentInstance.surface.textureScrollSpeed != Vector2(0.f) ||
+          drawCall.getTransformData().textureTransform != Matrix4();
         currentInstance.surface.objectPickingValue = drawCall.drawCallID;
 
         // Temp storage for the case we need to patch the material data
