@@ -185,6 +185,20 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
   const DWORD retryWindowMS = (maxAttempts == INFINITE)
     ? INFINITE
     : maxAttempts * (peekTimeoutMS > 0 ? peekTimeoutMS : 1);
+  // The window covers the retries, so it opens at the first mismatch rather than at
+  // the start of the wait: with timeouts disabled peek() blocks for as long as the
+  // server is busy, and a wait that had blocked through a level load gave up on its
+  // very first mismatch (DS1 load crash 2026-10-26: attempts=1 mismatches=1 after a
+  // multi-second block, the response it skipped belonging to another thread). It
+  // reopens whenever the response at the front changes, since that is another waiter
+  // taking its own; only a front that stays stuck for the whole window gives up. A
+  // response that never comes while others keep draining still ends the wait, ten
+  // windows after the first mismatch.
+  constexpr DWORD kMaxReopenedWindows = 10;
+  DWORD retryStartMS = waitStartMS;
+  DWORD firstMismatchMS = 0;
+  uint32_t frontHandle = 0;
+  Commands::D3D9Command frontCommand = Commands::Bridge_Invalid;
   do {
     Result result;
     Header header = getReaderChannel().commands->peek(result, peekTimeoutMS, pbEarlyOutSignal);
@@ -215,6 +229,14 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
           Logger::err(format_string("Response mismatch: received %s UID %s, expected %s UID %s.",
                                     Commands::toString(header.command).c_str(), std::to_string(header.pHandle).c_str(),
                                     Commands::toString(command).c_str(), std::to_string(uidToVerify).c_str()));
+        }
+        if (mismatchCount == 0 || header.pHandle != frontHandle || header.command != frontCommand) {
+          frontHandle = header.pHandle;
+          frontCommand = header.command;
+          retryStartMS = GetTickCount();
+          if (mismatchCount == 0) {
+            firstMismatchMS = retryStartMS;
+          }
         }
         ++mismatchCount;
         // If we see the incorrect command, we want to give the other side of
@@ -271,7 +293,9 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
     }
     ++attemptNum;
   } while (!bEarlyOut &&
-            (retryWindowMS == INFINITE || (GetTickCount() - waitStartMS) < retryWindowMS) &&
+            (retryWindowMS == INFINITE ||
+             ((GetTickCount() - retryStartMS) < retryWindowMS &&
+              (mismatchCount == 0 || (GetTickCount() - firstMismatchMS) < kMaxReopenedWindows * retryWindowMS))) &&
             gbBridgeRunning);
 
   // Every caller collapses this into "no response from server", which hides
