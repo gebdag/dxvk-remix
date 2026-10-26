@@ -11,6 +11,7 @@ namespace dxvk {
   class DxvkDevice;
   class DxvkSampler;
   class DxvkDarkSoulsHaze;
+  class RtxContext;
 
   // Dark Souls 1 look: the game's own image pipeline run on Remix's linear radiance, in
   // place of Remix's tonemapper, bloom, haze pass and grading (post_fx_dark_souls_look.h):
@@ -48,6 +49,16 @@ namespace dxvk {
       Rc<DxvkContext> ctx,
       const Resources::Resource& inOutColor,
       const Resources::Resource& linearViewZ,
+      const float jitterOffset[2],
+      float missLinearViewZ);
+
+    // The game's light shafts, path traced from its shaft sun (post_fx_dark_souls_look_shafts), for the
+    // composite to add. Before dispatchComposite, while the frame's TLAS and sky probe are current.
+    void dispatchShafts(
+      RtxContext* ctx,
+      const VkExtent3D& outputExtent,
+      const Resources::Resource& linearViewZ,
+      const Camera& camera,
       const float jitterOffset[2],
       float missLinearViewZ);
 
@@ -103,6 +114,37 @@ namespace dxvk {
     RTX_OPTION_FLAG("rtx.ds1Look", int, bloomHeight, 180, RtxOptionFlags::NoSave,
                     "Height of the game's bright pass buffer (twice its final bloom buffer).");
 
+    // Light shafts (FRPG_Fil_LightShaft), path traced. Dev only: the game's sharp shafts are its m10_bg_shaft
+    // planes (rasterized into the sky); this only adds the filter's glow, and only on the sky (a surface within
+    // 1 km gets under 0.4% of it), so it never meets walkable space. Off by default.
+    RTX_OPTION("rtx.ds1Look", bool, shaftEnable, false,
+               "Add the game's light shaft glow, path traced: single scattering along each view ray from the game's shaft "
+               "sun, lit through the gaps of the sky it sees the sun through and shadowed by geometry (ray traced).");
+    RTX_OPTION("rtx.ds1Look", int, shaftSamples, 32, "Points per view ray the shafts are gathered at.");
+    RTX_OPTION("rtx.ds1Look", float, shaftCloudDistance, 5000.0f,
+               "Radius of the sky shell around the camera the sun shines through (world units): the distance of the clouds "
+               "whose gaps make the shafts. Larger spreads each gap's shaft further across the sky.");
+    RTX_OPTION("rtx.ds1Look", float, shaftLayerDepth, 750.0f,
+               "The scattering haze sits under the clouds: its density rises towards the sky shell over this depth (world "
+               "units). Smaller makes shorter, sharper streaks behind each gap; larger, longer and softer ones.");
+    RTX_OPTION("rtx.ds1Look", float, shaftOcclusionDistance, 2000.0f,
+               "Geometry shadows the shafts up to this far from the camera, and from this far from a point in the air.");
+    RTX_OPTION("rtx.ds1Look", float, shaftGain, 0.3f,
+               "Shaft brightness. 0.3 matches the game's filter on the Undead Parish sky (frame_20261026_223817): its "
+               "shaft planes (m10_bg_shaft, rasterized into the sky) carry the sharp shafts, the filter and this the glow.");
+    RTX_OPTION("rtx.ds1Look", float, shaftAnisotropy, 0.0f,
+               "Henyey-Greenstein g of the scattering: 0 is isotropic (the game's shafts have no angular falloff), higher "
+               "brightens the shafts towards the sun.");
+    RTX_OPTION("rtx.ds1Look", float, shaftResolutionScale, 0.5f, "Shaft buffer size relative to the output.");
+    // Game state, set by the proxy from the LightShaft passes. Never saved.
+    RTX_OPTION_FLAG("rtx.ds1Look", bool, shaftActive, false, RtxOptionFlags::NoSave,
+                    "Set by the DS1 proxy while the game runs its light shaft filter (not every area has shafts).");
+    RTX_OPTION_FLAG("rtx.ds1Look", Vector3, shaftDirection, Vector3(0.0f, 1.0f, 0.0f), RtxOptionFlags::NoSave,
+                    "Towards the game's shaft sun (recovered from LightShaft PS c69; not the lighting sun).");
+    RTX_OPTION_FLAG("rtx.ds1Look", float, shaftThreshold, 1.0f, RtxOptionFlags::NoSave,
+                    "The shaft bright pass threshold for the sky (LightShaft's PS c71.x).");
+    RTX_OPTION_FLAG("rtx.ds1Look", float, shaftWeight, 1.0f, RtxOptionFlags::NoSave, "ColAdj's light shaft weight (PS c56.y).");
+
   private:
     void ensureResources(Rc<DxvkContext>& ctx, uint32_t width, uint32_t height);
     void ensureDofResources(Rc<DxvkContext>& ctx, const VkExtent3D& extent);
@@ -128,6 +170,11 @@ namespace dxvk {
     Rc<DxvkBuffer> m_nearConstants;
     Rc<DxvkBuffer> m_dofFilterConstants[6];
     Rc<DxvkBuffer> m_dofConstants;
+    Rc<DxvkBuffer> m_shaftConstants;
+
+    // The shafts this frame (dispatchShafts), when it ran.
+    Resources::Resource m_shafts;
+    bool m_shaftsReady = false;
 
     // Bright pass size (the game's 256x180 for a 512x360 DoF buffer) and half that.
     Resources::Resource m_base[2];

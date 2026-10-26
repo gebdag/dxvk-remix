@@ -886,6 +886,10 @@ namespace dxvk {
         {
           DxvkDarkSoulsGrading& ds1Grading = m_common->metaPostFx().m_darkSoulsGrading;
           if (ds1Look) {
+            m_common->metaPostFx().darkSoulsLook().dispatchShafts(this,
+              rtOutput.m_finalOutput.resource(Resources::AccessType::Read).image->mipLevelExtent(0),
+              rtOutput.m_primaryLinearViewZ, getSceneManager().getCamera().getShaderConstants(),
+              ds1Jitter, ds1MissLinearViewZ);
             m_common->metaPostFx().darkSoulsLook().dispatchComposite(this,
               rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite), rtOutput.m_primaryLinearViewZ,
               ds1Jitter, ds1MissLinearViewZ);

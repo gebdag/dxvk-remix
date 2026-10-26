@@ -13,6 +13,7 @@
 
 #include "rtx/utility/shader_types.h"
 #include "rtx/pass/post_fx/post_fx_dark_souls_haze.h"
+#include "rtx/pass/fork_ds1_ambient.h"
 
 // Scene pass: linear radiance -> the game's 8-bit scene value (gamma), in place.
 #define POST_FX_DS_LOOK_SCENE_INOUT          0
@@ -60,6 +61,17 @@
 #define POST_FX_DS_LOOK_COMPOSITE_INOUT      0
 #define POST_FX_DS_LOOK_COMPOSITE_BLOOM      1
 #define POST_FX_DS_LOOK_COMPOSITE_CONSTANTS  2
+#define POST_FX_DS_LOOK_COMPOSITE_SHAFTS     3
+
+// Light shafts: the game's FRPG_Fil_LightShaft (a radial blur of the frame's bright sky towards the
+// shaft sun, added by ColAdj times c56.y) as single scattering along each view ray, path traced:
+// the composite adds them where ColAdj adds the game's. The TLAS sits at the common ray tracing
+// index, the resource every ray tracing pass binds there.
+#define POST_FX_DS_LOOK_SHAFTS_TLAS          0
+#define POST_FX_DS_LOOK_SHAFTS_OUTPUT        1
+#define POST_FX_DS_LOOK_SHAFTS_LINEAR_VIEW_Z 2
+#define POST_FX_DS_LOOK_SHAFTS_SKY_PROBE     3
+#define POST_FX_DS_LOOK_SHAFTS_CONSTANTS     4
 
 #define DS_LOOK_MAX_TAPS 64
 
@@ -162,4 +174,42 @@ struct PostFxDarkSoulsLookCompositeArgs {
   vec4 gradeRowR;       // c62: dot((col, 1), row)
   vec4 gradeRowG;       // c63
   vec4 gradeRowB;       // c64
+
+  uint shaftEnable;
+  float shaftWeight;    // c56.y
+  uint pad0;
+  uint pad1;
+};
+
+struct PostFxDarkSoulsLookShaftArgs {
+  Camera camera;
+  // The sky probe holds the game's sky raster; this maps it to radiance (ds1SkyRadiance).
+  Ds1AmbientArgs ambient;
+
+  // -- Struct objects should go above this line to preserve alignment --
+
+  uvec2 outputSize;
+  vec2 invOutputSize;
+
+  vec2 depthJitterUv;   // render-resolution UV jitter of the view Z buffer
+  float missLinearViewZ;
+  float exposure;       // c135.x / c135.y: radiance^(1/2.2) * this = the game's 8-bit value
+
+  vec3 direction;       // towards the shaft sun (the proxy recovers it from c69)
+  float threshold;      // the shaft bright pass threshold for the sky (c71.x)
+
+  // The sky as a shell of this radius around the camera: a sun ray from a point in the air
+  // leaves through it at the cloud (or gap) it is shadowed by.
+  float cloudDistance;
+  // Points farther than this from the camera, and geometry farther than this from a point,
+  // do not shadow the sun.
+  float occlusionDistance;
+  uint samples;
+  uint frameIndex;
+
+  float gain;
+  float anisotropy;     // Henyey-Greenstein g of the scattering (0 = isotropic, like the game's)
+  // The scattering air's density rises towards the shell as exp((t - cloudDistance) / layerDepth).
+  float layerDepth;
+  uint pad0;
 };
