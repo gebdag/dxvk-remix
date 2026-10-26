@@ -361,11 +361,12 @@ struct RtSurface {
     textureFlags |= isDs1Water && !eyeParams ? (1 << 26) : 0;
     // Fork: bit 28, data15.x holds the DS1 lightmap level (Surface::ds1SunLightmap). Upstream took
     // data15.w for the surface material index, so the DS1 values share data15.xyz, which only eyes use.
-    textureFlags |= ds1SunLightmap != 0 && !eyeParams && !isDs1Water ? (1 << 28) : 0;
+    textureFlags |= hasDs1AlbedoOffset && !eyeParams && !isDs1Water ? (1 << 27) : 0;
+    textureFlags |= ds1SunLightmap != 0 && !eyeParams && !isDs1Water && !hasDs1AlbedoOffset ? (1 << 28) : 0;
 
     static_assert(static_cast<uint32_t>(TexGenMode::Count) <= 4);
     textureFlags |= ((static_cast<uint32_t>(texgenMode) & 0x3) << 17);
-    // textureFlags bits 27, 29-30 unused
+    // textureFlags bits 29-30 unused
 
     writeGPUHelper(data, offset, textureFlags);
 
@@ -388,6 +389,11 @@ struct RtSurface {
       writeGPUHelper(data, offset, uint32_t(glm::packHalf1x16(ds1WaterLayer2[0])) | (wrapUnorm16(ds1WaterLayer2[1]) << 16));
       writeGPUHelper(data, offset, wrapUnorm16(ds1WaterLayer2[2]));
       writeGPUHelper(data, offset, ds1WaterStrength);
+    } else if (hasDs1AlbedoOffset) {
+      // Fork: data15.xyz, a DS1 albedo offset (Surface::ds1AlbedoOffset, textureFlags bit 27).
+      writeGPUHelper(data, offset, ds1AlbedoOffset[0]);
+      writeGPUHelper(data, offset, ds1AlbedoOffset[1]);
+      writeGPUHelper(data, offset, ds1AlbedoOffset[2]);
     } else if (ds1SunLightmap != 0) {
       // Fork: data15.x, the DS1 lightmap level (Surface::ds1SunLightmap, textureFlags bit 28).
       writeGPUHelper(data, offset, ds1SunLightmap);
@@ -452,6 +458,9 @@ struct RtSurface {
   bool isDs1Water = false;
   float ds1WaterLayer2[3] = {};
   uint32_t ds1WaterStrength = 0;
+  // Fork: DS1 albedo offset (data15.xyz, flag bit 27), see Surface::ds1AlbedoOffset.
+  bool hasDs1AlbedoOffset = false;
+  float ds1AlbedoOffset[3] = {};
   bool isVertexColorBakedLighting = true;
   bool isMotionBlurMaskOut = false;
   bool skipSurfaceInteractionSpritesheetAdjustment = false;
@@ -2097,6 +2106,10 @@ struct LegacyMaterialData {
   bool isDs1Water = false;
   float ds1WaterLayer2[3] = {};
   uint32_t ds1WaterStrength = 0;
+  // Fork: a DS1 albedo offset (the skin tone, PS c156) from the stage-5 tag, see
+  // Surface::ds1AlbedoOffset. Per draw, not part of the identity.
+  bool hasDs1AlbedoOffset = false;
+  float ds1AlbedoOffset[3] = {};
   bool isVertexColorBakedLighting = true;
 
   void setHashOverride(XXH64_hash_t hash) {

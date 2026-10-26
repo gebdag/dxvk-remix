@@ -1219,6 +1219,16 @@ namespace dxvk {
         const uint32_t lightmapTag = d3d9State().textureStages[6][DXVK_TSS_CONSTANT];
         m_activeDrawCallState.materialData.ds1SunLightmap =
           (lightmapTag >> 24) == 0xD1u || lightmapTag == 0xD2000000u ? lightmapTag : 0;
+        // Fork: DS1 albedo offset in stage 5's D3DTSS_CONSTANT (0xD3rrggbb, signed bytes / 255): the
+        // character creator's skin tone, which the game's character shaders add to the diffuse
+        // texture (PS c156). See Surface::ds1AlbedoOffset.
+        const uint32_t albedoOffsetTag = d3d9State().textureStages[5][DXVK_TSS_CONSTANT];
+        auto& albedoOffset = m_activeDrawCallState.materialData;
+        albedoOffset.hasDs1AlbedoOffset = (albedoOffsetTag >> 24) == 0xD3u;
+        for (int c = 0; c < 3; ++c) {
+          albedoOffset.ds1AlbedoOffset[c] = albedoOffset.hasDs1AlbedoOffset
+            ? static_cast<float>(static_cast<int8_t>((albedoOffsetTag >> (16 - 8 * c)) & 0xFFu)) / 255.0f : 0.0f;
+        }
         // Fork: a DS1 water surface's second wave layer. Stage 0's texture transform places layer 1;
         // the proxy puts layer 2's uv, relative to layer 1's, in stage 1's texture transform
         // (D3DTTFF_COUNT2: uv2 = uv1 * _11 + (_31, _32)) and both layers' normal strengths in stage 1's

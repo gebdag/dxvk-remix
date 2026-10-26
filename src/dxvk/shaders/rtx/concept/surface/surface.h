@@ -563,6 +563,19 @@ struct Surface
     get { return packedFlagGet(data13.z, 1 << 26); }
   }
 
+  // Fork: a DS1 albedo offset, added to the diffuse texture in the game's stored (gamma) space before
+  // the texture stage operations: the character creator's skin tone, PS c156 in the game's character
+  // shaders. data15.xyz on surfaces that are neither eyes nor water (textureFlags bit 27).
+  property bool hasDs1AlbedoOffset
+  {
+    get { return packedFlagGet(data13.z, 1 << 27); }
+  }
+
+  property vec3 ds1AlbedoOffset
+  {
+    get { return asfloat(data15.xyz); }
+  }
+
   // data15.xyz (data15.w is the surface material index): x = half scale | unorm16 offset u << 16,
   // y = unorm16 offset v, both offsets wrapped to [0, 1); z = the two strength halves (RtSurface::writeGPUData).
   property vec3 ds1WaterLayer2

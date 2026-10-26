@@ -716,6 +716,24 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   {
     albedo = albedoOpacitySample.rgb;
 
+    // Fork (DS1): the skin tone the game adds to the texture as stored (Surface::ds1AlbedoOffset). An
+    // sRGB-format texture arrives linearised by the sampler, so the offset goes on its stored value.
+    if (surface.hasDs1AlbedoOffset)
+    {
+      if (opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_ALBEDO_TEXTURE_IS_SRGB)
+      {
+        // The exact sRGB encode, the inverse of the sampler's decode and of gammaToLinear.
+        const vec3 lo = albedo * 12.92f;
+        const vec3 hi = 1.055f * pow(max(albedo, vec3(0.0f)), vec3(1.0f / 2.4f)) - 0.055f;
+        const vec3 stored = lerp(lo, hi, step(vec3(0.0031308f), albedo));
+        albedo = gammaToLinear(saturate(stored + surface.ds1AlbedoOffset));
+      }
+      else
+      {
+        albedo = saturate(albedo + surface.ds1AlbedoOffset);
+      }
+    }
+
     // Note: Thin film thickness and opacity deriving their values from the alpha channel are mutually exclusive, set the appropriate
     // one based on the specified flags, and set the opposing variable to a default value (the "default" value must match how the material is decoded from the
     // GBuffer as well). Ideally we'd want to simply fall back on the existing opacity/thin film thickness constants instead, but we currently do not have a
