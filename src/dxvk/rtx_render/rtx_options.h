@@ -219,6 +219,9 @@ namespace dxvk {
                "The mip level bias applied to textures on materials tagged as hair cards. Large negative values preserve thin strand detail at a distance.");
     RTX_OPTION("rtx", float, hairCardRoughnessScale, 1.0f,
                "An additional roughness multiplier applied only to materials tagged as hair cards.");
+    RTX_OPTION("rtx", bool, hairCardsDoubleSided, true,
+               "Render hair cards double-sided. Off keeps the game's own face culling, for games whose cards are\n"
+               "single-sided and whose inner card faces would otherwise show through the hair.");
     RTX_OPTION("rtx", fast_unordered_set, beamTextures, {},
                   "Textures on draw calls that are already particles or emissively blended and have beam-like geometry.\n"
                   "Typically objects marked as particles or objects using emissive blending will be rendered with a special method which allows re-orientation of the billboard geometry assumed to make up the draw call in indirect rays (reflections for example).\n"

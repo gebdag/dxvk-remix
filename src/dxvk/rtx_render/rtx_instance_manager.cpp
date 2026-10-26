@@ -84,12 +84,14 @@ namespace dxvk {
     if (!RtxOptions::enableCulling())
       flags |= VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 
-    if (drawCall.testCategoryFlags(InstanceCategories::HairCards)) {
+    const bool hairCard = drawCall.testCategoryFlags(InstanceCategories::HairCards);
+    if (hairCard && RtxOptions::hairCardsDoubleSided()) {
       flags |= VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
     }
 
-    // This check can be overridden by replacement assets.
-    if (drawCall.getMaterialData().blendMode.enableBlending && !surface.alphaState.isDecal && !drawCall.getGeometryData().forceCullBit)
+    // This check can be overridden by replacement assets. Hair cards render as cutouts, so the blend state
+    // they came with does not make them double-sided (hairCardsDoubleSided decides).
+    if (drawCall.getMaterialData().blendMode.enableBlending && !hairCard && !surface.alphaState.isDecal && !drawCall.getGeometryData().forceCullBit)
       flags |= VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 
     // Disable culling for baked terrain instances when the option is enabled
@@ -730,10 +732,16 @@ namespace dxvk {
       out.alphaTestType = AlphaTestType::kGreater;
       out.alphaTestReferenceValue = static_cast<uint8_t>(RtxOptions::forceCutoutAlpha() * 255.0);
     } else if (forceHairCardAlphaTest) {
+      // A legacy "greater than 0" test on a blended draw only discards empty texels: the game's blend
+      // draws the coverage. As a cutout it would keep every faint texel solid, so the cutout threshold
+      // stands in for it.
+      const bool legacyTestIsDiscardOnly =
+        (AlphaTestType)drawCall.getMaterialData().alphaTestCompareOp == AlphaTestType::kGreater &&
+        drawCall.getMaterialData().alphaTestReferenceValue == 0;
       if (!useLegacyAlphaState && materialAlphaTestEnabled) {
         out.alphaTestType = opaqueMaterialData.getAlphaTestType();
         out.alphaTestReferenceValue = opaqueMaterialData.getAlphaTestReferenceValue();
-      } else if (legacyAlphaTestEnabled) {
+      } else if (legacyAlphaTestEnabled && !legacyTestIsDiscardOnly) {
         out.alphaTestType = (AlphaTestType)drawCall.getMaterialData().alphaTestCompareOp;
         out.alphaTestReferenceValue = drawCall.getMaterialData().alphaTestReferenceValue;
       } else {

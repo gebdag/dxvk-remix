@@ -1216,9 +1216,15 @@ namespace dxvk {
         // lightmap, which the game's lightmapped shaders scale the sun's probe light by
         // (Surface::ds1SunLightmap, fork_ds1_ambient.h). 0xD2000000 on a skinned draw instead: a
         // character, which the player light's clearance ray passes through (ds1_player_light_clearance).
+        // 0xD2000001: a skinned draw the game alpha-blends and alpha-tests, DS1's hair (and fur) cards,
+        // rendered as Remix hair cards.
         const uint32_t lightmapTag = d3d9State().textureStages[6][DXVK_TSS_CONSTANT];
+        const bool skinnedTag = lightmapTag == 0xD2000000u || lightmapTag == 0xD2000001u;
         m_activeDrawCallState.materialData.ds1SunLightmap =
-          (lightmapTag >> 24) == 0xD1u || lightmapTag == 0xD2000000u ? lightmapTag : 0;
+          (lightmapTag >> 24) == 0xD1u ? lightmapTag : skinnedTag ? 0xD2000000u : 0;
+        if (lightmapTag == 0xD2000001u) {
+          m_activeDrawCallState.setCategory(InstanceCategories::HairCards, true);
+        }
         // Fork: DS1 albedo offset in stage 5's D3DTSS_CONSTANT (0xD3rrggbb, signed bytes / 255): the
         // character creator's skin tone, which the game's character shaders add to the diffuse
         // texture (PS c156). See Surface::ds1AlbedoOffset.
