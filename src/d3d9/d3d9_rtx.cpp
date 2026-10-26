@@ -1214,9 +1214,11 @@ namespace dxvk {
           (hazeTag & ~0xFu) == kDs1HazeMarker ? static_cast<uint8_t>(hazeTag & 0xF) : 0;
         // Fork: DS1 lightmap level in stage 6's D3DTSS_CONSTANT (0xD1rrggbb): the level of the draw's
         // lightmap, which the game's lightmapped shaders scale the sun's probe light by
-        // (Surface::ds1SunLightmap, fork_ds1_ambient.h).
+        // (Surface::ds1SunLightmap, fork_ds1_ambient.h). 0xD2000000 on a skinned draw instead: a
+        // character, which the player light's clearance ray passes through (ds1_player_light_clearance).
         const uint32_t lightmapTag = d3d9State().textureStages[6][DXVK_TSS_CONSTANT];
-        m_activeDrawCallState.materialData.ds1SunLightmap = (lightmapTag >> 24) == 0xD1u ? lightmapTag : 0;
+        m_activeDrawCallState.materialData.ds1SunLightmap =
+          (lightmapTag >> 24) == 0xD1u || lightmapTag == 0xD2000000u ? lightmapTag : 0;
         // Fork: a DS1 water surface's second wave layer. Stage 0's texture transform places layer 1;
         // the proxy puts layer 2's uv, relative to layer 1's, in stage 1's texture transform
         // (D3DTTFF_COUNT2: uv2 = uv1 * _11 + (_31, _32)) and both layers' normal strengths in stage 1's

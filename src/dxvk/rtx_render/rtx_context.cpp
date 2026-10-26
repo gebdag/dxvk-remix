@@ -80,6 +80,7 @@
 #include "rtx_dark_souls_ambient.h"
 #include "rtx_dark_souls_swamp.h"
 #include "rtx_dark_souls_look.h"
+#include "rtx_dark_souls_light_falloff.h"
 
 // Destructor requires the struct definitions
 #include "rtx_sky.h"
@@ -710,6 +711,9 @@ namespace dxvk {
 
         // Generate ray tracing constant buffer
         updateRaytraceArgsConstantBuffer(rtOutput, downscaledExtent, targetImage->info().extent);
+
+        // Fork (DS1): keep the player light out of walls before anything samples the lights.
+        DxvkDarkSoulsLightFalloff::dispatchPlayerLightClearance(this);
 
         // Volumetric Lighting
         dispatchVolumetrics(rtOutput);

@@ -369,6 +369,7 @@ namespace dxvk {
       m_linearizedLights.emplace_back(&pair.second);
     }
 
+    DxvkDarkSoulsLightFalloff::beginFrame();
     for (auto& handle : m_externalActiveLightList) {
       auto found = m_externalLights.find(handle);
       if (found != m_externalLights.end()) {

@@ -445,7 +445,8 @@ struct RtSurface {
   uint8_t ds1HazeSet = 0;
   // Fork: exposure power of a DS1 unlit sprite (0-2), see Surface::ds1UnlitExposurePower.
   uint8_t ds1UnlitExposurePower = 0;
-  // Fork: DS1 lightmap level tag (0xD1rrggbb, 0 = none), see Surface::ds1SunLightmap.
+  // Fork: DS1 lightmap level tag (0xD1rrggbb, 0 = none), see Surface::ds1SunLightmap; 0xD2000000 marks
+  // a skinned (character) draw for the player light's clearance ray.
   uint32_t ds1SunLightmap = 0;
   // Fork: DS1 water's second wave layer and layer strengths, see Surface::isDs1Water.
   bool isDs1Water = false;
