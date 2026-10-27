@@ -1565,6 +1565,8 @@ namespace dxvk {
       if (drawCallState.getCategoryFlags().test(InstanceCategories::SmoothNormals)) {
         m_device->getCommon()->metaGeometryUtils().dispatchSmoothNormalsAfterSkinning(drawCallState.getGeometryData(), pBlas->modifiedGeometryData);
         pBlas->modifiedGeometryData.smoothNormalsApplied = true;
+        // Smoothing switches the normals to octahedral R32_UINT, as above.
+        syncLinkedInstances(pBlas);
       }
       pBlas->frameLastUpdated = pBlas->frameLastTouched;
       m_instanceManager.notifySceneChanged();
