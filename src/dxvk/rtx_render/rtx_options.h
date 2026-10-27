@@ -945,6 +945,12 @@ namespace dxvk {
                "When an object is added to the cutout textures list it will have a cutout alpha mode forced on it, using this value for the alpha test.\n"
                "This is meant to improve the look of some legacy mode materials using low-resolution textures and alpha blending instead of alpha cutout as this can cause blurry halos around edges due to the difficulty of handling this sort of blending in Remix.\n"
                "Such objects are generally better handled with actual replacement assets using fully opaque geometry replacements or alpha cutout with higher resolution textures, so this should only be relied on until proper replacements can be authored.");
+    // NV-DXVK start: DS1 port
+    RTX_OPTION_ARGS("rtx", float, ds1ShellCutoutAlpha, 0.25f,
+               "Alpha test for DS1's blended shells (the giant trees' fading tops, tagged by the DS1 proxy): the game\n"
+               "fades them into the mist, and at 0.25 the cut sits where Ash Lake's trunks reach in the game's frame.",
+               args.flags = RtxOptionFlags::InvalidatesDrawcallTranslation);
+    // NV-DXVK end
     RTX_OPTION("rtx", float, wboitEnergyLossCompensation, 4.f, "Multiplier for the coverage term in the weighted blended OIT imlementation - allows for some configuration to recover energy loss from the technique.  This is non physical, be careful overtuning ");
     RTX_OPTION("rtx", float, wboitDepthWeightTuning, 2.f, "Allows for tuning the weighted blended OIT depth weight - which can be used to fine tune blending for various circumstances.  This control has a side effect, larger numbers here can adversely affect brightness of emissive blended materials.");
     RTX_OPTION("rtx", bool, wboitEnabled, true, "Enables the new rendering mode for handling alpha blended objects.  Changing this will trigger a shader recompile.  The new mode improves rendering accuracy, especially in cases where there are many layers of transparent things being rendered.");

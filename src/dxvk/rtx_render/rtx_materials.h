@@ -2110,6 +2110,8 @@ struct LegacyMaterialData {
   // Surface::ds1AlbedoOffset. Per draw, not part of the identity.
   bool hasDs1AlbedoOffset = false;
   float ds1AlbedoOffset[3] = {};
+  // Fork: a DS1 blended shell (stage-4 tag 0xD4000001), cut out at rtx.ds1ShellCutoutAlpha. Per draw.
+  bool isDs1Shell = false;
   bool isVertexColorBakedLighting = true;
 
   void setHashOverride(XXH64_hash_t hash) {
