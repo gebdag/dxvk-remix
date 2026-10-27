@@ -55,6 +55,7 @@
 #include <d3d9.h>
 #include <assert.h>
 #include <map>
+#include <unordered_map>
 #include <atomic>
 #include <array>
 #include <vector>
@@ -288,6 +289,9 @@ static bool dumpLeakedObjects() {
 
   return anyLeaked;
 }
+
+// DS1 port: the newest bridge uid of each runtime light handle (RemixApi_CreateLight).
+static std::unordered_map<remixapi_LightHandle, uint32_t> s_lightUidByRemixHandle;
 
 void ProcessDeviceCommandQueue() {
   // Loop until the client sends terminate instruction
@@ -3123,10 +3127,18 @@ void ProcessDeviceCommandQueue() {
         remixapi_LightHandle lightHandle = nullptr;
         if(remixapi::g_remix.CreateLight(&lightInfo, &lightHandle) == REMIXAPI_ERROR_CODE_SUCCESS) {
           LightHandle handle(bridgeHandle, lightHandle);
+          // DS1 port: the runtime returns the same handle for the same light hash, so a client that updates a light by
+          // creating it again (the DS1 proxy, every changed frame) gets a new bridge uid each time. Each uid kept a
+          // map entry forever, since a destroy erases only the uid it names. The newest uid now replaces the older one.
+          const auto [it, inserted] = s_lightUidByRemixHandle.try_emplace(lightHandle, bridgeHandle);
+          if (!inserted && it->second != bridgeHandle) {
+            LightHandle(it->second).invalidate();
+            it->second = bridgeHandle;
+          }
         } else {
           Logger::err("[RemixApi_CreateLight] Remix API call failed!");
         }
-        
+
         break;
       }
 
@@ -3134,7 +3146,12 @@ void ProcessDeviceCommandQueue() {
       {
         LightHandle handle(DeviceBridge::get_data());
         if(handle.isValid()) {
-          remixapi::g_remix.DestroyLight(handle);
+          const remixapi_LightHandle remixHandle = handle;
+          remixapi::g_remix.DestroyLight(remixHandle);
+          const auto it = s_lightUidByRemixHandle.find(remixHandle);
+          if (it != s_lightUidByRemixHandle.end() && it->second == handle.uid) {
+            s_lightUidByRemixHandle.erase(it);
+          }
           handle.invalidate();
         } else {
           Logger::err("[RemixApi_DestroyLight] Invalid light handle!" );
