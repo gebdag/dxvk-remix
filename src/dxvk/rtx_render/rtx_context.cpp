@@ -809,7 +809,7 @@ namespace dxvk {
           DxvkDarkSoulsDof& ds1Dof = m_common->metaPostFx().m_darkSoulsDof;
           if (ds1Dof.isEnabled()) {
             const Resources::Resource& finalOut = rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite);
-            const Resources::Resource& sourceCopy = rtOutput.m_postFxIntermediateTexture;
+            const Resources::Resource& sourceCopy = rtOutput.m_postFxIntermediateTexture.resource(Resources::AccessType::Write);
             const Resources::Resource& linearViewZ = rtOutput.m_primaryLinearViewZ;
             const VkExtent3D extent = finalOut.image->mipLevelExtent(0);
 
