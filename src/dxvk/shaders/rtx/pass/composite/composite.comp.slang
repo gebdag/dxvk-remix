@@ -788,7 +788,11 @@ vec4 compositeResult(
   radianceOutput += sharedRadiance;
 
   // Add sky radiance
-  applySkyContribution(pixelCoordinate, primaryRayDirections, primaryMiss, radianceScale, volumeAttenuation, radianceOutput);
+  // DS1 port: through the primary miss's attenuation (PrimaryAttenuation, written by the geometry resolver at the miss), which
+  // holds the transmittance of the unordered particles in front of the sky. The fork accumulated the sky in the resolver times
+  // that attenuation; without it smoke and mist only add over a full-strength sky.
+  applySkyContribution(pixelCoordinate, primaryRayDirections, primaryMiss, radianceScale,
+                       volumeAttenuation * (pixelIsActive ? primaryAttenuation : vec3(1.0f)), radianceOutput);
 
   // Blend distant primary surfaces into the sky, keeping the volumetric inscattering in front of them
   // WARN: 'rtx.sparseRendering.enableSparsePrimaryRayMissComposition' ON makes the fade end shimmer against the sky
