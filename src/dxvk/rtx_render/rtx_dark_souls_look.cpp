@@ -24,6 +24,16 @@
 namespace dxvk {
 
   namespace {
+    // The scene pass's gamma-space exposure: the game's (c135.x / c135.y) times the user brightness
+    // (rtx.userBrightness, an EV on linear radiance, so 2^(EV / 2.2) here). The meter divides by the same
+    // value, so the brightness does not feed back into the game's adaptation, and unlit sprites'
+    // exposure compensation (RtxContext::updateRaytraceArgs) divides by its linear equivalent.
+    float sceneExposure() {
+      return DxvkDarkSoulsExposure::gameExposureValue() * std::exp2(RtxOptions::calcUserEVBias() / 2.2f);
+    }
+  }
+
+  namespace {
     class PostFxDarkSoulsLookSceneShader : public ManagedShader {
       SHADER_SOURCE(PostFxDarkSoulsLookSceneShader, VK_SHADER_STAGE_COMPUTE_BIT, post_fx_dark_souls_look_scene)
 
@@ -283,7 +293,7 @@ namespace dxvk {
     const bool hazeValid = haze.fillArgs(hazeArgs, extent, linearViewZ, camera, jitterOffset, missLinearViewZ);
 
     PostFxDarkSoulsLookSceneArgs args = {};
-    args.exposure = DxvkDarkSoulsExposure::gameExposureValue();
+    args.exposure = sceneExposure();
     args.hazeEnable = hazeEnable() && hazeValid ? 1u : 0u;
     const bool dof = dofEnable() && gameActive();
     args.dofFarBegin = dofFarBegin();
@@ -532,7 +542,7 @@ namespace dxvk {
     args.invOutputSize = { 1.0f / float(extent.width), 1.0f / float(extent.height) };
     args.depthJitterUv = { jitterOffset[0] / float(viewZExtent.width), jitterOffset[1] / float(viewZExtent.height) };
     args.missLinearViewZ = missLinearViewZ;
-    args.exposure = DxvkDarkSoulsExposure::gameExposureValue();
+    args.exposure = sceneExposure();
     args.direction = { direction.x / length, direction.y / length, direction.z / length };
     args.threshold = std::min(shaftThreshold(), 0.999f);
     args.cloudDistance = std::max(shaftCloudDistance(), 1.0f);
