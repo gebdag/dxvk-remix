@@ -31,9 +31,10 @@
 #define DS1_PLC_BINDING_SURFACES 4
 #define DS1_PLC_BINDING_LIGHTS   9
 
-// A skinned (character) surface: Surface::ds1SunLightmap, data15.w of the 16 uvec4 surface record.
+// A skinned (character) surface: textureFlags (data13.z of the 16 uvec4 surface record) bit 29, set for
+// the stage 6 tag 0xD2000000 (Surface::ds1SunLightmap, RtSurface::writeGPUData).
 #define DS1_PLC_SURFACE_UVEC4S   16
-#define DS1_PLC_SKINNED_TAG      0xD2000000u
+#define DS1_PLC_SKINNED_FLAG     (1u << 29)
 
 struct Ds1PlayerLightClearanceArgs {
   // The head: where the light hangs before the proxy's offset.

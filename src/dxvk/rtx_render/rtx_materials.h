@@ -362,11 +362,15 @@ struct RtSurface {
     // Fork: bit 28, data15.x holds the DS1 lightmap level (Surface::ds1SunLightmap). Upstream took
     // data15.w for the surface material index, so the DS1 values share data15.xyz, which only eyes use.
     textureFlags |= hasDs1AlbedoOffset && !eyeParams && !isDs1Water ? (1 << 27) : 0;
-    textureFlags |= ds1SunLightmap != 0 && !eyeParams && !isDs1Water && !hasDs1AlbedoOffset ? (1 << 28) : 0;
+    const bool ds1Lightmapped = (ds1SunLightmap >> 24) == 0xD1u;
+    textureFlags |= ds1Lightmapped && !eyeParams && !isDs1Water && !hasDs1AlbedoOffset ? (1 << 28) : 0;
+    // Fork: bit 29, the DS1 skinned (character) tag, 0xD2000000 in the stage 6 channel. Its own bit, not
+    // part of the data15.xyz union: a character draw also carries its skin tone there.
+    textureFlags |= ds1SunLightmap == 0xD2000000u ? (1 << 29) : 0;
 
     static_assert(static_cast<uint32_t>(TexGenMode::Count) <= 4);
     textureFlags |= ((static_cast<uint32_t>(texgenMode) & 0x3) << 17);
-    // textureFlags bits 29-30 unused
+    // textureFlags bit 30 unused
 
     writeGPUHelper(data, offset, textureFlags);
 
@@ -394,7 +398,7 @@ struct RtSurface {
       writeGPUHelper(data, offset, ds1AlbedoOffset[0]);
       writeGPUHelper(data, offset, ds1AlbedoOffset[1]);
       writeGPUHelper(data, offset, ds1AlbedoOffset[2]);
-    } else if (ds1SunLightmap != 0) {
+    } else if (ds1Lightmapped) {
       // Fork: data15.x, the DS1 lightmap level (Surface::ds1SunLightmap, textureFlags bit 28).
       writeGPUHelper(data, offset, ds1SunLightmap);
       writeGPUHelper(data, offset, uint32_t{});

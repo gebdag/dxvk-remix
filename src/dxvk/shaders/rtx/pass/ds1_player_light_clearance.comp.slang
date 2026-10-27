@@ -83,7 +83,7 @@ void main()
 
     const float hitT = rayQuery.CommittedRayT();
     const uint surfaceIndex = (rayQuery.CommittedInstanceID() & CUSTOM_INDEX_SURFACE_MASK) + rayQuery.CommittedGeometryIndex();
-    if (surfaceWords[surfaceIndex * DS1_PLC_SURFACE_UVEC4S + 15].w == DS1_PLC_SKINNED_TAG)
+    if ((surfaceWords[surfaceIndex * DS1_PLC_SURFACE_UVEC4S + 13].z & DS1_PLC_SKINNED_FLAG) != 0)
     {
       ray.TMin = hitT + 1e-3f;
       continue;

@@ -547,12 +547,13 @@ struct Surface
     set { data15.w = newValue; }
   }
 
-  // Fork: the DS1 lightmap level of the draw (0xD1rrggbb, 0 = not lightmapped): the runtime scales
-  // the DS1 sun on this surface by it (ds1SunLightmapScale, fork_ds1_ambient.h). data15.x, flagged by
-  // textureFlags bit 28 (data15.w is the surface material index).
+  // Fork: the DS1 stage 6 tag of the draw: its lightmap level (0xD1rrggbb), by which the runtime scales
+  // the DS1 sun on this surface (ds1SunLightmapScale, fork_ds1_ambient.h), 0xD2000000 on a skinned
+  // (character) draw, or 0. The level is data15.x behind textureFlags bit 28 (data15.w is the surface
+  // material index); the skinned tag is textureFlags bit 29.
   property uint ds1SunLightmap
   {
-    get { return packedFlagGet(data13.z, 1 << 28) ? data15.x : 0u; }
+    get { return packedFlagGet(data13.z, 1 << 28) ? data15.x : packedFlagGet(data13.z, 1 << 29) ? 0xD2000000u : 0u; }
   }
 
   // Fork: a DS1 water surface. Its animated water normals follow the game's wave layers instead of
