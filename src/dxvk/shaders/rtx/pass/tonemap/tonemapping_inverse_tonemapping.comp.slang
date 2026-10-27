@@ -61,7 +61,9 @@ void main(uint2 threadId : SV_DispatchThreadID)
   const bool isValidInputColor = isValidValue(inputColor.xyz);
   inputColor.xyz = isValidInputColor ? saturate(inputColor.xyz) : float3(0.0f);
 
-  inputColor.xyz = gammaToLinear(inputColor.xyz);
+  // DS1 port: an exact 2.2 power, the inverse of the fast pass's linearToGamma. gammaToLinear is the exact sRGB curve here
+  // (fork sRGB fix), which does not round-trip and lifts dark pixels up to ~3.4x (the reference's decf5a41).
+  inputColor.xyz = pow(max(inputColor.xyz, 0.0f), kSRGBGamma);
 
   // The output retains the original HDR until this invocation overwrites its pixel.
   const float3 originalHdrColor = sanitizeRadiance(imageLoad(InOutColorTexture, threadId).rgb);
