@@ -505,8 +505,12 @@ float resolveVertex<T: IBasePayloadState>(
 
 #ifdef RAY_TRACING_PRIMARY_RAY
     // Handle nearly-transparent early out logic and stochastic alpha blend
-    bool handleStochasticAlphaBlend = 
-      useStochasticAlphaBlend && cb.enableStochasticAlphaBlend &&
+    // Fork: not for DS1 window glass. Stochastic blending lights a skipped blended surface from opaque pixels
+    // of the same object nearby, else from the volumetric radiance volume; a glass pass has no opaque pixels
+    // of its own and DS1 runs without volumetrics, so beyond the search radius (in screen pixels) the glass
+    // came out black (frame_20261028_223122). It is resolved as an ordinary blended hit instead.
+    bool handleStochasticAlphaBlend =
+      useStochasticAlphaBlend && cb.enableStochasticAlphaBlend && !surface.isDs1Glass &&
       opacity > cb.resolveTransparencyThreshold && opacity <= cb.resolveStochasticAlphaBlendThreshold;
 
     isStochasticAlphaBlend = handleStochasticAlphaBlend;

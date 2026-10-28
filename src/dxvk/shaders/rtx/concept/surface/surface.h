@@ -160,6 +160,13 @@ struct Surface
     set { data2.w = newValue ? packedFlagSet(data2.w, 1 << 30) : packedFlagUnset(data2.w, 1 << 30); }
   }
 
+  // Fork: a DS1 window glass pass (the proxy's stage-4 tag 0xD4000002), see resolve.slangh.
+  property bool isDs1Glass
+  {
+    get { return packedFlagGet(data2.w, 1u << 31); }
+    set { data2.w = newValue ? packedFlagSet(data2.w, 1u << 31) : packedFlagUnset(data2.w, 1u << 31); }
+  }
+
   // Matrices
 
   property mat4x3 prevObjectToWorld

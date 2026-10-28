@@ -91,7 +91,9 @@ namespace dxvk {
 
     // This check can be overridden by replacement assets. Hair cards render as cutouts, so the blend state
     // they came with does not make them double-sided (hairCardsDoubleSided decides).
-    if (drawCall.getMaterialData().blendMode.enableBlending && !hairCard && !surface.alphaState.isDecal && !drawCall.getGeometryData().forceCullBit)
+    // Fork: DS1 window glass keeps the game's single-sidedness (LegacyMaterialData::isDs1SingleSided).
+    if (drawCall.getMaterialData().blendMode.enableBlending && !hairCard && !surface.alphaState.isDecal && !drawCall.getGeometryData().forceCullBit &&
+        !drawCall.getMaterialData().isDs1SingleSided)
       flags |= VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 
     // Disable culling for baked terrain instances when the option is enabled
@@ -1147,6 +1149,7 @@ namespace dxvk {
                   currentInstance.surface.ds1SelfLit);
         currentInstance.surface.isVertexColorBakedLighting = drawCall.getMaterialData().isVertexColorBakedLighting;
         currentInstance.surface.isMotionBlurMaskOut = currentInstance.testCategoryFlags(InstanceCategories::IgnoreMotionBlur);
+        currentInstance.surface.isDs1Glass = drawCall.getMaterialData().isDs1SingleSided;
 
         // Note: Skip the spritesheet adjustment logic in the surface interaction when using Ray Portal materials as this logic
         // is done later in the Surface Material Interaction (and doing it in both places will just double up the animation).

@@ -250,6 +250,7 @@ struct RtSurface {
     flags1 |= isMotionBlurMaskOut ?           (1 << 28) : 0;
     flags1 |= skipSurfaceInteractionSpritesheetAdjustment ? (1 << 29) : 0;
     flags1 |= isPreservePath ?                (1u << 30) : 0;
+    flags1 |= isDs1Glass ?                    (1u << 31) : 0;
 
     writeGPUHelper(data, offset, flags1);
 
@@ -480,6 +481,8 @@ struct RtSurface {
   bool isVertexColorBakedLighting = true;
   bool isMotionBlurMaskOut = false;
   bool skipSurfaceInteractionSpritesheetAdjustment = false;
+  // Fork: a DS1 window glass pass (LegacyMaterialData::isDs1SingleSided): never stochastically blended.
+  bool isDs1Glass = false;
 
   RtTextureArgSource textureColorArg1Source = RtTextureArgSource::Texture;
   RtTextureArgSource textureColorArg2Source = RtTextureArgSource::None;
@@ -2132,6 +2135,8 @@ struct LegacyMaterialData {
   float ds1SelfLit[3] = {};
   // Fork: a DS1 blended shell (stage-4 tag 0xD4000001), cut out at rtx.ds1ShellCutoutAlpha. Per draw.
   bool isDs1Shell = false;
+  // Fork: a DS1 window glass pass (stage-4 tag 0xD4000002): blended but culled by the game's cull mode.
+  bool isDs1SingleSided = false;
   bool isVertexColorBakedLighting = true;
 
   void setHashOverride(XXH64_hash_t hash) {
