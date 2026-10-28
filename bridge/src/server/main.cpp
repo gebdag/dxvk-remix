@@ -3242,7 +3242,7 @@ void ProcessDeviceCommandQueue() {
           // map entry forever, since a destroy erases only the uid it names. The newest uid now replaces the older one.
           const auto [it, inserted] = s_lightUidByRemixHandle.try_emplace(lightHandle, bridgeHandle);
           if (!inserted && it->second != bridgeHandle) {
-            LightHandle(it->second).invalidate();
+            LightHandle::s_handleMap.erase(it->second);  // no Handle(uint32_t): it asserts the uid is still mapped
             it->second = bridgeHandle;
           }
         } else {
