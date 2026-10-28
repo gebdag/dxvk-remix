@@ -1,5 +1,6 @@
 #include "rtx_dark_souls_haze.h"
 #include "rtx_dark_souls_exposure.h"
+#include "rtx_options.h"
 #include "dxvk_device.h"
 #include "dxvk_scoped_annotation.h"
 #include "rtx_render/rtx_shader_manager.h"
@@ -116,7 +117,9 @@ namespace dxvk {
     args.surfaceTint = toVec3(surfaceTint());
     args.sunColor = toVec3(sunColor());
     args.scatterBlend = scatterBlend();
-    args.displayScale = DxvkDarkSoulsExposure::gameExposureValue() * displayGain();
+    // The user brightness (rtx.userBrightness, an EV on linear radiance) is 2^(EV / 2.2) on display values, as the scene it
+    // hazes already has it (DS1 look scene pass, or the tonemapper ahead of this pass).
+    args.displayScale = DxvkDarkSoulsExposure::gameExposureValue() * displayGain() * std::exp2(RtxOptions::calcUserEVBias() / 2.2f);
     if (sets() != s_setsText) {
       parseSets(sets());
     }

@@ -75,7 +75,7 @@ struct PostFxDarkSoulsHazeArgs {
   float scatterBlend;   // c110.w
 
   vec3 inverseExtinction; // c106.rgb: 1 / extinction
-  float displayScale;   // the game's exposure c135.x / c135.y, times rtx.ds1Haze.displayGain
+  float displayScale;   // the game's exposure c135.x / c135.y, times rtx.ds1Haze.displayGain and the user brightness
 
   vec3 surfaceTint;     // c105.rgb
   float pad0;
