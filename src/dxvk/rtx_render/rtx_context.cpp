@@ -1498,8 +1498,10 @@ namespace dxvk {
       constants.debugView = debugView.debugViewIdx();
       constants.debugKnob = debugView.debugKnob();
       constants.forceFirstHitInGBufferPass = debugView.showFirstGBufferHit();
+      // Fork (DS1): only when the SDK gets it (rtx.dlssNeuralRendering.combineMaterialMaskWithAutoMask).
       constants.enableDlssNrControlMask =
-        m_common->metaDlssNeuralRendering().useDlssNeuralRendering();
+        m_common->metaDlssNeuralRendering().useDlssNeuralRendering() &&
+        DlssNeuralRendering::passesMaterialControlMask();
       constants.enableDlssNrVolumetricControlMask =
         constants.enableDlssNrControlMask &&
         DlssNeuralRendering::enableVolumetricControlMask();

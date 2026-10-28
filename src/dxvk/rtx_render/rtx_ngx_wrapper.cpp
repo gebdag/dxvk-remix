@@ -1092,7 +1092,7 @@ namespace dxvk
     releaseNGXFeature();
   }
 
-  void NGXNeuralRenderingContext::initialize(Rc<DxvkContext> renderContext, const uint32_t displaySize[2], bool queryVramAllocation) {
+  void NGXNeuralRenderingContext::initialize(Rc<DxvkContext> renderContext, const uint32_t displaySize[2], bool queryVramAllocation, uint32_t renderPreset) {
     if (m_neuralRenderingFeature) {
       renderContext->getDevice()->waitForIdle();
     }
@@ -1102,11 +1102,13 @@ namespace dxvk
     createParams.Width = displaySize[0];
     createParams.Height = displaySize[1];
 
-    // Preset B selects the lightweight network independently of the appearance model.
+    // Fork (DS1): the network preset is an option (rtx.dlssNeuralRendering.renderPreset) instead of
+    // stock's fixed Preset B, the lightweight network; set every time, since m_parameters outlives
+    // the feature and would keep a previous preset.
     NVSDK_NGX_Parameter_SetI(
       m_parameters,
       NVSDK_NGX_Parameter_DLSSNR_Hint_Render_Preset,
-      NVSDK_NGX_DLSSNR_Hint_Render_Preset_B);
+      static_cast<int>(renderPreset));
 
     const VkCommandBuffer vkCommandBuffer = renderContext->getCommandList()->getCmdBuffer(dxvk::DxvkCmdBuffer::ExecBuffer);
     const NVSDK_NGX_Result result = NGX_CALL(NGX_VULKAN_CREATE_DLSSNR_EXT1(
@@ -1163,14 +1165,16 @@ namespace dxvk
     neuralRenderingEvalParams.pInOutput = &outColorResource;
     neuralRenderingEvalParams.pInMVec = &motionVectorsResource;
     neuralRenderingEvalParams.pInDepth = &depthResource;
-    neuralRenderingEvalParams.pInControlMask = &controlMaskResource;
+    // Fork (DS1): no material mask in the earlier behaviour with Auto Mask
+    // (rtx.dlssNeuralRendering.combineMaterialMaskWithAutoMask).
+    neuralRenderingEvalParams.pInControlMask = settings.useMaterialMask ? &controlMaskResource : nullptr;
     neuralRenderingEvalParams.InReset = settings.resetAccumulation ? 1 : 0;
     neuralRenderingEvalParams.InDepthInverted = 0;
     neuralRenderingEvalParams.InEnabled = 1;
     neuralRenderingEvalParams.InIntensity = settings.intensity;
     neuralRenderingEvalParams.InLocalToneStrength = settings.toneStrength;
     neuralRenderingEvalParams.InLocalStructureStrength = settings.structuralStrength;
-    neuralRenderingEvalParams.InMaskBlendMode = settings.useAutoMask
+    neuralRenderingEvalParams.InMaskBlendMode = settings.useAutoMask && settings.useMaterialMask
       ? NVSDK_NGX_DLSSNR_Mask_Blend_Mode_Min
       : NVSDK_NGX_DLSSNR_Mask_Blend_Mode_None;
     neuralRenderingEvalParams.InStyle = settings.model;

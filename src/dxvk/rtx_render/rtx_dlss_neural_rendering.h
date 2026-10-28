@@ -70,7 +70,35 @@ namespace dxvk {
                     args.minValue = 0.0f, args.maxValue = 1.0f);
     RTX_OPTION("rtx.dlssNeuralRendering", Model, model, Model::Model0,
                "Selects among three DLSS 3D-Guided Neural Rendering model variants. Their appearance is content-dependent; compare them in the target scene and choose the preferred result. 0: Model A, 1: Model B, 2: Model C.");
+
+    // Fork (DS1): the network preset the feature is created with (NVSDK_NGX_DLSSNR_Hint_Render_Preset).
+    // Stock hard-coded Preset B, the lightweight network, which visibly weakened the effect next to
+    // the earlier integration that set no hint; Default lets the SDK choose, as that one did.
+    enum class RenderPreset : int {
+      Default = 0,
+      A = 1,
+      B = 2,
+      C = 3,
+      D = 4,
+      E = 5,
+      F = 6,
+      G = 7,
+    };
+    RTX_OPTION("rtx.dlssNeuralRendering", RenderPreset, renderPreset, RenderPreset::Default,
+               "The DLSS 3D-Guided Neural Rendering network preset, fixed at feature creation (changing it re-creates the feature). 0: Default (the SDK chooses), 1-7: Presets A-G; Preset B is the lightweight network.");
     RTX_OPTION("rtx.dlssNeuralRendering", bool,  useAutoMask, true, "Combine the automatic character mask with the material control mask.");
+    // Fork (DS1): how Auto Mask and the material control mask (per material: intensity, tone, structure,
+    // 1 / 0.3 / 0.7 by default) interact. Stock passes the material mask always and, with Auto Mask,
+    // takes the per-pixel minimum of both. The earlier integration passed it only without Auto Mask:
+    // with Auto Mask on, the network got no material mask and the sliders applied unscaled everywhere.
+    RTX_OPTION("rtx.dlssNeuralRendering", bool, combineMaterialMaskWithAutoMask, true,
+               "With Auto Mask on, also pass the material control mask (stock: per-pixel minimum of both). False: the earlier behaviour, "
+               "Auto Mask alone with no material mask, so Structure / Tone Intensity apply unscaled. Without Auto Mask the material mask is always used.");
+
+    // Whether the material control mask reaches the SDK (and is written) this frame.
+    static bool passesMaterialControlMask() {
+      return combineMaterialMaskWithAutoMask() || !useAutoMask();
+    }
     RTX_OPTION_ARGS("rtx.dlssNeuralRendering", float, skinStructureStrength, 0.5f,
                     "Controls DLSS 3D-Guided Neural Rendering adjustments to characters when Auto Mask is enabled. Lower values preserve the original structure; higher values apply stronger structural adjustments.",
                     args.minValue = 0.0f, args.maxValue = 1.0f);
@@ -97,6 +125,8 @@ namespace dxvk {
     void disableAfterFailure(const char* pReason);
 
     uint32_t m_displaySize[2] = {};
+    // Fork (DS1): the preset the live feature was created with.
+    RenderPreset m_createdPreset = RenderPreset::Default;
 
     std::unique_ptr<NGXNeuralRenderingContext> m_dlssNeuralRenderingContext;
   };

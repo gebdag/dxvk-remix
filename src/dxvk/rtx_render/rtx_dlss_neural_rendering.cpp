@@ -88,6 +88,11 @@ namespace dxvk {
       return false;
     }
 
+    // Fork (DS1): the network preset is fixed at creation, so a new one needs a new feature.
+    if (DlssNeuralRendering::renderPreset() != m_createdPreset) {
+      mRecreate = true;
+    }
+
     if (mRecreate) {
       const bool initialized = initializeDlssNeuralRendering(ctx);
       mRecreate = !initialized;
@@ -184,6 +189,7 @@ namespace dxvk {
       settings.structuralStrength    = DlssNeuralRendering::structuralStrength();
       settings.model                 = static_cast<uint32_t>(static_cast<int>(DlssNeuralRendering::model()));
       settings.useAutoMask           = DlssNeuralRendering::useAutoMask();
+      settings.useMaterialMask       = DlssNeuralRendering::passesMaterialControlMask();
       settings.skinStructureStrength = settings.useAutoMask
         ? DlssNeuralRendering::skinStructureStrength()
         : 0.0f;
@@ -223,6 +229,19 @@ namespace dxvk {
         { Model::Model1, "Model B" },
         { Model::Model2, "Model C" },
       } });
+    // Fork (DS1): the network preset (rtx.dlssNeuralRendering.renderPreset).
+    static auto presetCombo = RemixGui::ComboWithKey<RenderPreset>(
+      "Network Preset",
+      { {
+        { RenderPreset::Default, "Default (SDK chooses)" },
+        { RenderPreset::A, "Preset A" },
+        { RenderPreset::B, "Preset B (lightweight)" },
+        { RenderPreset::C, "Preset C" },
+        { RenderPreset::D, "Preset D" },
+        { RenderPreset::E, "Preset E" },
+        { RenderPreset::F, "Preset F" },
+        { RenderPreset::G, "Preset G" },
+      } });
 
     if (DlssNeuralRendering::showVramUsage()) {
       if (m_dlssNeuralRenderingContext && m_dlssNeuralRenderingContext->hasVramAllocation()) {
@@ -241,12 +260,23 @@ namespace dxvk {
 
     constexpr ImGuiSliderFlags flags = ImGuiSliderFlags_AlwaysClamp;
     modelCombo.getKey(&DlssNeuralRendering::modelObject());
+    presetCombo.getKey(&DlssNeuralRendering::renderPresetObject());
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("The network the feature is created with; changing it re-creates the feature (a short GPU wait).\n"
+                        "Default lets the SDK choose. Preset B is the lightweight network stock Remix fixes.");
+    }
     RemixGui::DragFloat("Structure Intensity", &DlssNeuralRendering::structuralStrengthObject(), 0.01f, 0.0f, 1.0f, "%.3f", flags);
     RemixGui::DragFloat("Tone Intensity", &DlssNeuralRendering::toneStrengthObject(), 0.01f, 0.0f, 1.0f, "%.3f", flags);
     RemixGui::Checkbox("Enable Auto Mask", &DlssNeuralRendering::useAutoMaskObject());
     const bool autoMaskEnabled = DlssNeuralRendering::useAutoMask();
     ImGui::BeginDisabled(!autoMaskEnabled);
     RemixGui::DragFloat("Character Intensity", &DlssNeuralRendering::skinStructureStrengthObject(), 0.01f, 0.0f, 1.0f, "%.3f", flags);
+    // Fork (DS1): stock combines the material mask with Auto Mask; the earlier behaviour used Auto Mask alone.
+    RemixGui::Checkbox("Combine Material Mask (stock)", &DlssNeuralRendering::combineMaterialMaskWithAutoMaskObject());
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("On (stock): every material's control mask (structure 0.7, tone 0.3 by default) is combined with\n"
+                        "Auto Mask, scaling the sliders down. Off (earlier behaviour): Auto Mask alone, the sliders unscaled.");
+    }
     ImGui::EndDisabled();
 
     ImGui::Separator();
@@ -278,7 +308,9 @@ namespace dxvk {
       return false;
     }
 
-    m_dlssNeuralRenderingContext->initialize(renderContext, m_displaySize, DlssNeuralRendering::showVramUsage());
+    m_createdPreset = DlssNeuralRendering::renderPreset();
+    m_dlssNeuralRenderingContext->initialize(renderContext, m_displaySize, DlssNeuralRendering::showVramUsage(),
+      static_cast<uint32_t>(m_createdPreset));
     return m_dlssNeuralRenderingContext->isNeuralRenderingInitialized();
   }
 

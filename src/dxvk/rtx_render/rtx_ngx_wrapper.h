@@ -409,10 +409,12 @@ namespace dxvk {
       float structuralStrength;
       uint32_t model;
       bool useAutoMask;
+      bool useMaterialMask;   // Fork (DS1): pass the material control mask (else Auto Mask alone)
       float skinStructureStrength;
     };
 
-    void initialize(Rc<DxvkContext> renderContext, const uint32_t displaySize[2], bool queryVramAllocation);
+    // renderPreset: an NVSDK_NGX_DLSSNR_Hint_Render_Preset value (0 = Default, the SDK chooses).
+    void initialize(Rc<DxvkContext> renderContext, const uint32_t displaySize[2], bool queryVramAllocation, uint32_t renderPreset);
 
     bool evaluateNeuralRendering(Rc<DxvkContext> renderContext, const NGXNeuralRenderingBuffers& buffers, const NGXNeuralRenderingSettings& settings) const;
 
