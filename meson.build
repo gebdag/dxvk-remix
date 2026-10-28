@@ -855,6 +855,8 @@ if dxvk_is_ninja or dxvk_is_woa_ec
   endif
 endif # dxvk_is_ninja
 
-if fs.is_dir('nv-private')
+# Fork: meson install copies the hdremix binaries into nv-private, so the folder alone does not
+# mean the private sources are checked out.
+if fs.is_file('nv-private/meson.build')
   subdir('nv-private')
 endif

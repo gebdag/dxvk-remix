@@ -47,6 +47,7 @@
 #include "../dxvk/rtx_render/rtx_context.h"
 #include "../dxvk/rtx_render/rtx_options.h"
 #include "../dxvk/rtx_render/rtx_terrain_baker.h"
+#include "../dxvk/rtx_render/rtx_ds1_occlusion_depth.h"
 
 #include "d3d9_initializer.h"
 
@@ -6082,6 +6083,7 @@ namespace dxvk {
         m_state.renderTargets[i]->GetRenderTargetLayout() };
     }
 
+    m_rtOcclusionDepthBound = false;
     if (m_state.depthStencil != nullptr) {
       const DxvkImageCreateInfo& dsImageInfo = m_state.depthStencil->GetCommonTexture()->GetImage()->info();
       const bool depthWrite = m_state.renderStates[D3DRS_ZWRITEENABLE];
@@ -6090,6 +6092,16 @@ namespace dxvk {
         attachments.depth = {
           m_state.depthStencil->GetDepthStencilView(),
           m_state.depthStencil->GetDepthStencilLayout(depthWrite, m_activeHazardsDS != 0) };
+
+        // Fork: while an occlusion query counts, its draws are tested against the ray traced scene
+        // (DxvkDs1OcclusionDepth), filled at the query's Begin for this depth target's size.
+        if (m_rtx.hasActiveOcclusionQuery() && m_rtOcclusionDepthFilled && m_rtOcclusionDepthView != nullptr &&
+            dsImageInfo.sampleCount == VK_SAMPLE_COUNT_1_BIT &&
+            m_rtOcclusionDepth->info().extent == dsImageInfo.extent &&
+            RtxOptions::enableRaytracing() && DxvkDs1OcclusionDepth::occlusionQueriesUseRaytracedDepth()) {
+          attachments.depth = { m_rtOcclusionDepthView, m_rtOcclusionDepth->info().layout };
+          m_rtOcclusionDepthBound = true;
+        }
       }
     }
 
@@ -6099,6 +6111,80 @@ namespace dxvk {
     ] (DxvkContext* ctx) {
       ctx->bindRenderTargets(cAttachments);
     });
+  }
+
+
+  bool D3D9DeviceEx::PrepareRtOcclusionDepth() {
+    if (!RtxOptions::enableRaytracing() || !DxvkDs1OcclusionDepth::occlusionQueriesUseRaytracedDepth() ||
+        m_state.depthStencil == nullptr) {
+      return false;
+    }
+    const DxvkImageCreateInfo& dsInfo = m_state.depthStencil->GetCommonTexture()->GetImage()->info();
+    if (dsInfo.sampleCount != VK_SAMPLE_COUNT_1_BIT) {
+      return false;
+    }
+
+    // The game's projection gives its depth for a view distance: _33 + _43 / z (perspective, _34 = 1).
+    const Matrix4& projection = m_state.transforms[GetTransformIndex(D3DTS_PROJECTION)];
+    if (std::abs(projection[2][3] - 1.0f) > 1e-3f || projection[3][3] != 0.0f) {
+      return false;
+    }
+
+    if (m_rtOcclusionDepth == nullptr || m_rtOcclusionDepth->info().extent != dsInfo.extent) {
+      DxvkImageCreateInfo info = {};
+      info.type = VK_IMAGE_TYPE_2D;
+      info.format = VK_FORMAT_D32_SFLOAT;
+      info.sampleCount = VK_SAMPLE_COUNT_1_BIT;
+      info.extent = dsInfo.extent;
+      info.numLayers = 1;
+      info.mipLevels = 1;
+      info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+      info.stages = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
+      info.access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+      info.tiling = VK_IMAGE_TILING_OPTIMAL;
+      info.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+      m_rtOcclusionDepth = m_dxvkDevice->createImage(info, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                                     DxvkMemoryStats::Category::RTXRenderTarget, "DS1 occlusion depth");
+
+      DxvkImageViewCreateInfo view = {};
+      view.type = VK_IMAGE_VIEW_TYPE_2D;
+      view.format = info.format;
+      view.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+      view.aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
+      view.minLevel = 0;
+      view.numLevels = 1;
+      view.minLayer = 0;
+      view.numLayers = 1;
+      m_rtOcclusionDepthView = m_dxvkDevice->createImageView(m_rtOcclusionDepth, view);
+
+      info.format = VK_FORMAT_R32_SFLOAT;
+      info.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+      info.stages = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
+      info.access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT;
+      info.layout = VK_IMAGE_LAYOUT_GENERAL;
+      m_rtOcclusionViewZ = m_dxvkDevice->createImage(info, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                                     DxvkMemoryStats::Category::RTXRenderTarget, "DS1 occlusion view Z");
+      view.format = info.format;
+      view.usage = VK_IMAGE_USAGE_STORAGE_BIT;
+      view.aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+      m_rtOcclusionViewZView = m_dxvkDevice->createImageView(m_rtOcclusionViewZ, view);
+
+      EmitCs([cDepth = m_rtOcclusionDepth, cViewZ = m_rtOcclusionViewZ](DxvkContext* ctx) {
+        ctx->initImage(cDepth, { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 }, VK_IMAGE_LAYOUT_UNDEFINED);
+        ctx->initImage(cViewZ, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }, VK_IMAGE_LAYOUT_UNDEFINED);
+      });
+    }
+
+    EmitCs([
+      cDepth = m_rtOcclusionDepth,
+      cViewZ = m_rtOcclusionViewZ,
+      cViewZView = m_rtOcclusionViewZView,
+      cZZ = projection[2][2],
+      cWZ = projection[3][2]
+    ](DxvkContext* ctx) {
+      DxvkDs1OcclusionDepth::fill(static_cast<RtxContext*>(ctx), cDepth, cViewZ, cViewZView, cZZ, cWZ);
+    });
+    return true;
   }
 
 
@@ -6895,6 +6981,10 @@ namespace dxvk {
     // NV-DXVK start: Don't raytrace occlusion queries
     if (pQuery->GetType() == D3DQUERYTYPE_OCCLUSION) {
       m_rtx.BeginOcclusionQuery();
+      // Fork: count against the ray traced scene (DxvkDs1OcclusionDepth). The depth is filled before
+      // the query begins, so the fill's own draw is not counted.
+      m_rtOcclusionDepthFilled = PrepareRtOcclusionDepth();
+      m_flags.set(D3D9DeviceFlag::DirtyFramebuffer);
     }
     // NV-DXVK end
 
@@ -6911,6 +7001,13 @@ namespace dxvk {
     // NV-DXVK start: Don't raytrace occlusion queries
     if (pQuery->GetType() == D3DQUERYTYPE_OCCLUSION) {
       m_rtx.EndOcclusionQuery();
+      // Fork: put the game's depth back once no query counts any more.
+      if (!m_rtx.hasActiveOcclusionQuery()) {
+        m_rtOcclusionDepthFilled = false;
+        if (m_rtOcclusionDepthBound) {
+          m_flags.set(D3D9DeviceFlag::DirtyFramebuffer);
+        }
+      }
     }
     // NV-DXVK end
 

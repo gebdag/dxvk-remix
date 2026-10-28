@@ -74,6 +74,11 @@ namespace dxvk {
     /**
       * \brief: Signal that an occlusion query has ended for the current device
       */
+    // Fork: a query is counting draws (DxvkDs1OcclusionDepth).
+    bool hasActiveOcclusionQuery() const {
+      return m_activeOcclusionQueries > 0;
+    }
+
     void EndOcclusionQuery() {
       --m_activeOcclusionQueries;
       assert(m_activeOcclusionQueries >= 0);

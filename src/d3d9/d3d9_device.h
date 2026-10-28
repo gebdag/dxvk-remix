@@ -1311,6 +1311,19 @@ namespace dxvk {
 
     D3D9Rtx                         m_rtx;
 
+    // Fork: the depth an occlusion query's draws are tested against while ray tracing
+    // (DxvkDs1OcclusionDepth), and the R32F image it is computed into. Sized to the game's depth target.
+    Rc<DxvkImage>                   m_rtOcclusionDepth;
+    Rc<DxvkImageView>               m_rtOcclusionDepthView;
+    Rc<DxvkImage>                   m_rtOcclusionViewZ;
+    Rc<DxvkImageView>               m_rtOcclusionViewZView;
+    bool                            m_rtOcclusionDepthBound = false;
+    // Filled at the Begin of the query now counting; a query whose Begin could not fill it (no
+    // perspective projection, option off) must not be tested against an older fill.
+    bool                            m_rtOcclusionDepthFilled = false;
+
+    bool PrepareRtOcclusionDepth();
+
 // NV-DXVK start: external API
     bool                            m_withExternalSwapchain;
 // NV-DXVK end
