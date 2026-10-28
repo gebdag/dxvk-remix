@@ -829,6 +829,9 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   {
     albedo = gammaToLinear(albedo);
   }
+  // Fork (DS1): the albedo a self-lit surface's emission scales (Surface::ds1SelfLit), the one seen
+  // directly, so bounce rays see the same glow.
+  vec3 ds1SelfLitAlbedo = albedo;
   // Fork (DS1 look): the game lights its textures' stored values in gamma space; that stored value
   // to the 2.2 power keeps a gamma-space product a linear-space product exactly (x^(1/2.2) output).
   if (cb.opaqueMaterialArgs.ds1GammaAlbedo != 0)
@@ -836,6 +839,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     const vec3 lo = albedo * 12.92f;
     const vec3 hi = 1.055f * pow(max(albedo, vec3(0.0f)), vec3(1.0f / 2.4f)) - 0.055f;
     const vec3 stored = max(lerp(lo, hi, step(vec3(0.0031308f), albedo)), vec3(0.0f));
+    ds1SelfLitAlbedo = pow(stored, vec3(2.2f));
 #ifdef INTEGRATE_INDIRECT
     // The surfaces indirect light bounces off: rtx.ds1Look.bounceAlbedoGamma (below 2.2 carries more
     // light through enclosed spaces; surfaces seen directly keep the game's albedo).
@@ -1108,6 +1112,13 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
       emissiveBlendOverrideInfluence *= pow(cb.opaqueMaterialArgs.unlitExposureCompensation, 1.0f - float(surface.ds1UnlitExposurePower));
     }
     emissiveRadiance = emissiveBlendOverrideInfluence * emissiveColor * opaqueSurfaceMaterial.emissiveIntensity;
+  }
+
+  // Fork (DS1): a surface the game draws as texture * c100 * a bright uniform ambient shows that
+  // colour as its own light (Surface::ds1SelfLit).
+  if (surface.hasDs1SelfLit)
+  {
+    emissiveRadiance += ds1SelfLitAlbedo * surface.ds1SelfLit;
   }
 
   opaqueSurfaceMaterialInteraction.emissiveRadiance = emissiveRadiance;

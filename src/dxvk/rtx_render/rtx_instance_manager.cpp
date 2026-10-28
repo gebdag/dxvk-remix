@@ -159,7 +159,7 @@ namespace dxvk {
   namespace {
     template<int RtInstanceSize> struct CheckRtInstanceSize {
       // The second line of the build error should contain the new size of RtInstance in the template argument, i.e. `dxvk::CheckRtInstanceSize<newSize>`
-      static_assert(RtInstanceSize == 840, "RtInstance size has changed. Fix the copy constructor above this message, then update the expected size.");
+      static_assert(RtInstanceSize == 856, "RtInstance size has changed. Fix the copy constructor above this message, then update the expected size.");
     };
     CheckRtInstanceSize<sizeof(RtInstance)> _rtInstanceSizeTest;
   }
@@ -1136,6 +1136,9 @@ namespace dxvk {
         currentInstance.surface.hasDs1AlbedoOffset = drawCall.getMaterialData().hasDs1AlbedoOffset;
         std::copy(std::begin(drawCall.getMaterialData().ds1AlbedoOffset), std::end(drawCall.getMaterialData().ds1AlbedoOffset),
                   currentInstance.surface.ds1AlbedoOffset);
+        currentInstance.surface.hasDs1SelfLit = drawCall.getMaterialData().hasDs1SelfLit;
+        std::copy(std::begin(drawCall.getMaterialData().ds1SelfLit), std::end(drawCall.getMaterialData().ds1SelfLit),
+                  currentInstance.surface.ds1SelfLit);
         currentInstance.surface.isVertexColorBakedLighting = drawCall.getMaterialData().isVertexColorBakedLighting;
         currentInstance.surface.isMotionBlurMaskOut = currentInstance.testCategoryFlags(InstanceCategories::IgnoreMotionBlur);
 

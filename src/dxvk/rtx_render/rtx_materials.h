@@ -362,15 +362,18 @@ struct RtSurface {
     // Fork: bit 28, data15.x holds the DS1 lightmap level (Surface::ds1SunLightmap). Upstream took
     // data15.w for the surface material index, so the DS1 values share data15.xyz, which only eyes use.
     textureFlags |= hasDs1AlbedoOffset && !eyeParams && !isDs1Water ? (1 << 27) : 0;
+    // Fork: bit 30, data15.xyz holds the DS1 self-lit emission (Surface::ds1SelfLit). It takes the slot
+    // before the lightmap level: such a surface shows the game's colour, not the sun.
+    const bool ds1SelfLitSlot = hasDs1SelfLit && !eyeParams && !isDs1Water && !hasDs1AlbedoOffset;
+    textureFlags |= ds1SelfLitSlot ? (1 << 30) : 0;
     const bool ds1Lightmapped = (ds1SunLightmap >> 24) == 0xD1u;
-    textureFlags |= ds1Lightmapped && !eyeParams && !isDs1Water && !hasDs1AlbedoOffset ? (1 << 28) : 0;
+    textureFlags |= ds1Lightmapped && !eyeParams && !isDs1Water && !hasDs1AlbedoOffset && !ds1SelfLitSlot ? (1 << 28) : 0;
     // Fork: bit 29, the DS1 skinned (character) tag, 0xD2000000 in the stage 6 channel. Its own bit, not
     // part of the data15.xyz union: a character draw also carries its skin tone there.
     textureFlags |= ds1SunLightmap == 0xD2000000u ? (1 << 29) : 0;
 
     static_assert(static_cast<uint32_t>(TexGenMode::Count) <= 4);
     textureFlags |= ((static_cast<uint32_t>(texgenMode) & 0x3) << 17);
-    // textureFlags bit 30 unused
 
     writeGPUHelper(data, offset, textureFlags);
 
@@ -398,6 +401,11 @@ struct RtSurface {
       writeGPUHelper(data, offset, ds1AlbedoOffset[0]);
       writeGPUHelper(data, offset, ds1AlbedoOffset[1]);
       writeGPUHelper(data, offset, ds1AlbedoOffset[2]);
+    } else if (ds1SelfLitSlot) {
+      // Fork: data15.xyz, the DS1 self-lit emission (Surface::ds1SelfLit, textureFlags bit 30).
+      writeGPUHelper(data, offset, ds1SelfLit[0]);
+      writeGPUHelper(data, offset, ds1SelfLit[1]);
+      writeGPUHelper(data, offset, ds1SelfLit[2]);
     } else if (ds1Lightmapped) {
       // Fork: data15.x, the DS1 lightmap level (Surface::ds1SunLightmap, textureFlags bit 28).
       writeGPUHelper(data, offset, ds1SunLightmap);
@@ -465,6 +473,9 @@ struct RtSurface {
   // Fork: DS1 albedo offset (data15.xyz, flag bit 27), see Surface::ds1AlbedoOffset.
   bool hasDs1AlbedoOffset = false;
   float ds1AlbedoOffset[3] = {};
+  // Fork: DS1 self-lit emission (data15.xyz, flag bit 30), see Surface::ds1SelfLit.
+  bool hasDs1SelfLit = false;
+  float ds1SelfLit[3] = {};
   bool isVertexColorBakedLighting = true;
   bool isMotionBlurMaskOut = false;
   bool skipSurfaceInteractionSpritesheetAdjustment = false;
@@ -2114,6 +2125,10 @@ struct LegacyMaterialData {
   // Surface::ds1AlbedoOffset. Per draw, not part of the identity.
   bool hasDs1AlbedoOffset = false;
   float ds1AlbedoOffset[3] = {};
+  // Fork: DS1 self-lit ambient emission (linear, per unit albedo) from the stage-3 tag, see
+  // Surface::ds1SelfLit. Per draw, not part of the identity.
+  bool hasDs1SelfLit = false;
+  float ds1SelfLit[3] = {};
   // Fork: a DS1 blended shell (stage-4 tag 0xD4000001), cut out at rtx.ds1ShellCutoutAlpha. Per draw.
   bool isDs1Shell = false;
   bool isVertexColorBakedLighting = true;

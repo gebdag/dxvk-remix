@@ -577,6 +577,19 @@ struct Surface
     get { return asfloat(data15.xyz); }
   }
 
+  // Fork: a DS1 self-lit surface, which the game draws as texture * c100 * a bright uniform ambient
+  // (atmosphere.hpp tag_self_lit in the proxy). It emits albedo * ds1SelfLit, that ambient's
+  // (c100 * colour)^2.2. data15.xyz on surfaces that are neither eyes, water nor offset (textureFlags bit 30).
+  property bool hasDs1SelfLit
+  {
+    get { return packedFlagGet(data13.z, 1 << 30); }
+  }
+
+  property vec3 ds1SelfLit
+  {
+    get { return asfloat(data15.xyz); }
+  }
+
   // data15.xyz (data15.w is the surface material index): x = half scale | unorm16 offset u << 16,
   // y = unorm16 offset v, both offsets wrapped to [0, 1); z = the two strength halves (RtSurface::writeGPUData).
   property vec3 ds1WaterLayer2

@@ -1241,6 +1241,16 @@ namespace dxvk {
           albedoOffset.ds1AlbedoOffset[c] = albedoOffset.hasDs1AlbedoOffset
             ? static_cast<float>(static_cast<int8_t>((albedoOffsetTag >> (16 - 8 * c)) & 0xFFu)) / 255.0f : 0.0f;
         }
+        // Fork: DS1 self-lit ambient in stage 3's D3DTSS_CONSTANT (0xD5rrggbb, each byte * 16 / 255):
+        // c100 * the bright uniform hemisphere ambient the game draws the surface with, gamma space.
+        // The surface emits albedo * value^2.2 (Surface::ds1SelfLit).
+        const uint32_t selfLitTag = d3d9State().textureStages[3][DXVK_TSS_CONSTANT];
+        auto& selfLit = m_activeDrawCallState.materialData;
+        selfLit.hasDs1SelfLit = (selfLitTag >> 24) == 0xD5u;
+        for (int c = 0; c < 3; ++c) {
+          selfLit.ds1SelfLit[c] = selfLit.hasDs1SelfLit
+            ? std::pow(static_cast<float>((selfLitTag >> (16 - 8 * c)) & 0xFFu) * (16.0f / 255.0f), 2.2f) : 0.0f;
+        }
         // Fork: a DS1 water surface's second wave layer. Stage 0's texture transform places layer 1;
         // the proxy puts layer 2's uv, relative to layer 1's, in stage 1's texture transform
         // (D3DTTFF_COUNT2: uv2 = uv1 * _11 + (_31, _32)) and both layers' normal strengths in stage 1's
