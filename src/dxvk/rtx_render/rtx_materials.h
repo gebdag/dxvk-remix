@@ -59,6 +59,7 @@ static bool isBlendTypeEmissive(const BlendType type) {
   case BlendType::kColorEmissive:
   case BlendType::kReverseColorEmissive:
   case BlendType::kEmissive:
+  case BlendType::kSubtractive:
     return true;
   }
 }

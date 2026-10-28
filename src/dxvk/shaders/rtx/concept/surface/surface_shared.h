@@ -33,6 +33,10 @@ enum class BlendType : uint8_t {
   kDoubleMultiplicative = 8,
   kReverseAlpha = 9,
   kReverseColor = 10,
+  // Fork: a reverse-subtract blend (dst - src * alpha), from the legacy translation only (no MDL value,
+  // so past kMaxValue): unlit layers are taken off the gamma-space sum of the additive ones in the
+  // resolve. DS1's darkening particles (the Black Flame's core) and the Undead Asylum's blood decals.
+  kSubtractive = 11,
 
   kMinValue = 0, // kAlpha
   kMaxValue = 10, // kReverseColor

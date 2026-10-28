@@ -867,6 +867,12 @@ namespace dxvk {
         } else {
           blendEnabled = false;
         }
+      } else if (colorBlendOp == VkBlendOp::VK_BLEND_OP_REVERSE_SUBTRACT &&
+                 srcColorBlendFactor == VkBlendFactor::VK_BLEND_FACTOR_SRC_ALPHA && dstColorBlendFactor == VkBlendFactor::VK_BLEND_FACTOR_ONE) {
+        // Fork: reverse-subtract, dst - src * alpha. Left opaque it became an alpha-tested emissive card
+        // (the Black Flame's white sheets).
+        blendType = BlendType::kSubtractive;
+        invertedBlend = false;
       } else {
         blendEnabled = false;
       }

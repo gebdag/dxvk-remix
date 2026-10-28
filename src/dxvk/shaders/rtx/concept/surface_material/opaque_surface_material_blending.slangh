@@ -178,6 +178,17 @@ void calcOpaqueSurfaceMaterialOpacity(
     opacity = abs(float(1.0f) - luminanceOpacity * float(2.0));
 
     break;
+  case uint(BlendType::kSubtractive):
+    // Fork: a reverse-subtract layer blocks nothing; its colour, scaled by alpha like an emissive
+    // alpha blend, is what the resolve subtracts. Its opacity-micromap coverage is the emissive
+    // alpha blend's, so the bake keeps the texels the resolve needs.
+    if (enableOpacityEmissiveBlendModes)
+      opacity = mix(float(0.0f), luminanceOpacity, alphaOpacity);
+    else
+      opacity = float(0.0f);
+    emissiveBlendOverrideInfluence = alphaOpacity;
+
+    break;
   }
 }
 

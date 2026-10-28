@@ -846,6 +846,8 @@ float resolveVertexUnorderedParticles<
   float alphaTransProd = 1.0f;
   // Fork: display-referred gamma-space sum of the unlit additive layers (see below).
   float3 unlitAdditiveGammaSum = 0..xxx;
+  // Fork: and of the unlit subtractive (reverse-subtract) layers, which come off it.
+  float3 unlitSubtractGammaSum = 0..xxx;
   // Fork: the unlit alpha-blended layers, composited in gamma space (see below).
   float3 unlitBlendGammaSum = 0..xxx;
   float unlitBlendWeightSum = 0.0f;
@@ -1047,6 +1049,13 @@ float resolveVertexUnorderedParticles<
     currentRadianceAttenuation = mix(1.0f, currentRadianceAttenuation, blendFactor);
     opacityTransmittance *= currentRadianceAttenuation;
     currentEmissiveRadiance = mix(vec3(0.0f), currentEmissiveRadiance, blendFactor);
+#ifndef UNORDERED_RESOLVE_WBOIT
+    // Fork: the binned resolve has no sum to take a subtractive layer off, so it is left out.
+    if (surface.blendType == uint8_t(BlendType::kSubtractive))
+    {
+      currentEmissiveRadiance = vec3(0.0f);
+    }
+#endif
 
     if (any(currentEmissiveRadiance > 0.0f))
     {
@@ -1060,10 +1069,18 @@ float resolveVertexUnorderedParticles<
 
     float3 src = currentEmissiveRadiance * float3(radianceAttenuation) * volumeAttenuation;
 
+    // Fork: subtractive layers come off the additive sum (lit ones have nothing to subtract).
+    if (surface.blendType == uint8_t(BlendType::kSubtractive))
+    {
+      if (surface.isUnlit)
+      {
+        unlitSubtractGammaSum += linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation);
+      }
+    }
     // Fork: additive layers (alpha / colour emissive blends) add, as the blend does: averaging them
     // with the other layers dims stacked additive particles, and their coverage would darken what
     // is behind them.
-    if (surface.blendType == uint8_t(BlendType::kAlphaEmissive) || surface.blendType == uint8_t(BlendType::kColorEmissive))
+    else if (surface.blendType == uint8_t(BlendType::kAlphaEmissive) || surface.blendType == uint8_t(BlendType::kColorEmissive))
     {
       // Fork: the game blends unlit (particle) layers into a gamma-encoded target, so its additive
       // layers sum in gamma space: a stack of faint layers reaches white there, where their linear
@@ -1151,17 +1168,30 @@ float resolveVertexUnorderedParticles<
     emissiveRadiance += alphaAvg * coverage;
   }
 
-  // Fork: the unlit additive layers' gamma-space sum, back to linear and scene-referred.
-  emissiveRadiance += pow(unlitAdditiveGammaSum, kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation;
-
   // Fork: the unlit alpha-blended layers as the game composites them, in gamma space: their colour
   // over coverage 1 - prod(1 - alpha), and what is behind them kept by prod(1 - alpha) of its display
   // value, i.e. to the 2.2 power of it in linear.
+  float3 unlitBlendGamma = 0..xxx;
   if (unlitBlendWeightSum > 0.f)
   {
-    const float3 unlitAvg = unlitBlendGammaSum / unlitBlendWeightSum;
-    emissiveRadiance += pow(unlitAvg * (1.0f - unlitBlendTransProd), kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation;
+    unlitBlendGamma = unlitBlendGammaSum / unlitBlendWeightSum * (1.0f - unlitBlendTransProd);
     radianceAttenuation *= pow(unlitBlendTransProd, kSRGBGamma);
+  }
+  if (any(unlitSubtractGammaSum > 0.0f))
+  {
+    // Fork: the game takes a reverse-subtract layer off its gamma-encoded target, so off everything
+    // its unlit layers put there (additive and alpha-blended alike), clamped at 0; back to linear and
+    // scene-referred. What a subtraction leaves over darkens what is behind by that much of its
+    // display value.
+    const float3 unlitGamma = unlitAdditiveGammaSum + unlitBlendGamma;
+    emissiveRadiance += pow(max(unlitGamma - unlitSubtractGammaSum, 0.0f), kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation;
+    radianceAttenuation *= pow(saturate(1.0f - max(unlitSubtractGammaSum - unlitGamma, 0.0f)), kSRGBGamma);
+  }
+  else
+  {
+    // Fork: the unlit additive layers' gamma-space sum and the alpha-blended composite, each back to
+    // linear and scene-referred.
+    emissiveRadiance += (pow(unlitAdditiveGammaSum, kSRGBGamma) + pow(unlitBlendGamma, kSRGBGamma)) * cb.opaqueMaterialArgs.unlitExposureCompensation;
   }
 
   radianceAttenuation *= alphaTransProd;
@@ -1251,6 +1281,8 @@ void resolveVertexUnordered<
   float alphaTransProd = 1.0f;
   // Fork: display-referred gamma-space sum of the unlit additive layers (see below).
   float3 unlitAdditiveGammaSum = 0..xxx;
+  // Fork: and of the unlit subtractive (reverse-subtract) layers, which come off it.
+  float3 unlitSubtractGammaSum = 0..xxx;
   // Fork: the unlit alpha-blended layers, composited in gamma space (see below).
   float3 unlitBlendGammaSum = 0..xxx;
   float unlitBlendWeightSum = 0.0f;
@@ -1550,6 +1582,13 @@ void resolveVertexUnordered<
 
       currentRadianceAttenuation = mix(1.0f, currentRadianceAttenuation, blendFactor);
       currentEmissiveRadiance = mix(vec3(0.0f), currentEmissiveRadiance, blendFactor);
+#ifndef UNORDERED_RESOLVE_WBOIT
+      // Fork: the binned resolve has no sum to take a subtractive layer off, so it is left out.
+      if (surface.blendType == uint8_t(BlendType::kSubtractive))
+      {
+        currentEmissiveRadiance = vec3(0.0f);
+      }
+#endif
 
       if (any(currentEmissiveRadiance) > 0)
       {
@@ -1564,10 +1603,18 @@ void resolveVertexUnordered<
 
       float3 src = currentEmissiveRadiance * float3(radianceAttenuation) * volumeAttenuation;
 
+      // Fork: subtractive layers come off the additive sum (lit ones have nothing to subtract).
+      if (surface.blendType == uint8_t(BlendType::kSubtractive))
+      {
+        if (surface.isUnlit)
+        {
+          unlitSubtractGammaSum += linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation);
+        }
+      }
       // Fork: additive layers (alpha / colour emissive blends) add, as the blend does: averaging them
       // with the other layers dims stacked additive particles, and their coverage would darken what
       // is behind them.
-      if (surface.blendType == uint8_t(BlendType::kAlphaEmissive) || surface.blendType == uint8_t(BlendType::kColorEmissive))
+      else if (surface.blendType == uint8_t(BlendType::kAlphaEmissive) || surface.blendType == uint8_t(BlendType::kColorEmissive))
       {
         // Fork: the game blends unlit (particle) layers into a gamma-encoded target, so its additive
         // layers sum in gamma space: a stack of faint layers reaches white there, where their linear
@@ -1677,17 +1724,30 @@ void resolveVertexUnordered<
     emissiveRadiance += alphaAvg * coverage;
   }
 
-  // Fork: the unlit additive layers' gamma-space sum, back to linear and scene-referred.
-  emissiveRadiance += pow(unlitAdditiveGammaSum, kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation;
-
   // Fork: the unlit alpha-blended layers as the game composites them, in gamma space: their colour
   // over coverage 1 - prod(1 - alpha), and what is behind them kept by prod(1 - alpha) of its display
   // value, i.e. to the 2.2 power of it in linear.
+  float3 unlitBlendGamma = 0..xxx;
   if (unlitBlendWeightSum > 0.f)
   {
-    const float3 unlitAvg = unlitBlendGammaSum / unlitBlendWeightSum;
-    emissiveRadiance += pow(unlitAvg * (1.0f - unlitBlendTransProd), kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation;
+    unlitBlendGamma = unlitBlendGammaSum / unlitBlendWeightSum * (1.0f - unlitBlendTransProd);
     radianceAttenuation *= pow(unlitBlendTransProd, kSRGBGamma);
+  }
+  if (any(unlitSubtractGammaSum > 0.0f))
+  {
+    // Fork: the game takes a reverse-subtract layer off its gamma-encoded target, so off everything
+    // its unlit layers put there (additive and alpha-blended alike), clamped at 0; back to linear and
+    // scene-referred. What a subtraction leaves over darkens what is behind by that much of its
+    // display value.
+    const float3 unlitGamma = unlitAdditiveGammaSum + unlitBlendGamma;
+    emissiveRadiance += pow(max(unlitGamma - unlitSubtractGammaSum, 0.0f), kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation;
+    radianceAttenuation *= pow(saturate(1.0f - max(unlitSubtractGammaSum - unlitGamma, 0.0f)), kSRGBGamma);
+  }
+  else
+  {
+    // Fork: the unlit additive layers' gamma-space sum and the alpha-blended composite, each back to
+    // linear and scene-referred.
+    emissiveRadiance += (pow(unlitAdditiveGammaSum, kSRGBGamma) + pow(unlitBlendGamma, kSRGBGamma)) * cb.opaqueMaterialArgs.unlitExposureCompensation;
   }
 
   radianceAttenuation *= alphaTransProd;
