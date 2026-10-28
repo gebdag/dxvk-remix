@@ -39,10 +39,12 @@ namespace dxvk {
       const Resources::Resource& inOutColor,
       const Resources::Resource& linearViewZ,
       const Resources::Resource& surfaceFlags,
+      const Resources::Resource& motionVector,
       const DxvkDarkSoulsHaze& haze,
       const Camera& camera,
       const float jitterOffset[2],
-      float missLinearViewZ);
+      float missLinearViewZ,
+      bool resetHistory);
 
     // FRPG_Fil_Dof and its chain, after the scene pass (which writes the far rate into alpha).
     void dispatchDof(
@@ -78,6 +80,16 @@ namespace dxvk {
     RTX_OPTION("rtx.ds1Look", bool, hazeEnable, true, "Apply the game's fog and sky scattering in the scene pass.");
     RTX_OPTION("rtx.ds1Look", bool, bloomEnable, true, "Apply the game's bloom in the composite.");
     RTX_OPTION("rtx.ds1Look", bool, dofEnable, true, "Apply the game's depth of field (FRPG_Fil_Dof) after the scene pass.");
+    RTX_OPTION("rtx.ds1Look", float, depthStabilizationTexels, 1.0f,
+               "The fog, scattering and DoF rates read view Z, which is this frame's jittered render-resolution raster, "
+               "while the colour they apply to is the upscaler's resolved frame: at silhouettes, worst against the sky, "
+               "the surface a pixel reads flips between frames and those terms crawl. They are averaged over the centre "
+               "and a 3x3 of taps this many view Z texels apart, then resolved over time (depthTemporalBlend). "
+               "0 = the centre alone, no history (the old behaviour).");
+    RTX_OPTION("rtx.ds1Look", float, depthTemporalBlend, 0.1f,
+               "Weight of this frame's fog, scattering and far DoF terms against their history, reprojected through the "
+               "motion vectors and clamped to the range of this frame's taps: averaged over the camera jitter sequence, "
+               "their coverage of a silhouette matches the upscaler's resolved colour. 1 = no history.");
     RTX_OPTION("rtx.ds1Look", bool, gammaAlbedo, true,
                "Albedo = the texture's stored value^2.2 instead of its sRGB decode, so the path tracer's linear product "
                "albedo * light is the game's gamma-space product raised to 2.2 (output is encoded with x^(1/2.2)).");
@@ -186,6 +198,10 @@ namespace dxvk {
     // The far DoF rate, written by the scene pass (the frame's alpha belongs to whatever runs after it).
     Resources::Resource m_dofRate;
     VkExtent3D m_dofExtent = { 0, 0, 0 };
+    // The scene pass's depth-derived terms over time (ping-pong, [A, B] each, see dispatchScene).
+    Resources::Resource m_depthHistory[2][2];
+    uint32_t m_depthHistoryIndex = 0;
+    uint32_t m_depthHistoryFrame = kInvalidFrameIndex;
     uint32_t m_baseWidth = 0;
     uint32_t m_baseHeight = 0;
 

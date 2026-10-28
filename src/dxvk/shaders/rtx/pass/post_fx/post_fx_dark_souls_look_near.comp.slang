@@ -15,11 +15,8 @@ RWTexture2D<float> Output;
 layout(binding = POST_FX_DS_LOOK_NEAR_CONSTANTS)
 ConstantBuffer<PostFxDarkSoulsLookNearArgs> cb;
 
-float nearRate(vec2 uv)
+float nearRateAt(uint2 t)
 {
-  uint2 size;
-  LinearViewZ.GetDimensions(size.x, size.y);
-  const uint2 t = min(uint2(clamp(uv + cb.depthJitterUv, 0.0f, 1.0f) * vec2(size)), size - 1);
   const float viewZ = LinearViewZ[t];
   if (viewZ == cb.missLinearViewZ)
   {
@@ -27,6 +24,25 @@ float nearRate(vec2 uv)
   }
   const float d = cb.nearEnd - cb.nearBegin;
   return saturate((abs(viewZ) - cb.nearBegin) / (abs(d) > 1e-6f ? d : 1e-6f)) * cb.nearStrength;
+}
+
+// The rate at uv, averaged over the centre and four taps a stabilization step away: view Z is the
+// jittered raster, so the surface owning a silhouette texel flips from frame to frame (as in the
+// scene pass).
+float nearRate(vec2 uv)
+{
+  uint2 size;
+  LinearViewZ.GetDimensions(size.x, size.y);
+  const vec2 centre = uv + cb.depthJitterUv;
+  const vec2 tapStep = cb.depthStabilizationTexels / vec2(size);
+  const uint tapCount = cb.depthStabilizationTexels > 0.0f ? 5 : 1;
+  const vec2 tapOffsets[5] = { vec2(0.0f), vec2(1.0f, 0.0f), vec2(-1.0f, 0.0f), vec2(0.0f, 1.0f), vec2(0.0f, -1.0f) };
+  float rate = 0.0f;
+  for (uint i = 0; i < tapCount; ++i)
+  {
+    rate += nearRateAt(min(uint2(clamp(centre + tapOffsets[i] * tapStep, 0.0f, 1.0f) * vec2(size)), size - 1));
+  }
+  return rate / float(tapCount);
 }
 
 [shader("compute")]

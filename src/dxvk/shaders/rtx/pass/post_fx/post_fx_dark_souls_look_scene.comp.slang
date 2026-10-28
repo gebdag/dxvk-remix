@@ -36,6 +36,22 @@ RWTexture2D<float> DofRate;
 layout(binding = POST_FX_DS_LOOK_SCENE_SURFACE_FLAGS)
 Texture2D<uint> PrimarySurfaceFlags;
 
+// Render resolution, in pixels, previous position minus current (cameraCalcMotionVectorPixel).
+layout(binding = POST_FX_DS_LOOK_SCENE_MOTION_VECTOR)
+Texture2D<float2> PrimaryScreenSpaceMotionVector;
+
+layout(binding = POST_FX_DS_LOOK_SCENE_HISTORY_A_IN)
+Sampler2D<float4> HistoryAIn;
+
+layout(binding = POST_FX_DS_LOOK_SCENE_HISTORY_B_IN)
+Sampler2D<float4> HistoryBIn;
+
+layout(binding = POST_FX_DS_LOOK_SCENE_HISTORY_A_OUT)
+RWTexture2D<float4> HistoryAOut;
+
+layout(binding = POST_FX_DS_LOOK_SCENE_HISTORY_B_OUT)
+RWTexture2D<float4> HistoryBOut;
+
 // The haze constants of a pixel: those of its surface's own set (the game hazes each draw with
 // its region's DrawParams), or the frame's single set for untagged surfaces.
 struct HazeTerms
@@ -94,6 +110,52 @@ HazeTerms hazeTermsFor(uint set)
   return t;
 }
 
+// The haze of one view Z texel as the affine map it is on the exposed colour: haze(g) = a * g + b.
+// Fog: g * (1 - fog) + fogColour * fog. Scattering: g * lerp(1, ext * tint, blend) + inscatter * blend.
+// A primary miss (the sky) is not hazed: a = 1, b = 0.
+struct HazeMap
+{
+  vec3 a;
+  vec3 b;
+};
+
+HazeMap hazeAt(uint2 viewZTexel, CameraDirections directions)
+{
+  HazeMap m;
+  m.a = vec3(1.0f);
+  m.b = vec3(0.0f);
+  const float viewZ = LinearViewZ[viewZTexel];
+  if (cb.hazeEnable == 0 || viewZ == haze.missLinearViewZ)
+  {
+    return m;
+  }
+
+  const float z = abs(viewZ);
+  const float dist = length(cameraReconstructViewPosition(haze.camera, directions.viewDirection, z));
+  const HazeTerms t = hazeTermsFor((PrimarySurfaceFlags[viewZTexel] >> kPrimarySurfaceFlagDs1HazeSetShift) & 0xF);
+
+  const float fog = saturate(saturate((z - t.fogStart) * t.fogInvRange) * t.fog.w);
+
+  const vec3 ext = exp2(-t.extinction * dist * t.extinctionScale);
+  const float cosTheta = dot(-directions.worldDirection, t.sunDirection);
+  const float miePhase = t.phase.x * pow(max(t.phase.y - t.phase.z * cosTheta, 1e-4f), -1.5f);
+  const vec3 inscatter = (t.rayleigh * (1.0f + cosTheta * cosTheta) + t.mie * miePhase)
+    * (1.0f - ext) * t.inverseExtinction * t.inscatterScale * t.sunColor;
+  const vec3 scatterGain = lerp(vec3(1.0f), ext * t.surfaceTint, t.scatterBlend);
+
+  m.a = (1.0f - fog) * scatterGain;
+  m.b = t.fog.rgb * haze.displayScale * fog * scatterGain + inscatter * haze.displayScale * t.scatterBlend;
+  return m;
+}
+
+// FRPG_Fil_Dof_DofRate of one view Z texel (a miss is the sky, at the far plane).
+float dofRateAt(uint2 viewZTexel)
+{
+  const float viewZ = LinearViewZ[viewZTexel];
+  const float rateZ = viewZ == haze.missLinearViewZ ? 1e9f : abs(viewZ);
+  return saturate(saturate((rateZ - cb.dofFarBegin) / max(cb.dofFarEnd - cb.dofFarBegin, 1e-6f)) * cb.dofFarStrength);
+}
+
 [shader("compute")]
 [numthreads(16, 8, 1)]
 void main(uint2 pixel : SV_DispatchThreadID)
@@ -107,35 +169,75 @@ void main(uint2 pixel : SV_DispatchThreadID)
   uint2 viewZSize;
   LinearViewZ.GetDimensions(viewZSize.x, viewZSize.y);
   const vec2 viewZUV = screenUV + haze.depthJitterUv;
-  const uint2 viewZTexel = min(uint2(max(viewZUV, 0.0f) * vec2(viewZSize)), viewZSize - 1);
-  const float viewZ = LinearViewZ[viewZTexel];
+  const CameraDirections directions = cameraScreenUVToDirection(haze.camera, screenUV, false);
+
+  // The colour here is the upscaler's temporally resolved frame, but view Z is this frame's raster
+  // at its jittered sample positions: at a silhouette, and above all against the sky, which surface
+  // owns the texel a pixel reads flips from frame to frame, and so would its haze and DoF rate.
+  // Resolved like the colour instead: a tent-weighted 3x3 of taps a stabilization step apart turns
+  // the flip into a coverage estimate, and its reprojected history, clamped to the range of those
+  // taps so a disocclusion cannot ghost, averages that estimate over the jitter sequence the
+  // upscaler averaged the colour over. Haze is affine in the colour, so its maps average exactly.
+  const vec2 tapStep = cb.depthStabilizationTexels / vec2(viewZSize);
+  const int tapRadius = cb.depthStabilizationTexels > 0.0f ? 1 : 0;
+  vec4 currentA = vec4(0.0f);   // haze gain, far DoF rate
+  vec3 currentB = vec3(0.0f);   // haze offset
+  vec4 minA = vec4(1e30f), maxA = vec4(-1e30f);
+  vec3 minB = vec3(1e30f), maxB = vec3(-1e30f);
+  float weightSum = 0.0f;
+  // The history follows the front-most surface among the taps (TAA's dilated motion vector): the
+  // centre texel's owner flips at a silhouette, and with it, in motion, where the history is read.
+  uint2 motionTexel = min(uint2(clamp(viewZUV, 0.0f, 1.0f) * vec2(viewZSize)), viewZSize - 1);
+  float frontZ = 1e30f;
+  for (int y = -tapRadius; y <= tapRadius; ++y)
+  {
+    for (int x = -tapRadius; x <= tapRadius; ++x)
+    {
+      const vec2 uv = viewZUV + vec2(x, y) * tapStep;
+      const uint2 viewZTexel = min(uint2(clamp(uv, 0.0f, 1.0f) * vec2(viewZSize)), viewZSize - 1);
+      const float tapViewZ = LinearViewZ[viewZTexel];
+      if (tapViewZ != haze.missLinearViewZ && abs(tapViewZ) < frontZ)
+      {
+        frontZ = abs(tapViewZ);
+        motionTexel = viewZTexel;
+      }
+      const HazeMap tap = hazeAt(viewZTexel, directions);
+      const vec4 tapA = vec4(tap.a, dofRateAt(viewZTexel));
+      const float weight = float((2 - abs(x)) * (2 - abs(y)));
+      currentA += tapA * weight;
+      currentB += tap.b * weight;
+      weightSum += weight;
+      minA = min(minA, tapA);
+      maxA = max(maxA, tapA);
+      minB = min(minB, tap.b);
+      maxB = max(maxB, tap.b);
+    }
+  }
+  currentA /= weightSum;
+  currentB /= weightSum;
+
+  vec4 resolvedA = currentA;
+  vec3 resolvedB = currentB;
+  const vec2 historyUV = screenUV + PrimaryScreenSpaceMotionVector[motionTexel] / vec2(viewZSize);
+  if (cb.historyValid != 0 && cb.temporalBlend < 1.0f && all(historyUV >= 0.0f) && all(historyUV <= 1.0f))
+  {
+    const vec4 historyA = clamp(HistoryAIn.SampleLevel(historyUV, 0.0f), minA, maxA);
+    const vec3 historyB = clamp(HistoryBIn.SampleLevel(historyUV, 0.0f).rgb, minB, maxB);
+    resolvedA = lerp(historyA, currentA, cb.temporalBlend);
+    resolvedB = lerp(historyB, currentB, cb.temporalBlend);
+  }
+  HistoryAOut[pixel] = resolvedA;
+  HistoryBOut[pixel] = vec4(resolvedB, 0.0f);
 
   const vec4 frame = InOutColor[pixel];
   const vec3 radiance = max(frame.rgb, vec3(0.0f));
 
   vec3 g = pow(radiance, vec3(1.0f / 2.2f)) * cb.exposure;
-  if (cb.hazeEnable != 0 && viewZ != haze.missLinearViewZ)
-  {
-    const CameraDirections directions = cameraScreenUVToDirection(haze.camera, screenUV, false);
-    const float z = abs(viewZ);
-    const float dist = length(cameraReconstructViewPosition(haze.camera, directions.viewDirection, z));
-    const HazeTerms t = hazeTermsFor((PrimarySurfaceFlags[viewZTexel] >> kPrimarySurfaceFlagDs1HazeSetShift) & 0xF);
+  g = g * resolvedA.rgb + resolvedB;
 
-    const float fog = saturate(saturate((z - t.fogStart) * t.fogInvRange) * t.fog.w);
-    g = lerp(g, t.fog.rgb * haze.displayScale, fog);
-
-    const vec3 ext = exp2(-t.extinction * dist * t.extinctionScale);
-    const float cosTheta = dot(-directions.worldDirection, t.sunDirection);
-    const float miePhase = t.phase.x * pow(max(t.phase.y - t.phase.z * cosTheta, 1e-4f), -1.5f);
-    const vec3 inscatter = (t.rayleigh * (1.0f + cosTheta * cosTheta) + t.mie * miePhase)
-      * (1.0f - ext) * t.inverseExtinction * t.inscatterScale * t.sunColor;
-    g = lerp(g, g * ext * t.surfaceTint + inscatter * haze.displayScale, t.scatterBlend);
-  }
-
-  // FRPG_Fil_Dof_DofRate: the far DoF rate (a miss is the sky, at the far plane), in its own
-  // texture: the game keeps it in its scene's alpha, but here other passes run before the DoF.
-  const float rateZ = viewZ == haze.missLinearViewZ ? 1e9f : abs(viewZ);
-  DofRate[pixel] = saturate(saturate((rateZ - cb.dofFarBegin) / max(cb.dofFarEnd - cb.dofFarBegin, 1e-6f)) * cb.dofFarStrength);
+  // The far DoF rate in its own texture: the game keeps it in its scene's alpha, but here other
+  // passes run before the DoF.
+  DofRate[pixel] = resolvedA.a;
 
   InOutColor[pixel] = vec4(saturate(g), frame.a);
 }

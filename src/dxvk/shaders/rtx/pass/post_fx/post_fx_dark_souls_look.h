@@ -22,6 +22,13 @@
 #define POST_FX_DS_LOOK_SCENE_CONSTANTS      3
 #define POST_FX_DS_LOOK_SCENE_DOF_RATE       4
 #define POST_FX_DS_LOOK_SCENE_SURFACE_FLAGS  5
+// The depth-derived terms' history (see PostFxDarkSoulsLookSceneArgs::temporalBlend): last frame's,
+// sampled, and this frame's, written. A = haze map gain (rgb) and far DoF rate, B = haze map offset.
+#define POST_FX_DS_LOOK_SCENE_MOTION_VECTOR  6
+#define POST_FX_DS_LOOK_SCENE_HISTORY_A_IN   7
+#define POST_FX_DS_LOOK_SCENE_HISTORY_B_IN   8
+#define POST_FX_DS_LOOK_SCENE_HISTORY_A_OUT  9
+#define POST_FX_DS_LOOK_SCENE_HISTORY_B_OUT  10
 
 // Bright pass: scene -> bloom base buffer (thresholded, alpha = depth rate).
 #define POST_FX_DS_LOOK_BRIGHT_SCENE         0
@@ -106,9 +113,14 @@ struct PostFxDarkSoulsLookSceneArgs {
   float dofFarEnd;
 
   float dofFarStrength;
-  uint pad0;
-  uint pad1;
-  uint pad2;
+  // The depth-derived terms (haze, DoF rate) are averaged over a 3x3 of taps this many view Z texels
+  // apart (0: the centre alone). See depthStabilizationTexels in rtx_dark_souls_look.h.
+  float depthStabilizationTexels;
+  // Weight of this frame's terms against their reprojected history, which is clamped to the range
+  // of the taps (1: no history). See depthTemporalBlend in rtx_dark_souls_look.h.
+  float temporalBlend;
+  // 0 when there is no history to read (first frame, a resize, a frame the pass did not run).
+  uint historyValid;
 };
 
 struct PostFxDarkSoulsLookNearArgs {
@@ -122,7 +134,8 @@ struct PostFxDarkSoulsLookNearArgs {
 
   // The UnfocusNearRate3x3 dilation footprint: one texel of the game's half-size DoF level, in UV.
   vec2 dilationUv;
-  uint pad0;
+  // As PostFxDarkSoulsLookSceneArgs::depthStabilizationTexels, for each rate lookup.
+  float depthStabilizationTexels;
   uint pad1;
 };
 

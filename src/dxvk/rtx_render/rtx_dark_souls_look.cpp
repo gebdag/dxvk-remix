@@ -44,6 +44,11 @@ namespace dxvk {
         CONSTANT_BUFFER(POST_FX_DS_LOOK_SCENE_CONSTANTS)
         RW_TEXTURE2D(POST_FX_DS_LOOK_SCENE_DOF_RATE)
         TEXTURE2D(POST_FX_DS_LOOK_SCENE_SURFACE_FLAGS)
+        TEXTURE2D(POST_FX_DS_LOOK_SCENE_MOTION_VECTOR)
+        SAMPLER2D(POST_FX_DS_LOOK_SCENE_HISTORY_A_IN)
+        SAMPLER2D(POST_FX_DS_LOOK_SCENE_HISTORY_B_IN)
+        RW_TEXTURE2D(POST_FX_DS_LOOK_SCENE_HISTORY_A_OUT)
+        RW_TEXTURE2D(POST_FX_DS_LOOK_SCENE_HISTORY_B_OUT)
       END_PARAMETER()
     };
     PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookSceneShader);
@@ -264,6 +269,11 @@ namespace dxvk {
     m_dofScratch = Resources::createImageResource(ctx, "DS1 look DoF scratch", size, VK_FORMAT_R16G16B16A16_SFLOAT);
     m_dofNear = Resources::createImageResource(ctx, "DS1 look DoF near rate", size, VK_FORMAT_R16_SFLOAT);
     m_dofRate = Resources::createImageResource(ctx, "DS1 look DoF far rate", size, VK_FORMAT_R16_SFLOAT);
+    for (auto& history : m_depthHistory) {
+      history[0] = Resources::createImageResource(ctx, "DS1 look depth terms history A", size, VK_FORMAT_R16G16B16A16_SFLOAT);
+      history[1] = Resources::createImageResource(ctx, "DS1 look depth terms history B", size, VK_FORMAT_R16G16B16A16_SFLOAT);
+    }
+    m_depthHistoryFrame = kInvalidFrameIndex;
   }
 
   void DxvkDarkSoulsLook::dispatchDofGaussian(Rc<DxvkContext>& ctx, int constantsIndex, const Resources::Resource& input,
@@ -280,10 +290,12 @@ namespace dxvk {
     const Resources::Resource& inOutColor,
     const Resources::Resource& linearViewZ,
     const Resources::Resource& surfaceFlags,
+    const Resources::Resource& motionVector,
     const DxvkDarkSoulsHaze& haze,
     const Camera& camera,
     const float jitterOffset[2],
-    float missLinearViewZ) {
+    float missLinearViewZ,
+    bool resetHistory) {
     ScopedGpuProfileZone(ctx, "Dark Souls 1 Look: Scene");
     ensureResources(ctx, std::max(bloomWidth(), 2), std::max(bloomHeight(), 2));
 
@@ -299,6 +311,16 @@ namespace dxvk {
     args.dofFarBegin = dofFarBegin();
     args.dofFarEnd = dofFarEnd();
     args.dofFarStrength = dof ? dofFarStrength() : 0.0f;
+    // Without camera jitter the raster does not flip, so there is nothing to stabilize.
+    const bool jittered = jitterOffset[0] != 0.0f || jitterOffset[1] != 0.0f;
+    args.depthStabilizationTexels = jittered ? std::max(depthStabilizationTexels(), 0.0f) : 0.0f;
+    args.temporalBlend = std::clamp(depthTemporalBlend(), 0.01f, 1.0f);
+    // The history is last frame's output of this pass; any gap (a frame without the game's image
+    // pipeline, a resize), a camera cut or a history reset leaves it describing another image.
+    const uint32_t frameId = ctx->getDevice()->getCurrentFrameId();
+    args.historyValid = !resetHistory && m_depthHistoryFrame != kInvalidFrameIndex && m_depthHistoryFrame + 1 == frameId ? 1u : 0u;
+    const auto& historyIn = m_depthHistory[m_depthHistoryIndex ^ 1];
+    const auto& historyOut = m_depthHistory[m_depthHistoryIndex];
 
     ctx->writeToBuffer(m_hazeConstants, 0, sizeof(hazeArgs), &hazeArgs);
     ctx->getCommandList()->trackResource<DxvkAccess::Read>(m_hazeConstants);
@@ -311,9 +333,18 @@ namespace dxvk {
     ctx->bindResourceBuffer(POST_FX_DS_LOOK_SCENE_CONSTANTS, DxvkBufferSlice(m_sceneConstants, 0, m_sceneConstants->info().size));
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_DOF_RATE, m_dofRate.view, nullptr);
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_SURFACE_FLAGS, surfaceFlags.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_MOTION_VECTOR, motionVector.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HISTORY_A_IN, historyIn[0].view, nullptr);
+    ctx->bindResourceSampler(POST_FX_DS_LOOK_SCENE_HISTORY_A_IN, m_linearSampler);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HISTORY_B_IN, historyIn[1].view, nullptr);
+    ctx->bindResourceSampler(POST_FX_DS_LOOK_SCENE_HISTORY_B_IN, m_linearSampler);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HISTORY_A_OUT, historyOut[0].view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HISTORY_B_OUT, historyOut[1].view, nullptr);
     ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookSceneShader::getShader());
     const VkExtent3D workgroups = util::computeBlockCount(extent, VkExtent3D { 16, 8, 1 });
     ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
+    m_depthHistoryIndex ^= 1;
+    m_depthHistoryFrame = frameId;
 
     if (DxvkDarkSoulsExposure::wantsMeter()) {
       dispatchMeter(ctx, inOutColor, args.exposure);
@@ -464,6 +495,7 @@ namespace dxvk {
       args.nearEnd = dofNearEnd();
       args.nearStrength = dofNearStrength();
       args.dilationUv = { 1.0f / float(m_baseWidth), 1.0f / float(m_baseHeight) };
+      args.depthStabilizationTexels = std::max(depthStabilizationTexels(), 0.0f);
       ctx->writeToBuffer(m_nearConstants, 0, sizeof(args), &args);
       ctx->getCommandList()->trackResource<DxvkAccess::Read>(m_nearConstants);
       ctx->bindResourceView(POST_FX_DS_LOOK_NEAR_LINEAR_VIEW_Z, linearViewZ.view, nullptr);
@@ -657,6 +689,10 @@ namespace dxvk {
     RemixGui::Checkbox("Game Fog and Scattering", &hazeEnableObject());
     RemixGui::Checkbox("Game Bloom", &bloomEnableObject());
     RemixGui::Checkbox("Game Depth of Field", &dofEnableObject());
+    RemixGui::DragFloat("Fog / DoF Depth Stabilization (texels)", &depthStabilizationTexelsObject(), 0.05f, 0.0f, 4.0f, "%.2f",
+                        ImGuiSliderFlags_AlwaysClamp);
+    RemixGui::DragFloat("Fog / DoF Temporal Blend (1 = no history)", &depthTemporalBlendObject(), 0.01f, 0.01f, 1.0f, "%.2f",
+                        ImGuiSliderFlags_AlwaysClamp);
     RemixGui::Checkbox("Gamma-Space Albedo (game texture multiply)", &gammaAlbedoObject());
     ImGui::BeginDisabled(!gammaAlbedo());
     RemixGui::DragFloat("Bounce Albedo Power (2.2 = game)", &bounceAlbedoGammaObject(), 0.01f, 0.5f, 2.2f, "%.2f",
