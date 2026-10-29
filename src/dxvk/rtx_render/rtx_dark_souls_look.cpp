@@ -12,6 +12,7 @@
 #include <cmath>
 
 #include <rtx_shaders/post_fx_dark_souls_look_scene.h>
+#include <rtx_shaders/post_fx_dark_souls_look_region.h>
 #include <rtx_shaders/post_fx_dark_souls_look_bright.h>
 #include <rtx_shaders/post_fx_dark_souls_look_filter.h>
 #include <rtx_shaders/post_fx_dark_souls_look_composite.h>
@@ -49,9 +50,23 @@ namespace dxvk {
         SAMPLER2D(POST_FX_DS_LOOK_SCENE_HISTORY_B_IN)
         RW_TEXTURE2D(POST_FX_DS_LOOK_SCENE_HISTORY_A_OUT)
         RW_TEXTURE2D(POST_FX_DS_LOOK_SCENE_HISTORY_B_OUT)
+        TEXTURE2D(POST_FX_DS_LOOK_SCENE_HAZE_REGION)
       END_PARAMETER()
     };
     PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookSceneShader);
+
+    class PostFxDarkSoulsLookRegionShader : public ManagedShader {
+      SHADER_SOURCE(PostFxDarkSoulsLookRegionShader, VK_SHADER_STAGE_COMPUTE_BIT, post_fx_dark_souls_look_region)
+
+      BEGIN_PARAMETER()
+        TEXTURE2D(POST_FX_DS_LOOK_REGION_LINEAR_VIEW_Z)
+        TEXTURE2D(POST_FX_DS_LOOK_REGION_SURFACE_FLAGS)
+        CONSTANT_BUFFER(POST_FX_DS_LOOK_REGION_HAZE)
+        CONSTANT_BUFFER(POST_FX_DS_LOOK_REGION_CONSTANTS)
+        RW_TEXTURE2D(POST_FX_DS_LOOK_REGION_OUTPUT)
+      END_PARAMETER()
+    };
+    PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookRegionShader);
 
     class PostFxDarkSoulsLookBrightShader : public ManagedShader {
       SHADER_SOURCE(PostFxDarkSoulsLookBrightShader, VK_SHADER_STAGE_COMPUTE_BIT, post_fx_dark_souls_look_bright)
@@ -231,6 +246,7 @@ namespace dxvk {
     if (m_sceneConstants == nullptr) {
       m_sceneConstants = makeConstants(sizeof(PostFxDarkSoulsLookSceneArgs), "DS1 Look Scene Constants");
       m_hazeConstants = makeConstants(sizeof(PostFxDarkSoulsHazeArgs), "DS1 Look Haze Constants");
+      m_regionConstants = makeConstants(sizeof(PostFxDarkSoulsLookRegionArgs), "DS1 Look Haze Region Constants");
       m_brightConstants = makeConstants(sizeof(PostFxDarkSoulsLookBrightArgs), "DS1 Look Bright Constants");
       for (auto& c : m_filterConstants) {
         c = makeConstants(sizeof(PostFxDarkSoulsLookFilterArgs), "DS1 Look Filter Constants");
@@ -327,6 +343,32 @@ namespace dxvk {
     ctx->writeToBuffer(m_sceneConstants, 0, sizeof(args), &args);
     ctx->getCommandList()->trackResource<DxvkAccess::Read>(m_sceneConstants);
 
+    // The haze region blend of each view Z texel, which the scene pass reads.
+    const VkExtent3D viewZExtent = linearViewZ.image->mipLevelExtent(0);
+    if (!m_hazeRegion.isValid() || m_hazeRegion.image->mipLevelExtent(0).width != viewZExtent.width ||
+        m_hazeRegion.image->mipLevelExtent(0).height != viewZExtent.height) {
+      m_hazeRegion = Resources::createImageResource(ctx, "DS1 look haze region", viewZExtent, VK_FORMAT_R32_UINT);
+    }
+    if (args.hazeEnable != 0) {
+      ScopedGpuProfileZone(ctx, "Dark Souls 1 Look: Haze Region");
+      PostFxDarkSoulsLookRegionArgs regionArgs = {};
+      regionArgs.size = { viewZExtent.width, viewZExtent.height };
+      regionArgs.radius = std::max(hazeRegionBlendRadius(), 0.0f);
+      regionArgs.maxUvRadius = 0.5f;
+      regionArgs.tapCount = 32;
+      regionArgs.frameIndex = frameId;
+      ctx->writeToBuffer(m_regionConstants, 0, sizeof(regionArgs), &regionArgs);
+      ctx->getCommandList()->trackResource<DxvkAccess::Read>(m_regionConstants);
+      ctx->bindResourceView(POST_FX_DS_LOOK_REGION_LINEAR_VIEW_Z, linearViewZ.view, nullptr);
+      ctx->bindResourceView(POST_FX_DS_LOOK_REGION_SURFACE_FLAGS, surfaceFlags.view, nullptr);
+      ctx->bindResourceBuffer(POST_FX_DS_LOOK_REGION_HAZE, DxvkBufferSlice(m_hazeConstants, 0, m_hazeConstants->info().size));
+      ctx->bindResourceBuffer(POST_FX_DS_LOOK_REGION_CONSTANTS, DxvkBufferSlice(m_regionConstants, 0, m_regionConstants->info().size));
+      ctx->bindResourceView(POST_FX_DS_LOOK_REGION_OUTPUT, m_hazeRegion.view, nullptr);
+      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookRegionShader::getShader());
+      const VkExtent3D regionGroups = util::computeBlockCount(viewZExtent, VkExtent3D { 16, 8, 1 });
+      ctx->dispatch(regionGroups.width, regionGroups.height, regionGroups.depth);
+    }
+
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_INOUT, inOutColor.view, nullptr);
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_LINEAR_VIEW_Z, linearViewZ.view, nullptr);
     ctx->bindResourceBuffer(POST_FX_DS_LOOK_SCENE_HAZE, DxvkBufferSlice(m_hazeConstants, 0, m_hazeConstants->info().size));
@@ -340,6 +382,7 @@ namespace dxvk {
     ctx->bindResourceSampler(POST_FX_DS_LOOK_SCENE_HISTORY_B_IN, m_linearSampler);
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HISTORY_A_OUT, historyOut[0].view, nullptr);
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HISTORY_B_OUT, historyOut[1].view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HAZE_REGION, m_hazeRegion.view, nullptr);
     ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookSceneShader::getShader());
     const VkExtent3D workgroups = util::computeBlockCount(extent, VkExtent3D { 16, 8, 1 });
     ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);

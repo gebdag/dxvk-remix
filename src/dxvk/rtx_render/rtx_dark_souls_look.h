@@ -90,6 +90,12 @@ namespace dxvk {
                "Weight of this frame's fog, scattering and far DoF terms against their history, reprojected through the "
                "motion vectors and clamped to the range of this frame's taps: averaged over the camera jitter sequence, "
                "their coverage of a silhouette matches the upscaler's resolved colour. 1 = no history.");
+    RTX_OPTION("rtx.ds1Look", float, hazeRegionBlendRadius, 2.0f,
+               "Each surface takes the fog and scattering of its region's DrawParams, as in the game, but blended with "
+               "the regions of the surfaces within this many world units of it, by their distance in 3D. The game pairs "
+               "each region's fog with that region's ambient light, so where two regions meet it shows no seam; Remix "
+               "lights both with one continuous light, and their fog alone met in a hard line (Firelink's passage). "
+               "A seam becomes a ramp twice this wide; surfaces apart in depth never mix. 0 = each surface's own set.");
     RTX_OPTION("rtx.ds1Look", bool, gammaAlbedo, true,
                "Albedo = the texture's stored value^2.2 instead of its sRGB decode, so the path tracer's linear product "
                "albedo * light is the game's gamma-space product raised to 2.2 (output is encoded with x^(1/2.2)).");
@@ -176,6 +182,9 @@ namespace dxvk {
 
     Rc<DxvkBuffer> m_sceneConstants;
     Rc<DxvkBuffer> m_hazeConstants;
+    Rc<DxvkBuffer> m_regionConstants;
+    // The haze region blend per view Z texel (dispatchScene's region pass).
+    Resources::Resource m_hazeRegion;
     Rc<DxvkBuffer> m_brightConstants;
     Rc<DxvkBuffer> m_filterConstants[5];
     Rc<DxvkBuffer> m_compositeConstants;

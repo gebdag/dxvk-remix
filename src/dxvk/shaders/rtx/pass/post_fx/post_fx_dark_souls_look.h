@@ -29,6 +29,17 @@
 #define POST_FX_DS_LOOK_SCENE_HISTORY_B_IN   8
 #define POST_FX_DS_LOOK_SCENE_HISTORY_A_OUT  9
 #define POST_FX_DS_LOOK_SCENE_HISTORY_B_OUT  10
+// The haze region blend of each view Z texel (the region pass's output, below).
+#define POST_FX_DS_LOOK_SCENE_HAZE_REGION    11
+
+// Haze region blend (post_fx_dark_souls_look_region.comp.slang): per view Z texel, the two haze sets
+// of the surfaces within PostFxDarkSoulsLookRegionArgs::radius of it in the world and the second's
+// share, which the scene pass blends its haze between.
+#define POST_FX_DS_LOOK_REGION_LINEAR_VIEW_Z 0
+#define POST_FX_DS_LOOK_REGION_SURFACE_FLAGS 1
+#define POST_FX_DS_LOOK_REGION_HAZE          2
+#define POST_FX_DS_LOOK_REGION_CONSTANTS     3
+#define POST_FX_DS_LOOK_REGION_OUTPUT        4
 
 // Bright pass: scene -> bloom base buffer (thresholded, alpha = depth rate).
 #define POST_FX_DS_LOOK_BRIGHT_SCENE         0
@@ -121,6 +132,20 @@ struct PostFxDarkSoulsLookSceneArgs {
   float temporalBlend;
   // 0 when there is no history to read (first frame, a resize, a frame the pass did not run).
   uint historyValid;
+};
+
+struct PostFxDarkSoulsLookRegionArgs {
+  uvec2 size;           // the view Z buffer's
+  // World units: surfaces this close to a texel's share its haze, falling off with the distance.
+  // 0 = every texel keeps its own surface's set.
+  float radius;
+  // Cap on the disc's radius on screen, in UV (right in front of the camera it would cover the screen).
+  float maxUvRadius;
+
+  uint tapCount;
+  uint frameIndex;      // rotates the tap pattern
+  uint pad0;
+  uint pad1;
 };
 
 struct PostFxDarkSoulsLookNearArgs {

@@ -52,6 +52,10 @@ RWTexture2D<float4> HistoryAOut;
 layout(binding = POST_FX_DS_LOOK_SCENE_HISTORY_B_OUT)
 RWTexture2D<float4> HistoryBOut;
 
+// Per view Z texel, the two haze sets around it and the second's share (post_fx_dark_souls_look_region).
+layout(binding = POST_FX_DS_LOOK_SCENE_HAZE_REGION)
+Texture2D<uint> HazeRegion;
+
 // The haze constants of a pixel: those of its surface's own set (the game hazes each draw with
 // its region's DrawParams), or the frame's single set for untagged surfaces.
 struct HazeTerms
@@ -119,6 +123,29 @@ struct HazeMap
   vec3 b;
 };
 
+// One set's haze at a surface point z deep and dist away along the view direction.
+HazeMap hazeMapFor(uint set, float z, float dist, CameraDirections directions)
+{
+  HazeMap m;
+  const HazeTerms t = hazeTermsFor(set);
+
+  const float fog = saturate(saturate((z - t.fogStart) * t.fogInvRange) * t.fog.w);
+
+  const vec3 ext = exp2(-t.extinction * dist * t.extinctionScale);
+  const float cosTheta = dot(-directions.worldDirection, t.sunDirection);
+  const float miePhase = t.phase.x * pow(max(t.phase.y - t.phase.z * cosTheta, 1e-4f), -1.5f);
+  const vec3 inscatter = (t.rayleigh * (1.0f + cosTheta * cosTheta) + t.mie * miePhase)
+    * (1.0f - ext) * t.inverseExtinction * t.inscatterScale * t.sunColor;
+  const vec3 scatterGain = lerp(vec3(1.0f), ext * t.surfaceTint, t.scatterBlend);
+
+  m.a = (1.0f - fog) * scatterGain;
+  m.b = t.fog.rgb * haze.displayScale * fog * scatterGain + inscatter * haze.displayScale * t.scatterBlend;
+  return m;
+}
+
+// Its surface's set's haze, blended with the set of the surfaces around it in the world (the region
+// pass): the game pairs each region's fog with that region's ambient, which Remix does not, so two
+// regions' fog alone would meet in a hard line.
 HazeMap hazeAt(uint2 viewZTexel, CameraDirections directions)
 {
   HazeMap m;
@@ -132,19 +159,15 @@ HazeMap hazeAt(uint2 viewZTexel, CameraDirections directions)
 
   const float z = abs(viewZ);
   const float dist = length(cameraReconstructViewPosition(haze.camera, directions.viewDirection, z));
-  const HazeTerms t = hazeTermsFor((PrimarySurfaceFlags[viewZTexel] >> kPrimarySurfaceFlagDs1HazeSetShift) & 0xF);
-
-  const float fog = saturate(saturate((z - t.fogStart) * t.fogInvRange) * t.fog.w);
-
-  const vec3 ext = exp2(-t.extinction * dist * t.extinctionScale);
-  const float cosTheta = dot(-directions.worldDirection, t.sunDirection);
-  const float miePhase = t.phase.x * pow(max(t.phase.y - t.phase.z * cosTheta, 1e-4f), -1.5f);
-  const vec3 inscatter = (t.rayleigh * (1.0f + cosTheta * cosTheta) + t.mie * miePhase)
-    * (1.0f - ext) * t.inverseExtinction * t.inscatterScale * t.sunColor;
-  const vec3 scatterGain = lerp(vec3(1.0f), ext * t.surfaceTint, t.scatterBlend);
-
-  m.a = (1.0f - fog) * scatterGain;
-  m.b = t.fog.rgb * haze.displayScale * fog * scatterGain + inscatter * haze.displayScale * t.scatterBlend;
+  const uint region = HazeRegion[viewZTexel];
+  m = hazeMapFor(region & 0xF, z, dist, directions);
+  const float secondShare = float(region >> 16) / 65535.0f;
+  if (secondShare > 0.0f)
+  {
+    const HazeMap second = hazeMapFor((region >> 4) & 0xF, z, dist, directions);
+    m.a = lerp(m.a, second.a, secondShare);
+    m.b = lerp(m.b, second.b, secondShare);
+  }
   return m;
 }
 
