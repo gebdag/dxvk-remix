@@ -1596,7 +1596,7 @@ namespace dxvk {
     constants.ds1Ambient.skyGamma = 0;
     constants.ds1Ambient.skyUnexpose = 1.0f;
     if (DxvkDarkSoulsLook::isActive()) {
-      const float exposure = DxvkDarkSoulsExposure::gameExposureValue();
+      const float exposure = DxvkDarkSoulsExposure::drawnExposure();
       constants.ds1Ambient.skyGamma = RtxOptions::skyForceHDR() ? 1u : 2u;
       constants.ds1Ambient.skyUnexpose = exposure > 0.0f ? 1.0f / exposure : 1.0f;
     }

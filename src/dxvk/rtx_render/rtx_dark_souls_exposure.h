@@ -44,6 +44,13 @@ namespace dxvk {
       return gameActive() ? gameExposure() : 1.0f;
     }
 
+    // The exposure the game's own shaders applied to what they drew (its c135.x / c135.y), which the
+    // sky raster holds and must be un-exposed by. Not gameExposureValue: when Remix meters its frame
+    // the two differ, and in the real game they differ a lot, since with SkipPostFX the game's own
+    // luminance passes are dropped and its c135 stays at its boot value (1 / 1.3) while the meter
+    // follows the scene (Ash Lake: sky un-exposed by 1.38 instead of 0.77, about 0.28x too dark).
+    static float drawnExposure() { return gameActive() ? gameExposure() : 1.0f; }
+
     // Metering: the game's own luminance meter (FRPG_Fil_SampleLumInitial / SampleLumFinal) runs on
     // the frame Remix shows instead of the game's buffer, which under path tracing is not that
     // image, and FRPG_Fil_CalcAdaptedLum adapts the game's exposure toward it:
