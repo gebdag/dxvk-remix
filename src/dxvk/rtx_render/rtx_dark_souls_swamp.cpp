@@ -69,7 +69,13 @@ namespace dxvk {
     args.detailStrength = uv.z;
     args.spanPerDepth = spanPerDepth();
     args.invFadeDistance = fadeDistance() > 0.0f ? 1.0f / fadeDistance() : 0.0f;
-    args.uvPerMetre = metresPerUv() > 0.0f ? 1.0f / metresPerUv() : 0.0f;
+    const float metres = meshMetresPerUv() > 0.0f ? meshMetresPerUv() : metresPerUv();
+    args.uvPerMetre = metres > 0.0f ? 1.0f / metres : 0.0f;
+    const Vector3 offsetU = layerOffsetU(), offsetV = layerOffsetV();
+    args.layerOffsetU = vec3 { offsetU.x, offsetU.y, offsetU.z };
+    args.layerOffsetV = vec3 { offsetV.x, offsetV.y, offsetV.z };
+    args.heightScale = heightScale();
+    args.heightInAlpha = heightInAlpha() ? 1u : 0u;
     if (roughness() >= 0.0f) {
       args.roughness = std::min(roughness(), 1.0f);
     } else {
@@ -84,7 +90,8 @@ namespace dxvk {
     if (rings() != s_ringText) {
       parseRings(rings());
     }
-    args.ringCount = s_ringCount;
+    // A baked height texture's alpha holds the height, not the ring texture: no rings on it.
+    args.ringCount = heightInAlpha() ? 0u : s_ringCount;
     for (uint32_t i = 0; i < s_ringCount * 2; ++i) {
       args.rings[i] = s_rings[i];
     }

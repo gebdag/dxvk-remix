@@ -77,10 +77,18 @@ struct Ds1SwampArgs {
   uint ringCount;
 
   uint enable;
-  uint pad0;
+  // 1: the height is the colour texture's alpha (a separate height texture the proxy baked in), 0: its r + g + b.
+  uint heightInAlpha;
   // 1 / the c100 of the map materials around the swamp (see above).
   float invSceneDiffuseScale;
-  uint pad2;
+  // c169.x: the height's weight on the slope (the colour and reflection masks take the height as is).
+  float heightScale;
+
+  // Height pass VS c246.xy, c247.xy, c248.xy: each layer's scroll.
+  vec3 layerOffsetU;
+  float pad3;
+  vec3 layerOffsetV;
+  float pad4;
 
   // Each ring's texture coordinates from world x, z: u = dot(rings[2i].xyz, (x, z, 1)), v = dot(rings[2i + 1].xyz, (x, z, 1));
   // rings[2i].w = its strength.

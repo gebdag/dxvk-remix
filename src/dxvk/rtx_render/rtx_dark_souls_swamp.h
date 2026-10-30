@@ -42,6 +42,16 @@ namespace dxvk {
     RTX_OPTION_FLAG("rtx.ds1Swamp", float, sceneDiffuseScale, 0.6f, RtxOptionFlags::NoSave,
                     "c100 of the frame's map materials (most of their geometry), which Remix does not apply to them: "
                     "the swamp's colours are divided by it to keep their ratio to the scene.");
+    RTX_OPTION_FLAG("rtx.ds1Swamp", Vector3, layerOffsetU, Vector3(0.0f, 0.0f, 0.0f), RtxOptionFlags::NoSave,
+                    "Height pass VS c246.x, c247.x, c248.x: each layer's scroll in u (wrapped).");
+    RTX_OPTION_FLAG("rtx.ds1Swamp", Vector3, layerOffsetV, Vector3(0.0f, 0.0f, 0.0f), RtxOptionFlags::NoSave,
+                    "Height pass VS c246.y, c247.y, c248.y: each layer's scroll in v (wrapped).");
+    RTX_OPTION_FLAG("rtx.ds1Swamp", float, heightScale, 1.0f, RtxOptionFlags::NoSave, "c169.x: the height's weight on the slope.");
+    RTX_OPTION_FLAG("rtx.ds1Swamp", bool, heightInAlpha, false, RtxOptionFlags::NoSave,
+                    "The height pass reads a texture of its own, which the proxy bakes into the colour texture's alpha "
+                    "(Gaping Dragon's slime); false: it reads the colour texture's r + g + b (Blighttown).");
+    RTX_OPTION_FLAG("rtx.ds1Swamp", float, meshMetresPerUv, 0.0f, RtxOptionFlags::NoSave,
+                    "The surface mesh's metres per texture coordinate, measured by the proxy; 0 = metresPerUv.");
     RTX_OPTION_FLAG("rtx.ds1Swamp", std::string, rings, "", RtxOptionFlags::NoSave,
                     "The frame's wake rings: u_x,u_z,u_1,v_x,v_z,v_1,strength;... (ring texture coordinates from world x, z).");
   };
