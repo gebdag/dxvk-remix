@@ -16,7 +16,8 @@ namespace dxvk {
   // at dwindle end, in gamma space. An inverse-square light can't follow that: a torch mounted on a
   // wall burns a hot spot into the wall and leaves the room behind it dark. For the lights the
   // proxy lists, the sphere light evaluates (colour * att(d))^2.2 instead of inverse square (with
-  // its radiance = colour^2.2 / pi; sphere_light.slangh), the game's light in linear space.
+  // its radiance = colour^2.2, the proxy's; sphere_light.slangh): a diffuse surface returns albedo * (colour * att)^2.2,
+  // the game's albedo * light in linear space.
   //
   // The proxy sends the list as rtx.ds1Lights.falloffTable, "hash:begin:end;..." with the light's
   // API hash in hex. The switch is the proxy's (F4 > Lights > Game falloff): a listed light's
