@@ -59,7 +59,9 @@ namespace dxvk {
     static bool wantsMeter() { return meterFrame() && adaptActive(); }
 
     // One frame's adaptation step from the frame's geometric-mean luminance (the game's lum).
-    static void adapt(float lum);
+    // ambientScale: the share of the game's unoccluded ambient the frame keeps (the look's ambient
+    // meter), which the game's luminance clamp is scaled by under ambientClamp.
+    static void adapt(float lum, float ambientScale);
 
     static void showImguiSettings();
 
@@ -80,6 +82,16 @@ namespace dxvk {
                "Scale on the game's luminance clamp minimum while metering Remix's frame: below 1 the exposure can rise "
                "past the game's limit where the path-traced frame is darker than the game's baked one.");
     RTX_OPTION_FLAG("rtx.ds1Exposure", float, adaptMaxLum, 0.15f, RtxOptionFlags::NoSave, "Luminance clamp maximum (PS c54.z).");
+    RTX_OPTION("rtx.ds1Exposure", bool, ambientClamp, false,
+               "Scale the game's luminance clamp by the share of the game's ambient the path-traced frame keeps. The game "
+               "lights surfaces with an unoccluded ambient probe and sets each area's clamp for frames lit that way; path "
+               "tracing occludes that ambient, so enclosed areas (Lost Izalith, interiors) meter far below the clamp, the "
+               "exposure stops at the game's limit, and the ColAdj black offset then clips most of the frame to black. "
+               "The share is measured each frame: the frame's log-average luminance against the game's ambient cube on the "
+               "same surfaces (albedo * ambient(N)), never above 1, so open areas keep the game's clamp.");
+    RTX_OPTION("rtx.ds1Exposure", float, ambientClampMinScale, 0.1f,
+               "Lower bound on the measured ambient share (a safety bound for degenerate frames, such as a wall filling "
+               "the view).");
     RTX_OPTION_FLAG("rtx.ds1Exposure", float, adaptKey, 0.19f, RtxOptionFlags::NoSave, "Key (PS c54.w).");
     RTX_OPTION_FLAG("rtx.ds1Exposure", float, exposureDivisor, 1.3f, RtxOptionFlags::NoSave,
                     "c135.y: the lit shaders scale by c135.x / c135.y.");
@@ -87,6 +99,7 @@ namespace dxvk {
   private:
     inline static float s_adapted = 1.0f;   // E, the game's c135.x
     inline static bool s_haveAdapted = false;
+    inline static float s_ambientScale = 1.0f;
     inline static float s_meteredLum = 0.0f;
   };
 

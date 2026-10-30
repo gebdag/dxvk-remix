@@ -113,6 +113,38 @@ struct PostFxDarkSoulsLookMeterArgs {
   uint pad1;
 };
 
+// Ambient meter: how much of the game's ambient the path-traced frame keeps. The game lights its
+// surfaces with an unoccluded probe, and its exposure clamp (c54.y..c54.z) is set for frames lit
+// that way; path tracing occludes that ambient, so enclosed areas meter far below the clamp and
+// the exposure cannot follow them. Over the meter grid, before the scene pass, this sums for the
+// surface taps of each cell (primary hits with a diffuse albedo) the ln of the gamma-space
+// luminance of
+//   the frame:     radiance^(1/2.2)
+//   the estimate:  (albedo * ambient cube(N))^(1/2.2), the game's unoccluded ambient on it
+// and the count of such taps: three floats per group at partialsOffset. exp of the mean
+// difference is the ratio the game's clamp is scaled by (DxvkDarkSoulsExposure::adapt).
+#define POST_FX_DS_LOOK_AMBIENT_METER_RADIANCE      0
+#define POST_FX_DS_LOOK_AMBIENT_METER_ALBEDO        1
+#define POST_FX_DS_LOOK_AMBIENT_METER_NORMAL        2
+#define POST_FX_DS_LOOK_AMBIENT_METER_LINEAR_VIEW_Z 3
+#define POST_FX_DS_LOOK_AMBIENT_METER_PARTIALS      4
+#define POST_FX_DS_LOOK_AMBIENT_METER_CONSTANTS     5
+
+struct PostFxDarkSoulsLookAmbientMeterArgs {
+  Ds1AmbientArgs ambient;
+
+  uvec2 gridSize;
+  uvec2 radianceSize;
+
+  uvec2 gbufferSize;    // albedo and shading normal (compacted, render resolution)
+  uvec2 viewZSize;
+
+  float missLinearViewZ;
+  float minAlbedo;      // taps with a darker diffuse albedo (metal, black) are left out
+  uint groupsX;
+  uint partialsOffset;  // in floats
+};
+
 struct PostFxDarkSoulsLookSceneArgs {
   // The game's c135.x / c135.y: Remix radiance^(1/2.2) times this is the 8-bit scene value.
   float exposure;

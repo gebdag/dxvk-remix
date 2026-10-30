@@ -40,6 +40,8 @@ namespace dxvk {
       const Resources::Resource& linearViewZ,
       const Resources::Resource& surfaceFlags,
       const Resources::Resource& motionVector,
+      const Resources::Resource& albedo,
+      const Resources::Resource& shadingNormal,
       const DxvkDarkSoulsHaze& haze,
       const Camera& camera,
       const float jitterOffset[2],
@@ -173,9 +175,20 @@ namespace dxvk {
                              const Resources::Resource& output, float sigmaX, float sigmaY);
     void dispatchFilter(Rc<DxvkContext>& ctx, const Rc<DxvkBuffer>& constants, const Resources::Resource& input,
                         const Resources::Resource& output, const vec4* taps, uint32_t tapCount, bool gated = false);
+    struct MeterGrid {
+      uint32_t width, height, groupsX, groupsY;
+      uint32_t groups() const { return groupsX * groupsY; }
+    };
+    static MeterGrid meterGrid();
+    void ensureMeterResources(uint32_t groups);
     // The game's luminance meter on the scene pass output; adapts DxvkDarkSoulsExposure with the
     // value read back kMeterSlots - 1 frames later.
     void dispatchMeter(Rc<DxvkContext>& ctx, const Resources::Resource& scene, float exposure);
+    // The ambient meter (post_fx_dark_souls_look.h) on the radiance before the scene pass; its sums
+    // travel with the next dispatchMeter's.
+    void dispatchAmbientMeter(Rc<DxvkContext>& ctx, const Resources::Resource& radiance, const Resources::Resource& albedo,
+                              const Resources::Resource& shadingNormal, const Resources::Resource& linearViewZ,
+                              float missLinearViewZ);
     Rc<DxvkBuffer> makeConstants(size_t size, const char* name);
 
     DxvkDevice* m_device;
@@ -217,12 +230,17 @@ namespace dxvk {
 
     // Meter: per-group ln sums, and a ring of host copies read kMeterSlots - 1 frames later
     // (long finished on the GPU), as DxvkAutoExposure reads its exposure back.
+    // Per group: the game meter's ln sum, then the ambient meter's three sums.
     static constexpr uint32_t kMeterSlots = 4;
+    static constexpr uint32_t kMeterFloatsPerGroup = 4;
     Rc<DxvkBuffer> m_meterConstants;
+    Rc<DxvkBuffer> m_ambientMeterConstants;
     Rc<DxvkBuffer> m_meterPartials;
     Rc<DxvkBuffer> m_meterReadback;
-    uint32_t m_meterGroups = 0;                // partials per slot
+    uint32_t m_meterGroups = 0;                // groups per slot
     uint32_t m_meterCells[kMeterSlots] = {};   // grid cells each slot's sums cover, 0 = empty
+    bool m_meterAmbient[kMeterSlots] = {};     // the slot holds ambient meter sums
+    bool m_ambientMetered = false;             // this frame's ambient meter ran
     uint32_t m_meterFrame = 0;
   };
 

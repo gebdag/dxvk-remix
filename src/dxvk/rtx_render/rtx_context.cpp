@@ -827,6 +827,7 @@ namespace dxvk {
           m_common->metaPostFx().darkSoulsLook().dispatchScene(this,
             rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite), rtOutput.m_primaryLinearViewZ,
             rtOutput.m_primarySurfaceFlags, rtOutput.m_primaryScreenSpaceMotionVector,
+            rtOutput.m_primaryAlbedo, rtOutput.m_primaryWorldShadingNormal,
             m_common->metaPostFx().darkSoulsHaze(), getSceneManager().getCamera().getShaderConstants(),
             ds1Jitter, ds1MissLinearViewZ, m_resetHistory || getSceneManager().getCamera().isCameraCut());
         } else {

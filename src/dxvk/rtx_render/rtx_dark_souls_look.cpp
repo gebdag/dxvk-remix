@@ -20,6 +20,7 @@
 #include <rtx_shaders/post_fx_dark_souls_look_dof.h>
 #include <rtx_shaders/post_fx_dark_souls_look_dof_prepare.h>
 #include <rtx_shaders/post_fx_dark_souls_look_meter.h>
+#include <rtx_shaders/post_fx_dark_souls_look_ambient_meter.h>
 #include <rtx_shaders/post_fx_dark_souls_look_shafts.h>
 
 namespace dxvk {
@@ -164,6 +165,20 @@ namespace dxvk {
     };
     PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookMeterShader);
 
+    class PostFxDarkSoulsLookAmbientMeterShader : public ManagedShader {
+      SHADER_SOURCE(PostFxDarkSoulsLookAmbientMeterShader, VK_SHADER_STAGE_COMPUTE_BIT, post_fx_dark_souls_look_ambient_meter)
+
+      BEGIN_PARAMETER()
+        TEXTURE2D(POST_FX_DS_LOOK_AMBIENT_METER_RADIANCE)
+        TEXTURE2D(POST_FX_DS_LOOK_AMBIENT_METER_ALBEDO)
+        TEXTURE2D(POST_FX_DS_LOOK_AMBIENT_METER_NORMAL)
+        TEXTURE2D(POST_FX_DS_LOOK_AMBIENT_METER_LINEAR_VIEW_Z)
+        RW_STRUCTURED_BUFFER(POST_FX_DS_LOOK_AMBIENT_METER_PARTIALS)
+        CONSTANT_BUFFER(POST_FX_DS_LOOK_AMBIENT_METER_CONSTANTS)
+      END_PARAMETER()
+    };
+    PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookAmbientMeterShader);
+
     // The game's kernels, read from its draws (PS c22..c36 offsets, c38..c52 weights). Offsets
     // are in texels of the pass's input.
     //
@@ -307,6 +322,8 @@ namespace dxvk {
     const Resources::Resource& linearViewZ,
     const Resources::Resource& surfaceFlags,
     const Resources::Resource& motionVector,
+    const Resources::Resource& albedo,
+    const Resources::Resource& shadingNormal,
     const DxvkDarkSoulsHaze& haze,
     const Camera& camera,
     const float jitterOffset[2],
@@ -314,6 +331,11 @@ namespace dxvk {
     bool resetHistory) {
     ScopedGpuProfileZone(ctx, "Dark Souls 1 Look: Scene");
     ensureResources(ctx, std::max(bloomWidth(), 2), std::max(bloomHeight(), 2));
+
+    // The ambient meter reads the radiance the scene pass is about to overwrite.
+    if (DxvkDarkSoulsExposure::wantsMeter()) {
+      dispatchAmbientMeter(ctx, inOutColor, albedo, shadingNormal, linearViewZ, missLinearViewZ);
+    }
 
     const VkExtent3D extent = inOutColor.image->mipLevelExtent(0);
     ensureDofResources(ctx, extent);
@@ -394,29 +416,30 @@ namespace dxvk {
     }
   }
 
-  void DxvkDarkSoulsLook::dispatchMeter(Rc<DxvkContext>& ctx, const Resources::Resource& scene, float exposure) {
-    ScopedGpuProfileZone(ctx, "Dark Souls 1 Look: Meter");
+  DxvkDarkSoulsLook::MeterGrid DxvkDarkSoulsLook::meterGrid() {
     // The game meters a copy of its scene at its bright pass size (256x180).
-    const uint32_t gridWidth = uint32_t(std::max(bloomWidth(), 1));
-    const uint32_t gridHeight = uint32_t(std::max(bloomHeight(), 1));
-    const uint32_t cells = gridWidth * gridHeight;
-    const uint32_t groupsX = (gridWidth + DS_LOOK_METER_GROUP - 1) / DS_LOOK_METER_GROUP;
-    const uint32_t groupsY = (gridHeight + DS_LOOK_METER_GROUP - 1) / DS_LOOK_METER_GROUP;
-    const uint32_t groups = groupsX * groupsY;
+    MeterGrid grid;
+    grid.width = uint32_t(std::max(bloomWidth(), 1));
+    grid.height = uint32_t(std::max(bloomHeight(), 1));
+    grid.groupsX = (grid.width + DS_LOOK_METER_GROUP - 1) / DS_LOOK_METER_GROUP;
+    grid.groupsY = (grid.height + DS_LOOK_METER_GROUP - 1) / DS_LOOK_METER_GROUP;
+    return grid;
+  }
 
+  void DxvkDarkSoulsLook::ensureMeterResources(uint32_t groups) {
     if (groups > m_meterGroups) {
       DxvkBufferCreateInfo info;
       info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
       info.stages = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
       info.access = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT;
-      info.size = groups * sizeof(float);
+      info.size = kMeterFloatsPerGroup * groups * sizeof(float);
       m_meterPartials = m_device->createBuffer(info, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, DxvkMemoryStats::Category::RTXBuffer,
                                                "DS1 look meter partials");
       DxvkBufferCreateInfo readback;
       readback.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
       readback.stages = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_HOST_BIT;
       readback.access = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_HOST_READ_BIT;
-      readback.size = kMeterSlots * groups * sizeof(float);
+      readback.size = kMeterSlots * kMeterFloatsPerGroup * groups * sizeof(float);
       m_meterReadback = m_device->createBuffer(readback, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                                DxvkMemoryStats::Category::RTXBuffer, "DS1 look meter readback");
       m_meterGroups = groups;
@@ -426,27 +449,94 @@ namespace dxvk {
     }
     if (m_meterConstants == nullptr) {
       m_meterConstants = makeConstants(sizeof(PostFxDarkSoulsLookMeterArgs), "DS1 Look Meter Constants");
+      m_ambientMeterConstants = makeConstants(sizeof(PostFxDarkSoulsLookAmbientMeterArgs), "DS1 Look Ambient Meter Constants");
     }
+  }
+
+  void DxvkDarkSoulsLook::dispatchAmbientMeter(Rc<DxvkContext>& ctx, const Resources::Resource& radiance,
+                                               const Resources::Resource& albedo, const Resources::Resource& shadingNormal,
+                                               const Resources::Resource& linearViewZ, float missLinearViewZ) {
+    m_ambientMetered = false;
+    if (!DxvkDarkSoulsExposure::ambientClamp() || !albedo.isValid() || !shadingNormal.isValid()) {
+      return;
+    }
+    PostFxDarkSoulsLookAmbientMeterArgs args = {};
+    DxvkDarkSoulsAmbient::fillShaderArgs(args.ambient);
+    if (args.ambient.enable == 0) {
+      return;
+    }
+    ScopedGpuProfileZone(ctx, "Dark Souls 1 Look: Ambient Meter");
+    const MeterGrid grid = meterGrid();
+    ensureMeterResources(grid.groups());
+
+    const VkExtent3D radianceExtent = radiance.image->mipLevelExtent(0);
+    const VkExtent3D gbufferExtent = albedo.image->mipLevelExtent(0);
+    const VkExtent3D viewZExtent = linearViewZ.image->mipLevelExtent(0);
+    args.gridSize = { grid.width, grid.height };
+    args.radianceSize = { radianceExtent.width, radianceExtent.height };
+    args.gbufferSize = { gbufferExtent.width, gbufferExtent.height };
+    args.viewZSize = { viewZExtent.width, viewZExtent.height };
+    args.missLinearViewZ = missLinearViewZ;
+    args.minAlbedo = 0.01f;
+    args.groupsX = grid.groupsX;
+    args.partialsOffset = grid.groups();
+    ctx->writeToBuffer(m_ambientMeterConstants, 0, sizeof(args), &args);
+    ctx->getCommandList()->trackResource<DxvkAccess::Read>(m_ambientMeterConstants);
+
+    ctx->bindResourceView(POST_FX_DS_LOOK_AMBIENT_METER_RADIANCE, radiance.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_LOOK_AMBIENT_METER_ALBEDO, albedo.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_LOOK_AMBIENT_METER_NORMAL, shadingNormal.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_LOOK_AMBIENT_METER_LINEAR_VIEW_Z, linearViewZ.view, nullptr);
+    ctx->bindResourceBuffer(POST_FX_DS_LOOK_AMBIENT_METER_PARTIALS,
+                            DxvkBufferSlice(m_meterPartials, 0, kMeterFloatsPerGroup * grid.groups() * sizeof(float)));
+    ctx->bindResourceBuffer(POST_FX_DS_LOOK_AMBIENT_METER_CONSTANTS,
+                            DxvkBufferSlice(m_ambientMeterConstants, 0, m_ambientMeterConstants->info().size));
+    ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookAmbientMeterShader::getShader());
+    ctx->dispatch(grid.groupsX, grid.groupsY, 1);
+    m_ambientMetered = true;
+  }
+
+  void DxvkDarkSoulsLook::dispatchMeter(Rc<DxvkContext>& ctx, const Resources::Resource& scene, float exposure) {
+    ScopedGpuProfileZone(ctx, "Dark Souls 1 Look: Meter");
+    const MeterGrid grid = meterGrid();
+    const uint32_t cells = grid.width * grid.height;
+    const uint32_t groups = grid.groups();
+    ensureMeterResources(groups);
 
     // This frame's slot still holds the sums from kMeterSlots frames ago: the game's lum for an
-    // adaptation step (FRPG_Fil_SampleLumFinal: exp of the mean).
+    // adaptation step (FRPG_Fil_SampleLumFinal: exp of the mean), and with them the ambient meter's.
     const uint32_t slot = m_meterFrame % kMeterSlots;
-    const VkDeviceSize slotOffset = VkDeviceSize(slot) * m_meterGroups * sizeof(float);
+    const VkDeviceSize slotOffset = VkDeviceSize(slot) * kMeterFloatsPerGroup * m_meterGroups * sizeof(float);
     if (m_meterCells[slot] == cells) {
       const float* sums = reinterpret_cast<const float*>(m_meterReadback->mapPtr(slotOffset));
       double total = 0.0;
       for (uint32_t i = 0; i < groups; ++i) {
         total += sums[i];
       }
-      DxvkDarkSoulsExposure::adapt(float(std::exp(total / double(cells))));
+      // The frame's luminance against the game's unoccluded ambient on the same surfaces: the share of
+      // the game's light the path tracer keeps, which scales the game's luminance clamp.
+      float ambientScale = 1.0f;
+      if (m_meterAmbient[slot]) {
+        double frame = 0.0, estimate = 0.0, taps = 0.0;
+        for (uint32_t i = 0; i < groups; ++i) {
+          frame += sums[groups + 3 * i + 0];
+          estimate += sums[groups + 3 * i + 1];
+          taps += sums[groups + 3 * i + 2];
+        }
+        // Too few surface taps (looking at the sky) say nothing about the light.
+        if (taps >= 0.05 * 4.0 * double(cells)) {
+          ambientScale = float(std::exp((frame - estimate) / taps));
+        }
+      }
+      DxvkDarkSoulsExposure::adapt(float(std::exp(total / double(cells))), ambientScale);
     }
 
     const VkExtent3D extent = scene.image->mipLevelExtent(0);
     PostFxDarkSoulsLookMeterArgs args = {};
-    args.gridSize = { gridWidth, gridHeight };
+    args.gridSize = { grid.width, grid.height };
     args.sceneSize = { extent.width, extent.height };
     args.exposure = std::max(exposure, 1e-4f);
-    args.groupsX = groupsX;
+    args.groupsX = grid.groupsX;
     ctx->writeToBuffer(m_meterConstants, 0, sizeof(args), &args);
     ctx->getCommandList()->trackResource<DxvkAccess::Read>(m_meterConstants);
 
@@ -454,9 +544,11 @@ namespace dxvk {
     ctx->bindResourceBuffer(POST_FX_DS_LOOK_METER_PARTIALS, DxvkBufferSlice(m_meterPartials, 0, groups * sizeof(float)));
     ctx->bindResourceBuffer(POST_FX_DS_LOOK_METER_CONSTANTS, DxvkBufferSlice(m_meterConstants, 0, m_meterConstants->info().size));
     ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookMeterShader::getShader());
-    ctx->dispatch(groupsX, groupsY, 1);
-    ctx->copyBuffer(m_meterReadback, slotOffset, m_meterPartials, 0, groups * sizeof(float));
+    ctx->dispatch(grid.groupsX, grid.groupsY, 1);
+    ctx->copyBuffer(m_meterReadback, slotOffset, m_meterPartials, 0, kMeterFloatsPerGroup * groups * sizeof(float));
     m_meterCells[slot] = cells;
+    m_meterAmbient[slot] = m_ambientMetered;
+    m_ambientMetered = false;
     m_meterFrame++;
   }
 
