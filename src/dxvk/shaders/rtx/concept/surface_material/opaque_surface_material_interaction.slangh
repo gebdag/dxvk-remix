@@ -1125,7 +1125,30 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   // colour as its own light (Surface::ds1SelfLit).
   if (surface.hasDs1SelfLit)
   {
-    emissiveRadiance += ds1SelfLitAlbedo * surface.ds1SelfLit;
+    const vec3 selfLit = ds1SelfLitAlbedo * surface.ds1SelfLit;
+    if (surface.isUnlit && !surface.isEmissiveBlend)
+    {
+      // An unlit alpha-blended glow layer (the proxy's unlit marker on a PS_UNLIT mesh: Bed of Chaos's glyph
+      // rings): the game's colour, texture * c100 * tint * exposure saturated (mul_sat), in place of the
+      // marker's fixed intensity. Display terms, so the resolve alpha-blends it in gamma space like the
+      // other unlit layers (resolve.slangh).
+      const float compensation = cb.opaqueMaterialArgs.unlitExposureCompensation;
+      emissiveRadiance = pow(saturate(linearToGamma(selfLit / compensation)), kSRGBGamma) * compensation;
+    }
+    else if (surface.isEmissiveBlend)
+    {
+      // An additive layer adds its colour, saturated (the game's mul_sat), times its alpha to a gamma-encoded
+      // target. In display terms (radiance / the exposure compensation, as the unlit layers), so the
+      // resolve sums it in gamma space with them (resolve.slangh). It was its full colour, alpha left
+      // out: Bed of Chaos's 23 seal shells at alpha 0.2 each summed far past white.
+      const float compensation = cb.opaqueMaterialArgs.unlitExposureCompensation;
+      const vec3 display = saturate(linearToGamma(selfLit / compensation)) * emissiveBlendOverrideInfluence;
+      emissiveRadiance += pow(display, kSRGBGamma) * compensation;
+    }
+    else
+    {
+      emissiveRadiance += selfLit;
+    }
   }
 
   opaqueSurfaceMaterialInteraction.emissiveRadiance = emissiveRadiance;

@@ -795,6 +795,93 @@ float oitDepthWeight(float hitT, float tMax)
   return exp(-cb.wboitDepthWeightTuning * z);
 }
 
+// Fork (DS1): the unlit alpha-blended layers in depth order. The game blends them back to front into its
+// gamma-encoded target, so the nearest ones cover what is behind them; averaged by weight (WBOIT), the many
+// overlapping layers of Bed of Chaos's glyph shells washed the glyph strokes into the faint smoke around them.
+// The nearest DS1_UNLIT_LAYERS are kept sorted by hit distance and composited front to back; the rest, behind
+// them all, keep the weighted average.
+#define DS1_UNLIT_LAYERS 8
+struct Ds1UnlitLayers
+{
+  float dist[DS1_UNLIT_LAYERS];
+  float4 layer[DS1_UNLIT_LAYERS]; // rgb: display (gamma) colour, a: alpha
+  uint count;
+  float3 farGammaSum;
+  float farWeightSum;
+  float farTransProd;
+
+  static Ds1UnlitLayers create()
+  {
+    Ds1UnlitLayers l;
+    for (uint i = 0; i < DS1_UNLIT_LAYERS; ++i)
+    {
+      l.dist[i] = 0.0f;
+      l.layer[i] = float4(0.0f);
+    }
+    l.count = 0;
+    l.farGammaSum = float3(0.0f);
+    l.farWeightSum = 0.0f;
+    l.farTransProd = 1.0f;
+    return l;
+  }
+
+  [mutating] void addFar(float4 l)
+  {
+    farGammaSum += l.rgb * l.a;
+    farWeightSum += l.a;
+    farTransProd *= 1.0f - l.a;
+  }
+
+  [mutating] void add(float d, float3 gamma, float alpha)
+  {
+    // A layer that covers nothing (a faint texel, one faded edge-on) would only take a slot.
+    if (alpha < 1e-3f)
+    {
+      return;
+    }
+    const float4 l = float4(gamma, alpha);
+    if (count == DS1_UNLIT_LAYERS)
+    {
+      if (d >= dist[DS1_UNLIT_LAYERS - 1])
+      {
+        addFar(l);
+        return;
+      }
+      // The farthest kept layer moves behind the others.
+      addFar(layer[DS1_UNLIT_LAYERS - 1]);
+    }
+    uint i = min(count, DS1_UNLIT_LAYERS - 1u);
+    while (i > 0 && dist[i - 1] > d)
+    {
+      dist[i] = dist[i - 1];
+      layer[i] = layer[i - 1];
+      --i;
+    }
+    dist[i] = d;
+    layer[i] = l;
+    count = min(count + 1u, uint(DS1_UNLIT_LAYERS));
+  }
+
+  // The layers' gamma-space colour over what is behind them, and how much of that shows through.
+  float3 composite(out float transmittance)
+  {
+    float3 colour = float3(0.0f);
+    float t = 1.0f;
+    for (uint i = 0; i < count; ++i)
+    {
+      colour += t * layer[i].a * layer[i].rgb;
+      t *= 1.0f - layer[i].a;
+    }
+    if (farWeightSum > 0.0f)
+    {
+      colour += t * farGammaSum / farWeightSum * (1.0f - farTransProd);
+      t *= farTransProd;
+    }
+    transmittance = t;
+    return colour;
+  }
+};
+
 float resolveVertexUnorderedParticles<
   let RAY_FLAGS : uint>(
   uint8_t resolveMode, Ray ray, uint rayMask,
@@ -852,10 +939,8 @@ float resolveVertexUnorderedParticles<
   float3 unlitAdditiveGammaSum = 0..xxx;
   // Fork: and of the unlit subtractive (reverse-subtract) layers, which come off it.
   float3 unlitSubtractGammaSum = 0..xxx;
-  // Fork: the unlit alpha-blended layers, composited in gamma space (see below).
-  float3 unlitBlendGammaSum = 0..xxx;
-  float unlitBlendWeightSum = 0.0f;
-  float unlitBlendTransProd = 1.0f;
+  // Fork: the unlit alpha-blended layers, composited in gamma space in depth order (Ds1UnlitLayers).
+  Ds1UnlitLayers unlitLayers = Ds1UnlitLayers.create();
 #else
   mat4 binnedRadiancesAndAttenuation = mat4(
     vec4(0.0f, 0.0f, 0.0f, 1.0f),
@@ -1048,7 +1133,9 @@ float resolveVertexUnorderedParticles<
     }
 
     const float softBlendFactor = saturate((ray.tMax - rayHitInfo.hitDistance) / (ray.tMax * uint16BitsToF32(cb.particleSoftnessFactor)));
-    const float blendFactor = surface.isParticle ? softBlendFactor : 1.0f;
+    // Fork (DS1): only sprites fade out softly near geometry. An unlit glow mesh carrying the self-lit tag
+    // (Bed of Chaos's glyph shells, wrapped tight around the boss's core) has no such fade in the game.
+    const float blendFactor = surface.isParticle && !surface.hasDs1SelfLit ? softBlendFactor : 1.0f;
 
     currentRadianceAttenuation = mix(1.0f, currentRadianceAttenuation, blendFactor);
     opacityTransmittance *= currentRadianceAttenuation;
@@ -1089,7 +1176,8 @@ float resolveVertexUnorderedParticles<
       // Fork: the game blends unlit (particle) layers into a gamma-encoded target, so its additive
       // layers sum in gamma space: a stack of faint layers reaches white there, where their linear
       // sum stays dim. They are display-referred (scaled by 1 / exposure), so undo that first.
-      if (surface.isUnlit)
+      // DS1 self-lit additive layers (Surface::ds1SelfLit) are encoded the same way and sum with them.
+      if (surface.isUnlit || surface.hasDs1SelfLit)
       {
         unlitAdditiveGammaSum += linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation);
       }
@@ -1105,9 +1193,7 @@ float resolveVertexUnorderedParticles<
       // (a 5% smoke layer read as 25%), and the WBOIT energy-loss compensation (x4) thickened it again.
       // They are display-referred (scaled by 1 / exposure), so undo that first, as for additive layers.
       const float alphaVal = saturate(1.f - currentRadianceAttenuation);
-      unlitBlendGammaSum += linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation) * alphaVal * w;
-      unlitBlendWeightSum += alphaVal * w;
-      unlitBlendTransProd *= (1.f - alphaVal);
+      unlitLayers.add(rayHitInfo.hitDistance, linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation), alphaVal);
     }
     else
     {
@@ -1172,15 +1258,12 @@ float resolveVertexUnorderedParticles<
     emissiveRadiance += alphaAvg * coverage;
   }
 
-  // Fork: the unlit alpha-blended layers as the game composites them, in gamma space: their colour
-  // over coverage 1 - prod(1 - alpha), and what is behind them kept by prod(1 - alpha) of its display
-  // value, i.e. to the 2.2 power of it in linear.
-  float3 unlitBlendGamma = 0..xxx;
-  if (unlitBlendWeightSum > 0.f)
-  {
-    unlitBlendGamma = unlitBlendGammaSum / unlitBlendWeightSum * (1.0f - unlitBlendTransProd);
-    radianceAttenuation *= pow(unlitBlendTransProd, kSRGBGamma);
-  }
+  // Fork: the unlit alpha-blended layers as the game composites them, in gamma space and depth order
+  // (Ds1UnlitLayers), and what is behind them kept by prod(1 - alpha) of its display value, i.e. to the
+  // 2.2 power of it in linear.
+  float unlitBlendTransmittance;
+  const float3 unlitBlendGamma = unlitLayers.composite(unlitBlendTransmittance);
+  radianceAttenuation *= pow(unlitBlendTransmittance, kSRGBGamma);
   if (any(unlitSubtractGammaSum > 0.0f))
   {
     // Fork: the game takes a reverse-subtract layer off its gamma-encoded target, so off everything
@@ -1287,10 +1370,8 @@ void resolveVertexUnordered<
   float3 unlitAdditiveGammaSum = 0..xxx;
   // Fork: and of the unlit subtractive (reverse-subtract) layers, which come off it.
   float3 unlitSubtractGammaSum = 0..xxx;
-  // Fork: the unlit alpha-blended layers, composited in gamma space (see below).
-  float3 unlitBlendGammaSum = 0..xxx;
-  float unlitBlendWeightSum = 0.0f;
-  float unlitBlendTransProd = 1.0f;
+  // Fork: the unlit alpha-blended layers, composited in gamma space in depth order (Ds1UnlitLayers).
+  Ds1UnlitLayers unlitLayers = Ds1UnlitLayers.create();
 #else
   // Note: Initialize bins to completely transparent with no radiance to be added in at an impossibly low distance. This
   // ensures these filler items are pulled out first in sorted order, giving the incoming elements a few iterations to populate
@@ -1582,7 +1663,9 @@ void resolveVertexUnordered<
       // fading out portions of particles closer to walls. Only done for Surfaces labeled as particles.
 
       const float softBlendFactor = saturate((ray.tMax - rayHitInfo.hitDistance) / (ray.tMax * uint16BitsToF32(cb.particleSoftnessFactor)));
-      const float blendFactor = surface.isParticle ? softBlendFactor : 1.0f;
+      // Fork (DS1): only sprites fade out softly near geometry. An unlit glow mesh carrying the self-lit tag
+    // (Bed of Chaos's glyph shells, wrapped tight around the boss's core) has no such fade in the game.
+    const float blendFactor = surface.isParticle && !surface.hasDs1SelfLit ? softBlendFactor : 1.0f;
 
       currentRadianceAttenuation = mix(1.0f, currentRadianceAttenuation, blendFactor);
       currentEmissiveRadiance = mix(vec3(0.0f), currentEmissiveRadiance, blendFactor);
@@ -1623,7 +1706,8 @@ void resolveVertexUnordered<
         // Fork: the game blends unlit (particle) layers into a gamma-encoded target, so its additive
         // layers sum in gamma space: a stack of faint layers reaches white there, where their linear
         // sum stays dim. They are display-referred (scaled by 1 / exposure), so undo that first.
-        if (surface.isUnlit)
+        // DS1 self-lit additive layers (Surface::ds1SelfLit) are encoded the same way and sum with them.
+        if (surface.isUnlit || surface.hasDs1SelfLit)
         {
           unlitAdditiveGammaSum += linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation);
         }
@@ -1639,9 +1723,7 @@ void resolveVertexUnordered<
         // (a 5% smoke layer read as 25%), and the WBOIT energy-loss compensation (x4) thickened it again.
         // They are display-referred (scaled by 1 / exposure), so undo that first, as for additive layers.
         const float alphaVal = saturate(1.f - currentRadianceAttenuation);
-        unlitBlendGammaSum += linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation) * alphaVal * w;
-        unlitBlendWeightSum += alphaVal * w;
-        unlitBlendTransProd *= (1.f - alphaVal);
+        unlitLayers.add(rayHitInfo.hitDistance, linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation), alphaVal);
       }
       else
       {
@@ -1728,15 +1810,12 @@ void resolveVertexUnordered<
     emissiveRadiance += alphaAvg * coverage;
   }
 
-  // Fork: the unlit alpha-blended layers as the game composites them, in gamma space: their colour
-  // over coverage 1 - prod(1 - alpha), and what is behind them kept by prod(1 - alpha) of its display
-  // value, i.e. to the 2.2 power of it in linear.
-  float3 unlitBlendGamma = 0..xxx;
-  if (unlitBlendWeightSum > 0.f)
-  {
-    unlitBlendGamma = unlitBlendGammaSum / unlitBlendWeightSum * (1.0f - unlitBlendTransProd);
-    radianceAttenuation *= pow(unlitBlendTransProd, kSRGBGamma);
-  }
+  // Fork: the unlit alpha-blended layers as the game composites them, in gamma space and depth order
+  // (Ds1UnlitLayers), and what is behind them kept by prod(1 - alpha) of its display value, i.e. to the
+  // 2.2 power of it in linear.
+  float unlitBlendTransmittance;
+  const float3 unlitBlendGamma = unlitLayers.composite(unlitBlendTransmittance);
+  radianceAttenuation *= pow(unlitBlendTransmittance, kSRGBGamma);
   if (any(unlitSubtractGammaSum > 0.0f))
   {
     // Fork: the game takes a reverse-subtract layer off its gamma-encoded target, so off everything
