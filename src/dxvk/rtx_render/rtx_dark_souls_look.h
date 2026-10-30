@@ -34,6 +34,13 @@ namespace dxvk {
     // True when the game's pipeline replaces Remix's tonemapper, bloom, haze and grading.
     static bool isActive();
 
+    // rtx.ds1Look.intensity clamped to 0..1.
+    static float intensityClamped() { return std::clamp(intensity(), 0.0f, 1.0f); }
+
+    // Scratch frames for intensity below 1 (RtxContext): 0 holds the radiance while Remix's own bloom and
+    // tonemapper run on the frame, 1 keeps their result for the composite to blend with.
+    const Resources::Resource& blendImage(Rc<DxvkContext> ctx, const Resources::Resource& like, uint32_t index);
+
     void dispatchScene(
       Rc<DxvkContext> ctx,
       const Resources::Resource& inOutColor,
@@ -80,6 +87,10 @@ namespace dxvk {
                "scene clip, bloom, depth of field and ColAdj grade, with the values the DS1 proxy reads from the game each "
                "frame) instead of Remix's auto exposure, tonemapper and bloom. Off = stock Remix image processing (the "
                "Post-Processing settings), with no DS1 treatment.");
+    RTX_OPTION("rtx.ds1Look", float, intensity, 1.0f,
+               "How much of the game's image pipeline is laid over Remix's own image: 1 = the game's look (its exposure, "
+               "fog, bloom, DoF and grade), 0 = Remix's own tonemapper, auto exposure and bloom. In between, the game's "
+               "scene is blended over Remix's tonemapped frame in display space and the grade eased toward identity.");
     RTX_OPTION("rtx.ds1Look", bool, hazeEnable, true, "Apply the game's fog and sky scattering in the scene pass.");
     RTX_OPTION("rtx.ds1Look", bool, bloomEnable, true, "Apply the game's bloom in the composite.");
     RTX_OPTION("rtx.ds1Look", bool, dofEnable, true, "Apply the game's depth of field (FRPG_Fil_Dof) after the scene pass.");
@@ -206,6 +217,9 @@ namespace dxvk {
     Rc<DxvkBuffer> m_dofFilterConstants[6];
     Rc<DxvkBuffer> m_dofConstants;
     Rc<DxvkBuffer> m_shaftConstants;
+
+    // intensity below 1: the radiance copy and Remix's own tonemapped frame (blendImage).
+    Resources::Resource m_blend[2];
 
     // The shafts this frame (dispatchShafts), when it ran.
     Resources::Resource m_shafts;

@@ -80,6 +80,8 @@
 #define POST_FX_DS_LOOK_COMPOSITE_BLOOM      1
 #define POST_FX_DS_LOOK_COMPOSITE_CONSTANTS  2
 #define POST_FX_DS_LOOK_COMPOSITE_SHAFTS     3
+// Fork: Remix's own tonemapped frame (linear), which rtx.ds1Look.intensity below 1 blends the look with.
+#define POST_FX_DS_LOOK_COMPOSITE_STOCK      4
 
 // Light shafts: the game's FRPG_Fil_LightShaft (a radial blur of the frame's bright sky towards the
 // shaft sun, added by ColAdj times c56.y) as single scattering along each view ray, path traced:
@@ -247,8 +249,9 @@ struct PostFxDarkSoulsLookCompositeArgs {
 
   uint shaftEnable;
   float shaftWeight;    // c56.y
+  // rtx.ds1Look.intensity: the look over Remix's own frame (STOCK) in gamma space; 1 = the look alone.
+  float intensity;
   uint pad0;
-  uint pad1;
 };
 
 struct PostFxDarkSoulsLookShaftArgs {

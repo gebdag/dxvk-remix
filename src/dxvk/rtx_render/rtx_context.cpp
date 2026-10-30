@@ -823,6 +823,23 @@ namespace dxvk {
           ScopedCpuProfileZone();
           this->spillRenderPass(false);
           this->unbindComputePipeline();
+          // rtx.ds1Look.intensity below 1: Remix's own bloom and tonemapper run on a copy of the frame first,
+          // and the look's composite blends over their result (DxvkDarkSoulsLook::blendImage).
+          if (DxvkDarkSoulsLook::intensityClamped() < 1.0f) {
+            DxvkDarkSoulsLook& look = m_common->metaPostFx().darkSoulsLook();
+            const Resources::Resource& frame = rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite);
+            const Resources::Resource& radiance = look.blendImage(this, frame, 0);
+            const Resources::Resource& stock = look.blendImage(this, frame, 1);
+            const VkImageSubresourceLayers layers = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+            const VkExtent3D extent = frame.image->mipLevelExtent(0);
+            copyImage(radiance.image, layers, { 0, 0, 0 }, frame.image, layers, { 0, 0, 0 }, extent);
+            dispatchBloom(rtOutput);
+            dispatchToneMapping(rtOutput, !dlssNrEnabled);
+            copyImage(stock.image, layers, { 0, 0, 0 }, frame.image, layers, { 0, 0, 0 }, extent);
+            copyImage(frame.image, layers, { 0, 0, 0 }, radiance.image, layers, { 0, 0, 0 }, extent);
+            this->spillRenderPass(false);
+            this->unbindComputePipeline();
+          }
           setFramePassStage(RtxFramePassStage::ToneMapping);
           m_common->metaPostFx().darkSoulsLook().dispatchScene(this,
             rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite), rtOutput.m_primaryLinearViewZ,

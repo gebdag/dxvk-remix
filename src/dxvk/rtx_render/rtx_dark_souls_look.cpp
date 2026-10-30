@@ -100,6 +100,7 @@ namespace dxvk {
         SAMPLER2D(POST_FX_DS_LOOK_COMPOSITE_BLOOM)
         CONSTANT_BUFFER(POST_FX_DS_LOOK_COMPOSITE_CONSTANTS)
         SAMPLER2D(POST_FX_DS_LOOK_COMPOSITE_SHAFTS)
+        TEXTURE2D(POST_FX_DS_LOOK_COMPOSITE_STOCK)
       END_PARAMETER()
     };
     PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookCompositeShader);
@@ -245,7 +246,19 @@ namespace dxvk {
   }
 
   bool DxvkDarkSoulsLook::isActive() {
-    return enable() && DxvkDarkSoulsExposure::gameActive();
+    return enable() && intensityClamped() > 0.0f && DxvkDarkSoulsExposure::gameActive();
+  }
+
+  const Resources::Resource& DxvkDarkSoulsLook::blendImage(Rc<DxvkContext> ctx, const Resources::Resource& like, uint32_t index) {
+    Resources::Resource& image = m_blend[std::min(index, 1u)];
+    const VkExtent3D extent = like.image->mipLevelExtent(0);
+    const VkFormat format = like.image->info().format;
+    if (!image.isValid() || image.image->info().format != format ||
+        image.image->mipLevelExtent(0).width != extent.width || image.image->mipLevelExtent(0).height != extent.height) {
+      image = Resources::createImageResource(ctx, index == 0 ? "DS1 look blend radiance" : "DS1 look blend stock frame",
+                                             extent, format);
+    }
+    return image;
   }
 
   Rc<DxvkBuffer> DxvkDarkSoulsLook::makeConstants(size_t size, const char* name) {
@@ -799,6 +812,19 @@ namespace dxvk {
     }
     args.shaftEnable = m_shaftsReady ? 1u : 0u;
     args.shaftWeight = shaftWeight();
+    // intensity below 1: the composite blends over Remix's own frame (m_blend[1], RtxContext), and the grade
+    // eases toward identity with it.
+    args.intensity = m_blend[1].isValid() ? intensityClamped() : 1.0f;
+    if (args.intensity < 1.0f) {
+      const float t = args.intensity;
+      auto ease = [t](const vec4& row, const vec4& identity) {
+        return vec4 { identity.x + (row.x - identity.x) * t, identity.y + (row.y - identity.y) * t,
+                      identity.z + (row.z - identity.z) * t, identity.w + (row.w - identity.w) * t };
+      };
+      args.gradeRowR = ease(args.gradeRowR, vec4 { 1, 0, 0, 0 });
+      args.gradeRowG = ease(args.gradeRowG, vec4 { 0, 1, 0, 0 });
+      args.gradeRowB = ease(args.gradeRowB, vec4 { 0, 0, 1, 0 });
+    }
     ctx->writeToBuffer(m_compositeConstants, 0, sizeof(args), &args);
     ctx->getCommandList()->trackResource<DxvkAccess::Read>(m_compositeConstants);
 
@@ -809,6 +835,8 @@ namespace dxvk {
     ctx->bindResourceView(POST_FX_DS_LOOK_COMPOSITE_SHAFTS, m_shaftsReady ? m_shafts.view : m_half[1].view, nullptr);
     ctx->bindResourceSampler(POST_FX_DS_LOOK_COMPOSITE_SHAFTS, m_linearSampler);
     m_shaftsReady = false;
+    // Without a blend this frame the slot still needs a view; the shader does not read it.
+    ctx->bindResourceView(POST_FX_DS_LOOK_COMPOSITE_STOCK, args.intensity < 1.0f ? m_blend[1].view : inOutColor.view, nullptr);
     ctx->bindResourceBuffer(POST_FX_DS_LOOK_COMPOSITE_CONSTANTS, DxvkBufferSlice(m_compositeConstants, 0, m_compositeConstants->info().size));
     ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookCompositeShader::getShader());
     const VkExtent3D workgroups = util::computeBlockCount(extent, VkExtent3D { 16, 8, 1 });
@@ -821,6 +849,9 @@ namespace dxvk {
     }
     ImGui::Indent();
     RemixGui::Checkbox("Game Image Pipeline", &enableObject());
+    ImGui::BeginDisabled(!enable());
+    RemixGui::SliderFloat("Game Look Intensity (0 = Remix's own)", &intensityObject(), 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::EndDisabled();
     RemixGui::Checkbox("Game Fog and Scattering", &hazeEnableObject());
     RemixGui::Checkbox("Game Bloom", &bloomEnableObject());
     RemixGui::Checkbox("Game Depth of Field", &dofEnableObject());

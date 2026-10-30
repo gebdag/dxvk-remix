@@ -4389,6 +4389,11 @@ namespace dxvk {
         RemixGui::SliderInt("User Brightness", &RtxOptions::userBrightnessObject(), 0, 100, "%d");
         RemixGui::DragFloat("User Brightness EV Range", &RtxOptions::userBrightnessEVRangeObject(), 0.5f, 0.f, 10.f, "%.1f");
         RemixGui::Separator();
+        // DS1 port: the game's image pipeline replaces the tonemapper, auto exposure and bloom while it runs.
+        if (DxvkDarkSoulsLook::isActive() && DxvkDarkSoulsLook::intensityClamped() >= 1.0f) {
+          ImGui::TextWrapped("Not in use: the Dark Souls image pipeline (Dark Souls tab) replaces Remix's tonemapper, "
+                             "auto exposure and bloom. Turn it off there for Remix's own look.");
+        }
         RemixGui::Combo("Tonemapping Mode", &RtxOptions::tonemappingModeObject(), "Global\0Local\0");
         if (RtxOptions::tonemappingMode() == TonemappingMode::Global) {
           common->metaToneMapping().showImguiSettings();

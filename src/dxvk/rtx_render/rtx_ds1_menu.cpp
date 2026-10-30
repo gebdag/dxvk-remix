@@ -93,6 +93,10 @@ namespace dxvk {
 
     if (ImGui::CollapsingHeader("Tonemapper", kOpen)) {
       ImGui::Indent();
+      if (DxvkDarkSoulsLook::isActive() && DxvkDarkSoulsLook::intensityClamped() >= 1.0f) {
+        ImGui::TextWrapped("Not in use: the game's image pipeline above replaces Remix's tonemapper, auto exposure "
+                           "and bloom. Turn off Game Image Pipeline for Remix's own look and these settings.");
+      }
       // Remix's own tonemapper, as in Post-Processing > Tonemapping.
       RemixGui::Combo("Tonemapping Mode", &RtxOptions::tonemappingModeObject(), "Global\0Local\0");
       if (RtxOptions::tonemappingMode() == TonemappingMode::Global) {

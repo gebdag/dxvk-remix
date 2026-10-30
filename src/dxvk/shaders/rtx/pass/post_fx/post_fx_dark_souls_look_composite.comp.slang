@@ -20,6 +20,9 @@ ConstantBuffer<PostFxDarkSoulsLookCompositeArgs> cb;
 layout(binding = POST_FX_DS_LOOK_COMPOSITE_SHAFTS)
 Sampler2D<float4> Shafts;
 
+layout(binding = POST_FX_DS_LOOK_COMPOSITE_STOCK)
+Texture2D<float4> Stock;
+
 [shader("compute")]
 [numthreads(16, 8, 1)]
 void main(uint2 pixel : SV_DispatchThreadID)
@@ -39,6 +42,14 @@ void main(uint2 pixel : SV_DispatchThreadID)
   if (cb.shaftEnable != 0)
   {
     col += Shafts.SampleLevel((vec2(pixel) + 0.5f) * cb.invImageSize, 0).rgb * cb.shaftWeight;
+  }
+  // rtx.ds1Look.intensity: the game's scene (its exposure, haze and DoF, bloom and shafts) over Remix's own
+  // tonemapped frame, in display (gamma) space. The grade below is eased toward identity by it on the CPU
+  // (DxvkDarkSoulsLook::dispatchComposite).
+  if (cb.intensity < 1.0f)
+  {
+    const vec3 stock = pow(saturate(Stock[pixel].rgb), vec3(1.0f / 2.2f));
+    col = lerp(stock, col, cb.intensity);
   }
   const vec4 c = vec4(col, 1.0f);
   const vec3 graded = saturate(vec3(dot(c, cb.gradeRowR), dot(c, cb.gradeRowG), dot(c, cb.gradeRowB)));
