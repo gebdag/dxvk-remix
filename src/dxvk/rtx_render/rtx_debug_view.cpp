@@ -239,6 +239,8 @@ namespace dxvk {
         {DEBUG_VIEW_PRIMARY_ALTERNATE_DISOCCLUSION_THRESHOLD, "Primary Alternate Disocclusion Threshold"},
 
         {DEBUG_VIEW_PRIMARY_DECAL_ALBEDO,                  "Primary Decal Albedo" },
+        {DEBUG_VIEW_DS1_PRIMARY_DECAL_SHADING_NORMAL,      "Primary Decal Shading Normal (DS1)" },
+        {DEBUG_VIEW_DS1_PRIMARY_DECAL_OPACITY,             "Primary Decal Opacity (DS1)" },
 
         {DEBUG_VIEW_PRIMARY_SPECULAR_ALBEDO,               "Primary Specular Albedo"},
         {DEBUG_VIEW_SECONDARY_SPECULAR_ALBEDO,               "Secondary Specular Albedo"},

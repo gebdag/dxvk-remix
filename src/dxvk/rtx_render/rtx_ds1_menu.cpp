@@ -19,6 +19,7 @@
 #include "rtx_dark_souls_exposure.h"
 #include "rtx_dark_souls_ambient.h"
 #include "rtx_dark_souls_swamp.h"
+#include "rtx_dark_souls_specular.h"
 #include "../dxvk_context.h"
 #include "../imgui/imgui.h"
 
@@ -61,6 +62,7 @@ namespace dxvk {
       RemixGui::SliderFloat("Legacy Specular Level", &LegacyMaterialDefaults::specularLevelObject(), 0.0f, 1.0f, "%.3f", kClamp);
       RemixGui::SliderFloat("Legacy Fresnel Grazing (f90)", &LegacyMaterialDefaults::fresnelF90Object(), 0.0f, 1.0f, "%.3f", kClamp);
       RemixGui::Checkbox("Texture Factor Blending (per-draw tint and fade)", &RtxOptions::enableMultiStageTextureFactorBlendingObject());
+      RemixGui::Checkbox("Reflections at the Game's Environment Level", &DxvkDarkSoulsSpecular::envReflectionWeightObject());
       ImGui::Unindent();
     }
 

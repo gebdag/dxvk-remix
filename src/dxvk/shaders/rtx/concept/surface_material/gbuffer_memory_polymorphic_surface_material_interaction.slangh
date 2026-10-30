@@ -69,10 +69,16 @@ GBufferMemoryPolymorphicSurfaceMaterialInteraction gBufferMemoryPolymorphicSurfa
   // Note: Second word entierly dominated by emissive-related values. This should in theory allow things that don't use emissive
   // to optimize this read out entierly without needing a whole additional reduced material model and serialization logic just
   // for that pass. Of course that can be done if needed in the future, but it is avoided for now for the sake of less code.
+  // Fork (DS1): a surface without emission stores its environment reflection scale in the intensity half
+  // (its emissive colour encodes as 0, so the decoded emission stays 0).
+  const bool emissiveColorEncoded =
+    f32ToUnorm8(gammaEmissiveColor.r) != 0 || f32ToUnorm8(gammaEmissiveColor.g) != 0 || f32ToUnorm8(gammaEmissiveColor.b) != 0;
+  const float intensityOrEnvSpecularScale =
+    emissiveColorEncoded ? emissiveIntensity : opaqueSurfaceMaterialInteraction.ds1EnvSpecularScale;
   gBufferMemoryPolymorphicSurfaceMaterialInteraction.data1 =
     (uint32_t(f32ToUnorm8(gammaEmissiveColor.g)) << 0) |
     (uint32_t(f32ToUnorm8(gammaEmissiveColor.b)) << 8) |
-    (uint32_t(float16BitsToUint16(float16_t(emissiveIntensity))) << 16);
+    (uint32_t(float16BitsToUint16(float16_t(intensityOrEnvSpecularScale))) << 16);
 
   return gBufferMemoryPolymorphicSurfaceMaterialInteraction;
 }

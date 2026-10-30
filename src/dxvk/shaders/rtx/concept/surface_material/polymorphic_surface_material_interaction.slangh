@@ -51,6 +51,7 @@ PolymorphicSurfaceMaterialInteraction polymorphicSurfaceMaterialInteractionCreat
   polymorphicSurfaceMaterialInteraction.bdata0 = opaqueSurfaceMaterialInteraction.flags;
   polymorphicSurfaceMaterialInteraction.bdata1 = opaqueSurfaceMaterialInteraction.subsurfaceMaterialInteraction.volumetricAnisotropy;
   polymorphicSurfaceMaterialInteraction.bdata2 = opaqueSurfaceMaterialInteraction.subsurfaceMaterialInteraction.maxSampleRadius;
+  polymorphicSurfaceMaterialInteraction.ds1EnvSpecularScale = opaqueSurfaceMaterialInteraction.ds1EnvSpecularScale;
 
   polymorphicSurfaceMaterialInteraction.type = surfaceMaterialTypeOpaque;
 
@@ -78,6 +79,7 @@ PolymorphicSurfaceMaterialInteraction polymorphicSurfaceMaterialInteractionCreat
   // Fork (DS1): the water reflection tint, in approximate gamma space so dark tints survive 8 bits.
   polymorphicSurfaceMaterialInteraction.i32data0 =
     float4x32ToUnorm4x8(vec4(linearToGammaFast(translucentSurfaceMaterialInteraction.ds1ReflectionTint), 1.0f));
+  polymorphicSurfaceMaterialInteraction.fdata5 = translucentSurfaceMaterialInteraction.ds1RefractionSmear;
   polymorphicSurfaceMaterialInteraction.dlssControlMask = float4x32ToUnorm4x8(1.0f.rrrr);
   polymorphicSurfaceMaterialInteraction.bdata0 = translucentSurfaceMaterialInteraction.flags;
   polymorphicSurfaceMaterialInteraction.type = surfaceMaterialTypeTranslucent;

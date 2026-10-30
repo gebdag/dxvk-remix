@@ -75,6 +75,9 @@ struct SurfaceMaterialInteractionPSRSample
   vec3 inputDirection;
   vec3 attenuation;
   vec4 vectorTransform;
+  // Fork (DS1): entering a DS1 water body, its shading normal times its refraction smear
+  // (TranslucentSurfaceMaterialInteraction::ds1RefractionSmear), else 0; see geometryResolverDs1RefractionShift.
+  vec3 ds1SmearedNormal = vec3(0.0f);
 };
 
 // Surface Material Interaction Helper Functions

@@ -179,6 +179,7 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
   translucentSurfaceMaterialInteraction.normalDetail = float(1.0 - dot(float3(translucentSurfaceMaterialInteraction.shadingNormal), float3(surfaceInteraction.geometryNormal)));
   translucentSurfaceMaterialInteraction.baseReflectivity = translucentSurfaceMaterial.baseReflectivity;
   translucentSurfaceMaterialInteraction.ds1ReflectionTint = vec3(1.0f);
+  translucentSurfaceMaterialInteraction.ds1RefractionSmear = 0.0f;
   if (cb.translucentMaterialArgs.animatedWaterEnable && surface.isAnimatedWater && surface.isDs1Water)
   {
     // Fork (DS1): the game reflects each water body by its own weight, c130 * c131 seen face-on, tinted
@@ -187,6 +188,9 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
     translucentSurfaceMaterialInteraction.baseReflectivity = float(reflection >> 24) / 255.0f;
     translucentSurfaceMaterialInteraction.ds1ReflectionTint = gammaToLinear(
       vec3(float((reflection >> 16) & 0xFFu), float((reflection >> 8) & 0xFFu), float(reflection & 0xFFu)) / 255.0f);
+    // The game's refraction smear fades with the vertex alpha, 0 along the water's border.
+    translucentSurfaceMaterialInteraction.ds1RefractionSmear =
+      surface.ds1WaterSmear * saturate(float(surfaceInteraction.vertexColor.a));
   }
   translucentSurfaceMaterialInteraction.refractiveIndex = translucentSurfaceMaterial.refractiveIndex;
 
@@ -230,6 +234,7 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
   translucentSurfaceMaterialInteraction.diffuseColor = polymorphicSurfaceMaterialInteraction.vdata1;
   translucentSurfaceMaterialInteraction.baseReflectivity = polymorphicSurfaceMaterialInteraction.fdata0;
   translucentSurfaceMaterialInteraction.ds1ReflectionTint = gammaToLinearFast(unorm4x8ToFloat4x32(polymorphicSurfaceMaterialInteraction.i32data0).rgb);
+  translucentSurfaceMaterialInteraction.ds1RefractionSmear = polymorphicSurfaceMaterialInteraction.fdata5;
   translucentSurfaceMaterialInteraction.refractiveIndex = polymorphicSurfaceMaterialInteraction.fdata1;
   translucentSurfaceMaterialInteraction.thicknessOrMeasurementDistance = polymorphicSurfaceMaterialInteraction.fdata2;
   translucentSurfaceMaterialInteraction.diffuseOpacity = polymorphicSurfaceMaterialInteraction.fdata3;
@@ -277,6 +282,9 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
     gBufferMemoryPolymorphicSurfaceMaterialInteraction.baseReflectivity.x;
   // Note: Not stored in the G-buffer; the reflection it tints is sampled before the G-buffer is written.
   translucentSurfaceMaterialInteraction.ds1ReflectionTint = vec3(1.0f);
+  // Fork (DS1): the water refraction smear is not stored in the G-buffer, so the PSR prepare pass (PSR
+  // without NRC or SHARC) refracts without it.
+  translucentSurfaceMaterialInteraction.ds1RefractionSmear = 0.0f;
   translucentSurfaceMaterialInteraction.refractiveIndex = translucentSurfaceMaterial.refractiveIndex;
   translucentSurfaceMaterialInteraction.sourceSurfaceMaterialIndex = sourceSurfaceMaterialIndex;
   translucentSurfaceMaterialInteraction.thicknessOrMeasurementDistance =
@@ -1110,6 +1118,10 @@ SurfaceMaterialInteractionPSRSample translucentSurfaceMaterialInteractionCalcPSR
   materialPSRSample.inputDirection = inputDirection;
   materialPSRSample.attenuation = attenuation;
   materialPSRSample.vectorTransform = vectorTransform;
+  // Fork (DS1): entering a DS1 water body, the view continues from where the game's refraction smear looks
+  // (geometryResolverDs1RefractionShift).
+  materialPSRSample.ds1SmearedNormal = (!isThinWalled && !oldInsideMedium)
+    ? normal * translucentSurfaceMaterialInteraction.ds1RefractionSmear : vec3(0.0f);
 
   return materialPSRSample;
 }

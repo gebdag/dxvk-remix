@@ -626,7 +626,8 @@ struct Surface
   }
 
   // data15.xyz (data15.w is the surface material index): x = half scale | unorm16 offset u << 16,
-  // y = unorm16 offset v, both offsets wrapped to [0, 1); z = the two strength halves (RtSurface::writeGPUData).
+  // y = unorm16 offset v | half refraction smear << 16, both offsets wrapped to [0, 1); z = the two strength
+  // halves (RtSurface::writeGPUData).
   property vec3 ds1WaterLayer2
   {
     get { return vec3(f16tof32(data15.x & 0xFFFFu), float(data15.x >> 16) / 65536.0f, float(data15.y & 0xFFFFu) / 65536.0f); }
@@ -636,6 +637,28 @@ struct Surface
   property vec2 ds1WaterStrength
   {
     get { return vec2(f16tof32(data15.z & 0xFFFFu), f16tof32(data15.z >> 16)); }
+  }
+
+  // The game's refraction smear: it reads the scene behind the water at the screen position shifted by
+  // its wave normal's xz * c125 * vertex alpha. This is that shift as a view angle per unit of the shading
+  // normal's tilt, c125 * 2 tan(fov_x / 2) over the slope scale of the water normal map (the proxy's
+  // texture_scroll.cpp).
+  property float ds1WaterSmear
+  {
+    get { return f16tof32(data15.y >> 16); }
+  }
+
+  // Fork: the game's environment reflection weight for this draw, on the scale of a DS1 specular colour
+  // material's specular_color_scale (OpaqueSurfaceMaterialInteraction::ds1EnvSpecularScale), or -1 when the
+  // proxy measured none. data15.z (bit 31 set, a half below) on surfaces whose data15 holds no eye, water,
+  // albedo offset or self-lit emission (textureFlags bits 14, 26, 27 and 30 clear).
+  property float ds1EnvReflection
+  {
+    get
+    {
+      const bool data15Taken = packedFlagGet(data13.z, (1 << 14) | (1 << 26) | (1 << 27) | (1 << 30));
+      return !data15Taken && (data15.z & 0x80000000u) != 0 ? f16tof32(data15.z & 0xFFFFu) : -1.0f;
+    }
   }
 };
 

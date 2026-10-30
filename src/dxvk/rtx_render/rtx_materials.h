@@ -396,10 +396,11 @@ struct RtSurface {
       // Fork: data15.xyz, a DS1 water surface's second wave layer (Surface::ds1WaterLayer2: uv * scale
       // + offset) and its layer strengths. The scale is a half; the offsets are wrapped to [0, 1) and
       // stored as unorm16 (the normal map repeats, so only the fraction matters, and an offset that grows
-      // every frame keeps its precision); the strengths are the two halves of the stage 1 constant.
+      // every frame keeps its precision); the strengths are the two halves of the stage 1 constant; the
+      // refraction smear is a half above offset v.
       auto wrapUnorm16 = [](float v) { return uint32_t(std::lround((v - std::floor(v)) * 65536.0f)) & 0xFFFFu; };
       writeGPUHelper(data, offset, uint32_t(glm::packHalf1x16(ds1WaterLayer2[0])) | (wrapUnorm16(ds1WaterLayer2[1]) << 16));
-      writeGPUHelper(data, offset, wrapUnorm16(ds1WaterLayer2[2]));
+      writeGPUHelper(data, offset, wrapUnorm16(ds1WaterLayer2[2]) | (uint32_t(glm::packHalf1x16(ds1WaterSmear)) << 16));
       writeGPUHelper(data, offset, ds1WaterStrength);
     } else if (hasDs1AlbedoOffset) {
       // Fork: data15.xyz, a DS1 albedo offset (Surface::ds1AlbedoOffset, textureFlags bit 27).
@@ -411,15 +412,12 @@ struct RtSurface {
       writeGPUHelper(data, offset, ds1SelfLit[0]);
       writeGPUHelper(data, offset, ds1SelfLit[1]);
       writeGPUHelper(data, offset, ds1SelfLit[2]);
-    } else if (ds1Lightmapped) {
-      // Fork: data15.x, the DS1 lightmap level (Surface::ds1SunLightmap, textureFlags bit 28).
-      writeGPUHelper(data, offset, ds1SunLightmap);
-      writeGPUHelper(data, offset, uint32_t{});
-      writeGPUHelper(data, offset, uint32_t{});
     } else {
+      // Fork: data15.x, the DS1 lightmap level (Surface::ds1SunLightmap, textureFlags bit 28); data15.z, the
+      // DS1 environment reflection weight (Surface::ds1EnvReflection).
+      writeGPUHelper(data, offset, ds1Lightmapped ? ds1SunLightmap : uint32_t{});
       writeGPUHelper(data, offset, uint32_t{});
-      writeGPUHelper(data, offset, uint32_t{});
-      writeGPUHelper(data, offset, uint32_t{});
+      writeGPUHelper(data, offset, ds1SpecularTag);
     }
     assert(gpuMaterialIndex == MATERIAL_INDEX_INVALID || gpuMaterialIndex < MATERIAL_INDEX_MAX_VALUE);
     writeGPUHelper(data, offset, gpuMaterialIndex < MATERIAL_INDEX_MAX_VALUE ? gpuMaterialIndex : MATERIAL_INDEX_INVALID);
@@ -473,10 +471,13 @@ struct RtSurface {
   // Fork: DS1 lightmap level tag (0xD1rrggbb, 0 = none), see Surface::ds1SunLightmap; 0xD2000000 marks
   // a skinned (character) draw for the player light's clearance ray.
   uint32_t ds1SunLightmap = 0;
-  // Fork: DS1 water's second wave layer and layer strengths, see Surface::isDs1Water.
+  // Fork: DS1 water's second wave layer, layer strengths and refraction smear, see Surface::isDs1Water.
   bool isDs1Water = false;
   float ds1WaterLayer2[3] = {};
   uint32_t ds1WaterStrength = 0;
+  float ds1WaterSmear = 0.0f;
+  // Fork: DS1 environment reflection weight (data15.z), see Surface::ds1EnvReflection; 0 = none.
+  uint32_t ds1SpecularTag = 0;
   // Fork: DS1 albedo offset (data15.xyz, flag bit 27), see Surface::ds1AlbedoOffset.
   bool hasDs1AlbedoOffset = false;
   float ds1AlbedoOffset[3] = {};
@@ -2130,10 +2131,16 @@ struct LegacyMaterialData {
   // material's identity: it belongs to the draw (its lightmap), not to the texture.
   uint32_t ds1SunLightmap = 0;
   // Fork: a DS1 water surface's second wave layer (scale, offset relative to layer 1's uv) and both
-  // layers' normal strengths (two halfs), see Surface::isDs1Water. Per draw, not part of the identity.
+  // layers' normal strengths (two halfs) and refraction smear, see Surface::isDs1Water. Per draw, not part of
+  // the identity.
   bool isDs1Water = false;
   float ds1WaterLayer2[3] = {};
   uint32_t ds1WaterStrength = 0;
+  float ds1WaterSmear = 0.0f;
+  // Fork: the DS1 environment reflection weight from the stage-1 tag as data15.z holds it (bit 31 | half;
+  // 0 = none), see Surface::ds1EnvReflection. Per draw,
+  // not part of the identity.
+  uint32_t ds1SpecularTag = 0;
   // Fork: a DS1 albedo offset (the skin tone, PS c156) from the stage-5 tag, see
   // Surface::ds1AlbedoOffset. Per draw, not part of the identity.
   bool hasDs1AlbedoOffset = false;

@@ -14,6 +14,7 @@
 #include "d3d9_rtx_utils.h"
 #include "d3d9_texture.h"
 #include "../dxvk/rtx_render/rtx_terrain_baker.h"
+#include "../dxvk/rtx_render/rtx_dark_souls_specular.h"
 
 #include <cassert>
 #include <cstring>
@@ -1273,7 +1274,8 @@ namespace dxvk {
         // Fork: a DS1 water surface's second wave layer. Stage 0's texture transform places layer 1;
         // the proxy puts layer 2's uv, relative to layer 1's, in stage 1's texture transform
         // (D3DTTFF_COUNT2: uv2 = uv1 * _11 + (_31, _32)) and both layers' normal strengths in stage 1's
-        // D3DTSS_CONSTANT (two halfs, layer 1 low). See Surface::isDs1Water.
+        // D3DTSS_CONSTANT (two halfs, layer 1 low), and the water's refraction smear in the transform's
+        // otherwise unused _41. See Surface::isDs1Water.
         auto& water = m_activeDrawCallState.materialData;
         water.isDs1Water = (d3d9State().textureStages[1][DXVK_TSS_TEXTURETRANSFORMFLAGS] & 0x3) == D3DTTFF_COUNT2;
         if (water.isDs1Water) {
@@ -1282,6 +1284,15 @@ namespace dxvk {
           water.ds1WaterLayer2[1] = layer2.data[2].x;
           water.ds1WaterLayer2[2] = layer2.data[2].y;
           water.ds1WaterStrength = d3d9State().textureStages[1][DXVK_TSS_CONSTANT];
+          water.ds1WaterSmear = layer2.data[3].x;
+        }
+        // Fork: on other draws stage 1's D3DTSS_CONSTANT can carry the DS1 environment reflection weight,
+        // 0xD7000000 | half (the proxy's env_reflection.cpp), kept while its option is on. See
+        // Surface::ds1EnvReflection.
+        const uint32_t specularTag = d3d9State().textureStages[1][DXVK_TSS_CONSTANT];
+        water.ds1SpecularTag = 0;
+        if (!water.isDs1Water && (specularTag >> 24) == 0xD7u && DxvkDarkSoulsSpecular::envReflectionWeight()) {
+          water.ds1SpecularTag = 0x80000000u | (specularTag & 0xFFFFu);
         }
       }
 

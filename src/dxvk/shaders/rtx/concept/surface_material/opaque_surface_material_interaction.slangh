@@ -1061,9 +1061,23 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   if (specularColorLoaded && !noReflectance)
   {
     opaqueSurfaceMaterialInteraction.flags |= OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_SPECULAR_COLOR;
-    const vec3 specularColor = gammaToLinear(saturate(specularColorSample.rgb * float(opaqueSurfaceMaterial.specularColorScale)));
+    // Fork (DS1): the game shades a draw's light highlights and its reflection of the surroundings separately.
+    // It reflects its own environment cube at the weight the proxy measured for the draw
+    // (Surface::ds1EnvReflection, rtx.ds1Specular.envReflectionWeight), never above the material's scale, which
+    // stands for a typical cube. The base reflectivity keeps the material's scale for the highlights;
+    // reflections are rescaled to their own level, as the decoded colour they would have.
+    const float materialScale = float(opaqueSurfaceMaterial.specularColorScale);
+    const float envReflection = surface.ds1EnvReflection;
+    const float reflectScale = envReflection >= 0.0f ? min(envReflection, materialScale) : materialScale;
+    const vec3 specularColor = gammaToLinear(saturate(specularColorSample.rgb * materialScale));
     opaqueSurfaceMaterialInteraction.baseReflectivity = specularColor * opacity;
     opaqueSurfaceMaterialInteraction.albedo = min(albedo, vec3(1.0f) - specularColor) * opacity;
+    if (reflectScale != materialScale)
+    {
+      const vec3 envColor = gammaToLinear(saturate(specularColorSample.rgb * reflectScale));
+      opaqueSurfaceMaterialInteraction.ds1EnvSpecularScale =
+        min(calcBt709Luminance(envColor) / max(calcBt709Luminance(specularColor), 1e-6f), 1024.0f);
+    }
   }
   // Fork (DS1): the swamp's reflection is the game's, added on top without Fresnel (see above).
   if (ds1Swamp && !noReflectance)
@@ -1236,6 +1250,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(Polymorp
 
   opaqueSurfaceMaterialInteraction.dlssControlMask = polymorphicSurfaceMaterialInteraction.dlssControlMask;
   opaqueSurfaceMaterialInteraction.flags = polymorphicSurfaceMaterialInteraction.bdata0;
+  opaqueSurfaceMaterialInteraction.ds1EnvSpecularScale = polymorphicSurfaceMaterialInteraction.ds1EnvSpecularScale;
 
   return opaqueSurfaceMaterialInteraction;
 }
@@ -1261,6 +1276,10 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreate(
     unorm8ToF32(uint8_t(data1 >> 8)));
   const vec3 emissiveColor = gammaToLinearFast(gammaEmissiveColor);
   const float emissiveIntensity = uint16BitsToF32(uint16_t(data1 >> 16));
+  // Fork (DS1): without an emissive colour the intensity half carries the environment reflection scale
+  // (gBufferMemoryPolymorphicSurfaceMaterialInteractionCreateInternal); the emission is 0 either way.
+  const bool emissiveColorEncoded = (data0 & 0x00FF0000u) != 0 || (data1 & 0x0000FFFFu) != 0;
+  opaqueSurfaceMaterialInteraction.ds1EnvSpecularScale = emissiveColorEncoded ? 1.0f : max(emissiveIntensity, 0.0f);
 
   float isotropicRoughness;
   vec2 anisotropicRoughness;
@@ -1707,7 +1726,9 @@ SurfaceMaterialInteractionSample opaqueSurfaceMaterialInteractionCalcSpecularRef
   // Note: Simplified version of (weight / solidAnglePdf) * (n.l) when sampling from the distribution of
   // visible normals.
   // [Heitz 2014, "Importance sampling microfacet-based BSDFs using the distribution of visible normals"]
-  const vec3 throughput = finalFresnel * G2OverG1;
+  // Fork (DS1): an indirect ray off the specular lobe sees the surroundings, which the game reflects at its own
+  // level (OpaqueSurfaceMaterialInteraction::ds1EnvSpecularScale).
+  const vec3 throughput = finalFresnel * G2OverG1 * opaqueSurfaceMaterialInteraction.ds1EnvSpecularScale;
 
   // Calculate the solid angle PDF of the sample
   // Note: Ideally the PDF wouldn't be needed here as it's already been baked into the throughput for a simpler calculation

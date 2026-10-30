@@ -100,6 +100,10 @@
 #define DEBUG_VIEW_PSR_PRIMARY_SECONDARY_SURFACE_MASK 80
 #define DEBUG_VIEW_PSR_SELECTED_INTEGRATION_SURFACE_PDF 81
 
+// Fork (DS1): the primary decal's shading normal (remapped to 0-1) and opacity, as the deferred decal pass
+// blends them into the G-buffer.
+#define DEBUG_VIEW_DS1_PRIMARY_DECAL_SHADING_NORMAL 86
+#define DEBUG_VIEW_DS1_PRIMARY_DECAL_OPACITY 87
 #define DEBUG_VIEW_PRIMARY_DECAL_ALBEDO 88
 
 #define DEBUG_VIEW_PRIMARY_PERCEPTUAL_ROUGHNESS 89

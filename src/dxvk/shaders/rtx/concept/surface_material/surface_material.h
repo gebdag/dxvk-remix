@@ -212,6 +212,10 @@ struct OpaqueSurfaceMaterialInteraction
   float thinFilmThickness;
   uint32_t dlssControlMask;
   uint8_t flags;
+  // Fork (DS1): what the surface's reflections of its surroundings (the specular lobe of indirect rays) are
+  // multiplied by, the game's own environment reflection level for the draw (Surface::ds1EnvReflection);
+  // 1 for everything else. Lights' direct highlights keep the full specular.
+  float ds1EnvSpecularScale = 1.0f;
 };
 
 struct DecalMaterialInteraction
@@ -266,6 +270,10 @@ struct TranslucentSurfaceMaterialInteraction
   // Fork (DS1): what a DS1 water surface's reflection is multiplied by, the game's reflection tint
   // (Surface::isDs1Water); 1 for everything else.
   vec3 ds1ReflectionTint;
+
+  // Fork (DS1): a DS1 water surface's refraction smear times its vertex alpha (Surface::ds1WaterSmear);
+  // 0 for everything else.
+  float ds1RefractionSmear;
 };
 
 struct RayPortalSurfaceMaterialInteraction
@@ -320,4 +328,7 @@ struct PolymorphicSurfaceMaterialInteraction
   uint8_t type;
 
   uint8_t isAnimatedWater;
+
+  // Fork (DS1): OpaqueSurfaceMaterialInteraction::ds1EnvSpecularScale; 1 for the other types.
+  float ds1EnvSpecularScale = 1.0f;
 };
