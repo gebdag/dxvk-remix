@@ -512,6 +512,15 @@ struct Surface
     set { data13.z = newValue ? packedFlagSet(data13.z, 1 << 19) : packedFlagUnset(data13.z, 1 << 19); }
   }
 
+  // Fork: a DS1 blend skirt decal (the proxy's skirt decal marker): a lit, alpha-faded mesh the game draws over
+  // the geometry it borders, which can hang a little above that geometry. The decal pass lights the pixel on the
+  // skirt's own surface, by its coverage, instead of on the surface below (geometryResolverApplyUnorderedDecalsPass).
+  property bool isDs1SkirtDecal
+  {
+    get { return packedFlagGet(data13.z, 1u << 31); }
+    set { data13.z = newValue ? packedFlagSet(data13.z, 1u << 31) : packedFlagUnset(data13.z, 1u << 31); }
+  }
+
   // Fork: the DS1 haze set the draw was tagged with (1-15, 0 = none): the slot of its own fog and
   // scattering constants in the DS1 look's scene pass (post_fx_dark_souls_haze.h).
   property uint ds1HazeSet

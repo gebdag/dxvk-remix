@@ -3904,7 +3904,52 @@ void geometryResolverApplyUnorderedDecalsCompacted(uvec2 pixelCoordinate)
     geometryResolverBlendDecalIntoGBuffer(
       ivec2(pixelCoordinate), compactedCoordinate, perceptualRoughness, decalMaterialInteraction,
       /* addEmissiveChange = */ false);
+
+    vec4 positionNormal = PrimaryWorldPositionWorldTriangleNormalCompacted[compactedCoordinate];
+    if (geometryResolverDs1LiftToSkirt(positionNormal, -vec3(primaryRay.direction), hitDistance))
+    {
+      PrimaryWorldPositionWorldTriangleNormalCompacted[compactedCoordinate] = positionNormal;
+    }
   }
+}
+
+// Fork (DS1): a blend skirt decal (Surface::isDs1SkirtDecal) is lit on its own surface. The game draws a skirt as
+// a lit, alpha-faded mesh over the geometry it borders, and it can hang a little above that geometry (Painted
+// World's rubble skirts over a 0.23 m trench, frame_20261030_093046); blended into the surface below, the skirt
+// took that surface's light, and where the surface lay in a shadow the skirt does not, the shadow's hard edge
+// showed through the skirt's soft fade. The position the lighting passes read moves from the surface hit up to
+// the skirt, by the share of the pixel the skirts cover: all the way under an opaque skirt, not at all where it
+// fades out, so the light follows the skirt's own fade. Hit distance, view Z and motion stay the surface's.
+// Reads what the resolve recorded (g_ds1SkirtDistanceSum and the rest, resolve.slangh). True when it moved.
+bool geometryResolverDs1LiftToSkirt(inout vec4 positionNormal, vec3 viewDirection, float surfaceHitDistance)
+{
+#ifndef RAY_TRACING_PRIMARY_RAY
+  return false;
+#else
+  if (g_ds1SkirtWeight <= 0.0f)
+  {
+    return false;
+  }
+  const float skirtDistance = g_ds1SkirtDistanceSum / g_ds1SkirtWeight;
+  const float coverage = saturate(1.0f - g_ds1SkirtTransmittance);
+  // A skirt drapes over what it borders: up to kDs1SkirtMaxLift above it (Painted World's trench, 0.23 m). The
+  // same marker also takes other blended lit map meshes (hanging cloth, torch models, a tree trunk fade) whose
+  // background is metres behind; lifted there, the light would be sampled in mid air.
+  const float kDs1SkirtMaxLift = 0.5f;
+  const float gap = surfaceHitDistance - skirtDistance;
+  if (!(gap > 0.0f) || gap > kDs1SkirtMaxLift)
+  {
+    return false;
+  }
+  const float lift = gap * coverage;
+  if (!(lift > 0.0f))
+  {
+    return false;
+  }
+  // The view direction points back along the primary ray, towards the camera.
+  positionNormal.xyz += viewDirection * lift;
+  return true;
+#endif
 }
 
 // Mirrors minimalRayInteractionReadFromGBuffer for the writable primary GBuffer textures.
@@ -3996,6 +4041,12 @@ void geometryResolverApplyUnorderedDecalsPass(ivec2 pixelCoordinate)
 
   geometryResolverBlendDecalIntoGBuffer(
     pixelCoordinate, uvec2(pixelCoordinate), PrimaryPerceptualRoughness[pixelCoordinate], decalMaterialInteraction);
+
+  vec4 positionNormal = aliasedData0.PrimaryWorldPositionWorldTriangleNormal[pixelCoordinate];
+  if (geometryResolverDs1LiftToSkirt(positionNormal, vec3(minimalRayInteraction.viewDirection), primaryHitDistance))
+  {
+    aliasedData0.PrimaryWorldPositionWorldTriangleNormal[pixelCoordinate] = positionNormal;
+  }
 }
 
 void geometryPSRPreparePass(ivec2 pixelCoordinate) {

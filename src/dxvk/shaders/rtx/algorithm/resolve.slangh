@@ -1309,6 +1309,15 @@ float resolveVertexUnorderedParticles<
 
 // Handles unordered Resolve operations within the resolve loop which do not depend on the typical ordered execution
 // for the resolve logic.
+#ifdef RAY_TRACING_PRIMARY_RAY
+// Fork (DS1): the blend skirt decals the primary unordered resolve composited (Surface::isDs1SkirtDecal), for the
+// decal pass to light the pixel on the skirt rather than on what it covers: their opacity-weighted hit distance
+// and the share of the pixel they cover. Per-thread state, reset by every resolveVertexUnordered call.
+static float g_ds1SkirtDistanceSum = 0.0f;
+static float g_ds1SkirtWeight = 0.0f;
+static float g_ds1SkirtTransmittance = 1.0f;
+#endif
+
 void resolveVertexUnordered<
   let RAY_FLAGS : uint,
   let ENABLE_DECALS : bool,
@@ -1386,6 +1395,9 @@ void resolveVertexUnordered<
 #endif
 
 #ifdef RAY_TRACING_PRIMARY_RAY
+  g_ds1SkirtDistanceSum = 0.0f;
+  g_ds1SkirtWeight = 0.0f;
+  g_ds1SkirtTransmittance = 1.0f;
   MemoryDecalMaterialInteraction binnedDecals[numDecalResolveBins];
   uint binnedDecalSortOrder[numDecalResolveBins] = {uintMax, uintMax, uintMax, uintMax};
   uint maxSortOrder = 0;
@@ -1587,6 +1599,12 @@ void resolveVertexUnordered<
 
 #ifdef RAY_TRACING_PRIMARY_RAY
           conditionallyStoreDecal(binnedDecals, binnedDecalSortOrder, decalMaterialInteraction, decalSortKey);
+          if (surface.isDs1SkirtDecal)
+          {
+            g_ds1SkirtDistanceSum += opacity * rayHitInfo.hitDistance;
+            g_ds1SkirtWeight += opacity;
+            g_ds1SkirtTransmittance *= 1.0f - opacity;
+          }
           if (decalSortKey > maxSortOrder)
           {
             surfaceIndex = rayInteraction.surfaceIndex;

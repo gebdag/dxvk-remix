@@ -1178,9 +1178,14 @@ namespace dxvk {
       // rather than being treated as independent geometry that z-fights with it.
       if constexpr (FixedFunction) {
         constexpr uint32_t kFixedFunctionDecalMarker = 0xD15DECA1;
+        // Fork: the DS1 proxy's blend skirt marker, a decal lit on its own surface (Surface::isDs1SkirtDecal).
+        constexpr uint32_t kFixedFunctionDs1SkirtDecalMarker = 0xD15DECA2;
+        const uint32_t decalTag = d3d9State().textureStages[firstStage][DXVK_TSS_CONSTANT];
+        m_activeDrawCallState.materialData.isDs1SkirtDecal = false;
         if (RtxOptions::fixedFunctionDecalMarkerEnabled() &&
-            d3d9State().textureStages[firstStage][DXVK_TSS_CONSTANT] == kFixedFunctionDecalMarker) {
+            (decalTag == kFixedFunctionDecalMarker || decalTag == kFixedFunctionDs1SkirtDecalMarker)) {
           m_activeDrawCallState.setCategory(InstanceCategories::DecalStatic, true);
+          m_activeDrawCallState.materialData.isDs1SkirtDecal = decalTag == kFixedFunctionDs1SkirtDecalMarker;
         }
         // Fork: unlit tag (see RtxOptions::fixedFunctionUnlitMarkerEnabled).
         // 0xD15D0E21 and 0xD15D0E22 are the same tag for sprites whose game shaders apply the

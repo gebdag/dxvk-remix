@@ -359,6 +359,8 @@ struct RtSurface {
     textureFlags |= isTextureFactorAlphaBlend ? (1 << 15) : 0;
     textureFlags |= isUnlit ? (1 << 16) : 0;
     textureFlags |= isDs1Swamp ? (1 << 19) : 0;
+    // Fork: bit 31, a DS1 blend skirt decal (Surface::isDs1SkirtDecal).
+    textureFlags |= isDs1SkirtDecal ? (1u << 31) : 0;
     textureFlags |= (static_cast<uint32_t>(ds1HazeSet) & 0xF) << 20;
     textureFlags |= (static_cast<uint32_t>(ds1UnlitExposurePower) & 0x3) << 24;
     textureFlags |= isDs1Water && !eyeParams ? (1 << 26) : 0;
@@ -462,6 +464,8 @@ struct RtSurface {
   bool isUnlit = false;
   // Fork: drawn with the DS1 swamp marker (FRPG_Snow, see fork_ds1_swamp.h).
   bool isDs1Swamp = false;
+  // Fork: a DS1 blend skirt decal, lit on its own surface (textureFlags bit 31, Surface::isDs1SkirtDecal).
+  bool isDs1SkirtDecal = false;
   // Fork: DS1 haze set slot (1-15, 0 = none), see post_fx_dark_souls_haze.h.
   uint8_t ds1HazeSet = 0;
   // Fork: exposure power of a DS1 unlit sprite (0-2), see Surface::ds1UnlitExposurePower.
@@ -2115,6 +2119,8 @@ struct LegacyMaterialData {
   bool isTextureFactorAlphaBlend = false;
   bool isUnlit = false; // fork: unlit marker, see RtxOptions::fixedFunctionUnlitMarkerEnabled
   bool isDs1Swamp = false; // fork: DS1 swamp marker, see fork_ds1_swamp.h
+  // Fork: drawn with the DS1 proxy's skirt decal marker (Surface::isDs1SkirtDecal). Per draw, not part of the identity.
+  bool isDs1SkirtDecal = false;
   // Fork: DS1 haze set slot from the haze marker (not part of the material's identity: the same
   // material is drawn in several regions).
   uint8_t ds1HazeSet = 0;
