@@ -1150,6 +1150,7 @@ namespace dxvk {
         currentInstance.surface.isVertexColorBakedLighting = drawCall.getMaterialData().isVertexColorBakedLighting;
         currentInstance.surface.isMotionBlurMaskOut = currentInstance.testCategoryFlags(InstanceCategories::IgnoreMotionBlur);
         currentInstance.surface.isDs1Glass = drawCall.getMaterialData().isDs1SingleSided;
+        currentInstance.surface.ds1ViewFade = drawCall.getMaterialData().ds1ViewFade;
 
         // Note: Skip the spritesheet adjustment logic in the surface interaction when using Ray Portal materials as this logic
         // is done later in the Surface Material Interaction (and doing it in both places will just double up the animation).
@@ -1160,9 +1161,10 @@ namespace dxvk {
         materialData->getSpriteSheetData(currentInstance.surface.spriteSheetRows, currentInstance.surface.spriteSheetCols, currentInstance.surface.spriteSheetFPS);
         currentInstance.surface.textureScrollSpeed = textureScrollSpeed;
         // Fork: a texture transform (DS1's scrolling materials, a new offset every frame) animates the
-        // cutout like a sprite sheet does: its opacity micromap would be rebuilt every frame.
+        // cutout like a sprite sheet does: its opacity micromap would be rebuilt every frame. So does the DS1
+        // view fade, which no micromap can hold: an opaque micromap texel would skip it.
         currentInstance.m_isAnimated = currentInstance.surface.spriteSheetFPS != 0 || currentInstance.surface.textureScrollSpeed != Vector2(0.f) ||
-          drawCall.getTransformData().textureTransform != Matrix4();
+          drawCall.getTransformData().textureTransform != Matrix4() || currentInstance.surface.ds1ViewFade != 0;
         currentInstance.surface.objectPickingValue = drawCall.drawCallID;
 
         // Temp storage for the case we need to patch the material data

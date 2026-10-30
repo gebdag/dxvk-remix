@@ -1255,6 +1255,16 @@ namespace dxvk {
           selfLit.ds1SelfLit[c] = selfLit.hasDs1SelfLit
             ? std::pow(static_cast<float>((selfLitTag >> (16 - 8 * c)) & 0xFFu) * (16.0f / 255.0f), 2.2f) : 0.0f;
         }
+        // Fork: DS1 view fade in stage 2's D3DTSS_CONSTANT (0xD600oocc): FRPG_NtoA's alpha *
+        // sat((|N.V| - c176.x) * c176.y), with oo = c176.x * 255 and cc = c176.y * 16. Packed as
+        // Surface::ds1ViewFade reads it: bit 2 on, bits 3-8 the offset in 63rds, bits 9-15 the scale in 8ths.
+        const uint32_t viewFadeTag = d3d9State().textureStages[2][DXVK_TSS_CONSTANT];
+        m_activeDrawCallState.materialData.ds1ViewFade = 0;
+        if ((viewFadeTag >> 24) == 0xD6u) {
+          const uint32_t offset = (((viewFadeTag >> 8) & 0xFFu) * 63u + 127u) / 255u;
+          const uint32_t scale = std::min((viewFadeTag & 0xFFu) / 2u, 127u);
+          m_activeDrawCallState.materialData.ds1ViewFade = static_cast<uint16_t>((1u << 2) | (offset << 3) | (scale << 9));
+        }
         // Fork: a DS1 water surface's second wave layer. Stage 0's texture transform places layer 1;
         // the proxy puts layer 2's uv, relative to layer 1's, in stage 1's texture transform
         // (D3DTTFF_COUNT2: uv2 = uv1 * _11 + (_31, _32)) and both layers' normal strengths in stage 1's

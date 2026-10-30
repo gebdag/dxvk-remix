@@ -808,7 +808,14 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     if (surface.isTextureFactorAlphaBlend) {
       opacity *= tFactor.a;
     }
-    
+    // Fork (DS1): FRPG_NtoA's view fade (Surface::hasDs1ViewFade), before the alpha test as in the game:
+    // edge-on, the surface's alpha falls to 0 and its alpha test cuts it.
+    if (surface.hasDs1ViewFade)
+    {
+      const float facing = abs(dot(normalize(minimalRayInteraction.viewDirection), normalize(surfaceInteraction.geometryNormal)));
+      opacity *= saturate((facing - surface.ds1ViewFadeOffset) * surface.ds1ViewFadeScale);
+    }
+
     // Ensure we perform these opacity calculations after the texture operations have been applied to abledo and alpha.
     calcOpaqueSurfaceMaterialOpacity(
       albedo, opacity, surface, opacity, emissiveBlendOverrideInfluence, cb.wboitEnabled);

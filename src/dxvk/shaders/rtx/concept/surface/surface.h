@@ -316,6 +316,25 @@ struct Surface
     set { data0b.z = newValue ? packedFlagSet(data0b.z, 1 << 1) : packedFlagUnset(data0b.z, 1 << 1); }
   }
 
+  // Fork: the DS1 view fade (FRPG_NtoA, the proxy's stage-2 tag 0xD6): the game multiplies the
+  // surface's alpha by sat((|N.V| - offset) * scale), N the interpolated vertex normal. Edge-on
+  // foliage cards and the Bed of Chaos seal shells fade out. data0b.z bit 2 on, bits 3-8 the
+  // offset in 63rds, bits 9-15 the scale in 8ths.
+  property bool hasDs1ViewFade
+  {
+    get { return (uint(data0b.z) & 0x4u) != 0; }
+  }
+
+  property float ds1ViewFadeOffset
+  {
+    get { return float((uint(data0b.z) >> 3) & 0x3Fu) / 63.0f; }
+  }
+
+  property float ds1ViewFadeScale
+  {
+    get { return float((uint(data0b.z) >> 9) & 0x7Fu) / 8.0f; }
+  }
+
   property uint16_t hashPacked
   {
     get { return data0b.w; }

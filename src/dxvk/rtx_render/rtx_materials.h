@@ -197,7 +197,8 @@ struct RtSurface {
     uint16_t flags0 = 0;
     flags0 |= normalFormat == VK_FORMAT_R32_UINT ? 1 : 0;
     flags0 |= isVertexColorBakedLighting ? (1 << 1) : 0;
-    // NOTE: Spare flags bits here
+    // Fork: bits 2-15, the DS1 view fade (Surface::ds1ViewFade), already packed.
+    flags0 |= ds1ViewFade & 0xFFFCu;
 
     writeGPUHelper(data, offset, flags0);
 
@@ -478,6 +479,8 @@ struct RtSurface {
   // Fork: DS1 self-lit emission (data15.xyz, flag bit 30), see Surface::ds1SelfLit.
   bool hasDs1SelfLit = false;
   float ds1SelfLit[3] = {};
+  // Fork: DS1 view fade, packed as Surface::ds1ViewFade reads it (data0b.z bits 2-15), 0 = none.
+  uint16_t ds1ViewFade = 0;
   bool isVertexColorBakedLighting = true;
   bool isMotionBlurMaskOut = false;
   bool skipSurfaceInteractionSpritesheetAdjustment = false;
@@ -2137,6 +2140,9 @@ struct LegacyMaterialData {
   bool isDs1Shell = false;
   // Fork: a DS1 window glass pass (stage-4 tag 0xD4000002): blended but culled by the game's cull mode.
   bool isDs1SingleSided = false;
+  // Fork: the DS1 view fade from the stage-2 tag (FRPG_NtoA's c176), packed for Surface::ds1ViewFade.
+  // Per draw, not part of the identity.
+  uint16_t ds1ViewFade = 0;
   bool isVertexColorBakedLighting = true;
 
   void setHashOverride(XXH64_hash_t hash) {
