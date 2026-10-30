@@ -847,6 +847,7 @@ namespace dxvk {
     m_sf.m_noisyMipcount = new uint8_t[SAMPLER_FEEDBACK_MAX_TEXTURE_COUNT]{ /* zero-init */ };
     m_sf.m_accumulatedMipcount = new FeedbackAccum[SAMPLER_FEEDBACK_MAX_TEXTURE_COUNT]{ /* zero-init */ };
     m_sf.m_cachedAssetMipcount = new uint8_t[SAMPLER_FEEDBACK_MAX_TEXTURE_COUNT]{ /* zero-init */ };
+    m_sf.m_cachedAssetMipOffset = new int8_t[SAMPLER_FEEDBACK_MAX_TEXTURE_COUNT]{ /* zero-init */ };
     m_sf.m_cachedGpubuf = new uint32_t[SAMPLER_FEEDBACK_MAX_TEXTURE_COUNT]; // NO zero-init
 
     // SAMPLER_FEEDBACK_INVALID must be 0xFFFF (all-0xFF bytes) for memset to fill
@@ -870,6 +871,7 @@ namespace dxvk {
 
     delete m_sf.m_cachedGpubuf;
     delete m_sf.m_cachedAssetMipcount;
+    delete[] m_sf.m_cachedAssetMipOffset;
     delete m_sf.m_accumulatedMipcount;
     delete m_sf.m_noisyMipcount;
     delete m_sf.m_related;
@@ -1165,6 +1167,11 @@ namespace dxvk {
 
       // replace information about the file
       tex->m_assetData = newAssetData;
+      {
+        // Fork: the new file may have another size or mip count; rebuild the cached ones.
+        auto ls = std::unique_lock { m_sf.m_idToTexture_mutex };
+        m_sf.m_cachedAssetMipcount_length = 0;
+      }
       tex->requestMips(0);
       constexpr bool forceUnload = true; // do not check current mip count
       scheduleTextureLoad(tex, false, forceUnload );
@@ -1257,12 +1264,18 @@ namespace dxvk {
       // improves cache efficiency
       if (m_cachedAssetMipcount_length != textureCount) {
         memset(m_cachedAssetMipcount, 0, textureCount * sizeof(m_cachedAssetMipcount[0]));
+        memset(m_cachedAssetMipOffset, 0, textureCount * sizeof(m_cachedAssetMipOffset[0]));
         m_cachedAssetMipcount_length = uint32_t(textureCount);
         for (uint32_t stamp = 0; stamp < textureCount; stamp++) {
           const Rc<ManagedTexture>& tex = m_idToTexture[stamp];
           assert(stamp == tex->m_samplerFeedbackStamp);
           if (tex.ptr()) {
-            m_cachedAssetMipcount[stamp] = uint8_t(std::min(tex->m_assetData->info().mipLevels, uint32_t(MAX_MIPS)));
+            const AssetInfo& info = tex->m_assetData->info();
+            m_cachedAssetMipcount[stamp] = uint8_t(std::min(info.mipLevels, uint32_t(MAX_MIPS)));
+            // Fork: the shader reports the accessed mip of a 4096-texel texture
+            // (calcMipLevelAccessedForSamplerFeedback); this texture's own mip is that many levels finer.
+            const uint32_t size = std::max({ info.extent.width, info.extent.height, 1u });
+            m_cachedAssetMipOffset[stamp] = int8_t(std::lround(std::log2(4096.0 / double(size))));
           }
         }
       }
@@ -1271,36 +1284,42 @@ namespace dxvk {
     // Shadow memory to reduce random access via DMA
     memcpy(m_cachedGpubuf, src_gpubuf, textureCount * sizeof(uint32_t));
 
-    // Reset to zero to find a max value for each texture in 'src_gpubuf'
-    memset(m_noisyMipcount, 0, textureCount * sizeof(m_noisyMipcount[0]));
-    for (uint32_t stamp = 0; stamp < textureCount; stamp++) {
-      uint8_t newMipCount;
-      {
-        const uint32_t assetMipCount = m_cachedAssetMipcount[stamp];
-
-        const uint32_t mipAccessed = std::min(m_cachedGpubuf[stamp], assetMipCount);
-        newMipCount = uint8_t(assetMipCount - mipAccessed);
-      }
-      m_noisyMipcount[stamp] = std::max(m_noisyMipcount[stamp], newMipCount);
-    }
-
     // A single stamp can be associated with many other stamps (SAMPLER_FEEDBACK_RELATED_PER_TEX).
     // (Because sampler feedback is decided on an albedo texture,
-    // so expand the mip count of albedo onto roughness, emissive and other textures)
+    // so expand the accessed mip of albedo onto roughness, emissive and other textures)
+    // Fork: the accessed mip is passed on in the shader's 4096-texel terms, and each texture converts it
+    // to its own mip count below. Passing on the owner's mip count gave every related texture the owner's
+    // resolution in mip levels: a 1024 normal map grouped with a 512 specular map (6 mips) kept at most 6
+    // of its 11 levels, 32 texels across.
     for (uint32_t stamp = 0; stamp < textureCount; stamp++) {
       uint16_t* listOfRelatedStamps = &m_related[stamp * SAMPLER_FEEDBACK_RELATED_PER_TEX];
       if (listOfRelatedStamps[0] == SAMPLER_FEEDBACK_INVALID) {
         continue;
       }
-      const auto newMipCount = m_noisyMipcount[stamp];
+      const uint32_t mipAccessed = m_cachedGpubuf[stamp];
 
       for (uint8_t i = 0; i < SAMPLER_FEEDBACK_RELATED_PER_TEX; i++) {
         uint16_t stampOfRelated = listOfRelatedStamps[i];
         if (stampOfRelated == SAMPLER_FEEDBACK_INVALID) {
           break; // end of list
         }
-        m_noisyMipcount[stampOfRelated] = std::max(m_noisyMipcount[stampOfRelated], newMipCount);
+        m_cachedGpubuf[stampOfRelated] = std::min(m_cachedGpubuf[stampOfRelated], mipAccessed);
       }
+    }
+
+    // Reset to zero to find a max value for each texture in 'src_gpubuf'
+    memset(m_noisyMipcount, 0, textureCount * sizeof(m_noisyMipcount[0]));
+    for (uint32_t stamp = 0; stamp < textureCount; stamp++) {
+      uint8_t newMipCount;
+      {
+        const int32_t assetMipCount = m_cachedAssetMipcount[stamp];
+
+        // Fork: the accessed mip in this texture's own chain (see m_cachedAssetMipOffset).
+        const int64_t ownMip = int64_t(m_cachedGpubuf[stamp]) - m_cachedAssetMipOffset[stamp];
+        const int32_t mipAccessed = int32_t(std::clamp<int64_t>(ownMip, 0, assetMipCount));
+        newMipCount = uint8_t(assetMipCount - mipAccessed);
+      }
+      m_noisyMipcount[stamp] = std::max(m_noisyMipcount[stamp], newMipCount);
     }
 
     return textureCount;

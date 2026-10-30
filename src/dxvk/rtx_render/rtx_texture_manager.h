@@ -49,6 +49,8 @@ namespace dxvk {
     // Variables needed for optimization
     std::atomic_uint16_t  m_idToTexture_count{ 0 };
     uint8_t*              m_cachedAssetMipcount{};
+    // Fork: log2(4096 / the asset's size), to convert the shader's 4096-texel mip to the asset's own.
+    int8_t*               m_cachedAssetMipOffset{};
     uint32_t              m_cachedAssetMipcount_length{ 0 };
     uint32_t*             m_cachedGpubuf{ 0 };
 
