@@ -1197,7 +1197,12 @@ namespace dxvk {
             materialData = &tmpMaterialData;
             // If the user has decided to override the legacy alpha state, assume they know what they are doing and allow for explicit emission controls.
             tmpMaterialData.getOpaqueMaterialData().setEnableEmission(true);
-            tmpMaterialData.getOpaqueMaterialData().setEmissiveIntensity(RtxOptions::emissiveBlendOverrideEmissiveIntensity());
+            // Fork (DS1): an additive surface the proxy tagged with the game's light for it (New Londo's
+            // ghosts, atmosphere.cpp additive_lit_colour) emits albedo * that light through
+            // Surface::ds1SelfLit, as the game adds it, instead of the fixed override.
+            const bool ds1Lit = currentInstance.surface.ds1SelfLit[0] + currentInstance.surface.ds1SelfLit[1] +
+              currentInstance.surface.ds1SelfLit[2] > 0.0f;
+            tmpMaterialData.getOpaqueMaterialData().setEmissiveIntensity(ds1Lit ? 0.0f : RtxOptions::emissiveBlendOverrideEmissiveIntensity());
             tmpMaterialData.getOpaqueMaterialData().setEmissiveColorTexture(tmpMaterialData.getOpaqueMaterialData().getAlbedoOpacityTexture());
           }
 
