@@ -169,7 +169,6 @@ namespace dxvk {
       return;
     }
     ImGui::Indent();
-    RemixGui::Checkbox("Game Haze", &enableObject());
     RemixGui::DragFloat("Haze Colour Gain", &displayGainObject(), 0.01f, 0.0f, 8.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
     RemixGui::DragFloat("Sky Haze Distance", &skyDistanceObject(), 10.0f, 0.0f, 100000.0f, "%.0f", ImGuiSliderFlags_AlwaysClamp);
 

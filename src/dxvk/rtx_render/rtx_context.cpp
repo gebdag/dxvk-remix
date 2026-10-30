@@ -834,71 +834,25 @@ namespace dxvk {
         }
         // NV-DXVK end
 
-        // NV-DXVK start: DS1 port - Dark Souls haze (post-tonemapping, before the DS1 DoF and grading,
-        // as in the game). Per-pixel, so it works in place on the final output.
-        {
-          DxvkDarkSoulsHaze& ds1Haze = m_common->metaPostFx().darkSoulsHaze();
-          if (ds1Haze.isEnabled() && !ds1Look) {
-            const Resources::Resource& finalOut = rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite);
-            float ds1HazeJitter[2];
-            getSceneManager().getCamera().getJittering(ds1HazeJitter);
-            NrdArgs primaryDirectNrdArgs, primaryIndirectNrdArgs, secondaryNrdArgs;
-            getDenoiseArgs(primaryDirectNrdArgs, primaryIndirectNrdArgs, secondaryNrdArgs);
-            ds1Haze.dispatch(this, finalOut, rtOutput.m_primaryLinearViewZ, finalOut.image->mipLevelExtent(0),
-                             getSceneManager().getCamera().getShaderConstants(), ds1HazeJitter,
-                             primaryDirectNrdArgs.missLinearViewZ);
-          }
-        }
-        // NV-DXVK end
-
         // Lens effects (chromatic aberration, vignette) run AFTER tonemapping. They are
         // display-space artifacts so they operate on post-tonemap LDR data.
         dispatchPostFxLensEffects(rtOutput);
 
-        // NV-DXVK start: DS1 port - Dark Souls depth of field (post-tonemapping, before DS1 grading).
-        // Reads a copy of the frame rather than the frame itself: the pass gathers a neighbourhood per
-        // pixel, so it cannot alias its own output.
-        {
-          DxvkDarkSoulsDof& ds1Dof = m_common->metaPostFx().m_darkSoulsDof;
-          if (ds1Look) {
-            m_common->metaPostFx().darkSoulsLook().dispatchDof(this,
-              rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite), rtOutput.m_primaryLinearViewZ,
-              ds1Jitter, ds1MissLinearViewZ);
-          } else if (ds1Dof.isEnabled()) {
-            const Resources::Resource& finalOut = rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite);
-            const Resources::Resource& sourceCopy = rtOutput.m_postFxIntermediateTexture.resource(Resources::AccessType::Write);
-            const Resources::Resource& linearViewZ = rtOutput.m_primaryLinearViewZ;
-            const VkExtent3D extent = finalOut.image->mipLevelExtent(0);
-
-            // Note: no copyImage here any more - the pass's own prepare dispatch stages the frame
-            // into sourceCopy and packs the circle of confusion into its alpha at the same time.
-
-            // linearViewZ was rasterized with this jitter; the pass undoes it on read.
-            float ds1DofJitter[2];
-            getSceneManager().getCamera().getJittering(ds1DofJitter);
-
-            ds1Dof.dispatch(this, sourceCopy, linearViewZ, finalOut, extent, ds1DofJitter);
-          }
-        }
-        // NV-DXVK end
-
-        // NV-DXVK start: DS1 port - Dark Souls color grading (post-tonemapping, on 0-1 SDR data).
-        // Per-pixel, so it works in place on the final output.
-        {
-          DxvkDarkSoulsGrading& ds1Grading = m_common->metaPostFx().m_darkSoulsGrading;
-          if (ds1Look) {
-            m_common->metaPostFx().darkSoulsLook().dispatchShafts(this,
-              rtOutput.m_finalOutput.resource(Resources::AccessType::Read).image->mipLevelExtent(0),
-              rtOutput.m_primaryLinearViewZ, getSceneManager().getCamera().getShaderConstants(),
-              ds1Jitter, ds1MissLinearViewZ);
-            m_common->metaPostFx().darkSoulsLook().dispatchComposite(this,
-              rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite), rtOutput.m_primaryLinearViewZ,
-              ds1Jitter, ds1MissLinearViewZ);
-          } else if (ds1Grading.isEnabled()) {
-            const Resources::Resource& finalOut = rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite);
-            const VkExtent3D extent = finalOut.image->mipLevelExtent(0);
-            ds1Grading.dispatch(this, finalOut, extent);
-          }
+        // NV-DXVK start: DS1 port - the game's depth of field, bloom and ColAdj (after the lens effects, as the
+        // game's filters follow its scene). With the game's image pipeline off, nothing DS1 runs here: the
+        // frame is stock Remix (its tonemapper, auto exposure and bloom).
+        if (ds1Look) {
+          DxvkDarkSoulsLook& ds1LookPass = m_common->metaPostFx().darkSoulsLook();
+          ds1LookPass.dispatchDof(this,
+            rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite), rtOutput.m_primaryLinearViewZ,
+            ds1Jitter, ds1MissLinearViewZ);
+          ds1LookPass.dispatchShafts(this,
+            rtOutput.m_finalOutput.resource(Resources::AccessType::Read).image->mipLevelExtent(0),
+            rtOutput.m_primaryLinearViewZ, getSceneManager().getCamera().getShaderConstants(),
+            ds1Jitter, ds1MissLinearViewZ);
+          ds1LookPass.dispatchComposite(this,
+            rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite), rtOutput.m_primaryLinearViewZ,
+            ds1Jitter, ds1MissLinearViewZ);
         }
         // NV-DXVK end
 
@@ -1599,6 +1553,9 @@ namespace dxvk {
       const float exposure = DxvkDarkSoulsExposure::drawnExposure();
       constants.ds1Ambient.skyGamma = RtxOptions::skyForceHDR() ? 1u : 2u;
       constants.ds1Ambient.skyUnexpose = exposure > 0.0f ? 1.0f / exposure : 1.0f;
+    } else if (RtxOptions::skyForceHDR()) {
+      // Without the look: decode the game's display values as stock Remix's 8-bit sRGB sky target would.
+      constants.ds1Ambient.skyGamma = 1;
     }
 
     // Ray miss value handling
@@ -2118,10 +2075,7 @@ namespace dxvk {
 
     const bool resetToneMapperHistory = m_resetHistory || getSceneManager().getCamera().isCameraCut();
     setFramePassStage(RtxFramePassStage::ToneMapping);
-    // DS1 port: following the game's exposure means the global tonemapper (the fork that DS1 was
-    // tuned on had no local tonemapper): the game's exposure and its saturate curve live there.
-    const bool ds1GlobalTonemap = DxvkDarkSoulsExposure::followGame();
-    if (RtxOptions::tonemappingMode() == TonemappingMode::Global || ds1GlobalTonemap) {
+    if (RtxOptions::tonemappingMode() == TonemappingMode::Global) {
       DxvkToneMapping& toneMapper = m_common->metaToneMapping();
       toneMapper.dispatch(this,
         getResourceManager().getSampler(VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER),
@@ -2132,7 +2086,7 @@ namespace dxvk {
         autoExposure.enabled());
     }
     DxvkLocalToneMapping& localTonemapper = m_common->metaLocalToneMapping();
-    if (localTonemapper.isActive() && !ds1GlobalTonemap) {
+    if (localTonemapper.isActive()) {
       localTonemapper.dispatch(this,
         getResourceManager().getSampler(VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE),
         autoExposure.getExposureTexture().view,

@@ -15,25 +15,22 @@ namespace dxvk {
   // dark areas stay dark.
   //
   // The game lights in gamma space (no sRGB read or write on any lit draw): the
-  // texture's stored value times the light times the exposure, saturated. A
-  // multiplier E on gamma-space colour is E^2.2 on linear radiance, so with
-  // followGame Remix's tonemapper uses
-  //   exposure = calibration * (c135.x / c135.y)^2.2
-  // (set each frame by the DS1 proxy) instead of metering its own image, and
-  // with gameCurve its tone curve is the game's saturate.
+  // texture's stored value times the light times the exposure, saturated. The DS1
+  // look (rtx_dark_souls_look.h) applies that exposure in its scene pass; a
+  // multiplier E on gamma-space colour is E^2.2 on linear radiance, which the
+  // passes that still expose linear radiance use (unlit sprites' compensation,
+  // DLSS-NR's fast tonemap). With the look off nothing here applies: Remix meters
+  // and tonemaps its own image.
   class DxvkDarkSoulsExposure {
   public:
-    // True when the game's exposure replaces Remix's auto exposure this frame.
-    static bool replacesAutoExposure() { return followGame() && gameActive(); }
+    // True when the game's exposure replaces Remix's auto exposure this frame: while the DS1 look runs.
+    static bool replacesAutoExposure();
 
-    // Multiplier on top of rtx.tonemap.exposureBias: calibration * game exposure, or 1.
-    static float factor() { return replacesAutoExposure() ? calibration() * linearExposure() : 1.0f; }
+    // Multiplier on top of rtx.tonemap.exposureBias: the game's exposure on linear radiance, or 1.
+    static float factor() { return replacesAutoExposure() ? linearExposure() : 1.0f; }
 
     // The game's exposure as a multiplier on linear radiance.
     static float linearExposure() { return std::pow(std::max(gameExposureValue(), 0.0f), 2.2f); }
-
-    // True when the tonemapper should end in the game's saturate instead of an operator.
-    static bool replacesToneCurve() { return replacesAutoExposure() && gameCurve(); }
 
     // The game's exposure (c135.x / c135.y): metered on Remix's frame when that runs, else the
     // game's last value, 1 before the proxy sent one.
@@ -65,16 +62,6 @@ namespace dxvk {
     static void adapt(float lum);
 
     static void showImguiSettings();
-
-    RTX_OPTION("rtx.ds1Exposure", bool, followGame, true,
-               "Use the game's own exposure (its per-area, adapted ToneMap value c135.x / c135.y, set each frame by the DS1 "
-               "proxy) instead of Remix's auto exposure.");
-    RTX_OPTION("rtx.ds1Exposure", float, calibration, 1.0f,
-               "Scale from the game's exposure to Remix's: Remix exposure = calibration * game exposure^2.2. One value for "
-               "the whole game.");
-    RTX_OPTION("rtx.ds1Exposure", bool, gameCurve, true,
-               "While following the game's exposure, tonemap with the game's curve, a plain saturate (operator None), "
-               "instead of rtx.tonemap.tonemapOperator.");
 
     // Game state, set by the proxy. Never saved.
     RTX_OPTION_FLAG("rtx.ds1Exposure", bool, gameActive, false, RtxOptionFlags::NoSave,

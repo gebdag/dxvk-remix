@@ -14,8 +14,8 @@
 #include "rtx_options.h"
 #include "rtx_postFx.h"
 #include "rtx_tone_mapping.h"
-#include "rtx_dark_souls_dof.h"
-#include "rtx_dark_souls_grading.h"
+#include "rtx_local_tone_mapping.h"
+#include "rtx_dark_souls_look.h"
 #include "rtx_dark_souls_exposure.h"
 #include "rtx_dark_souls_ambient.h"
 #include "rtx_dark_souls_swamp.h"
@@ -91,13 +91,15 @@ namespace dxvk {
     showParticles();
     DxvkDarkSoulsSwamp::showImguiSettings();
 
-    postFx.darkSoulsGrading().showImguiSettings();
-    postFx.darkSoulsDof().showImguiSettings();
-
     if (ImGui::CollapsingHeader("Tonemapper", kOpen)) {
       ImGui::Indent();
-      // The global tonemapper's own settings (it runs while DS1 follows the game's exposure).
-      ctx->getCommonObjects()->metaToneMapping().showImguiSettings();
+      // Remix's own tonemapper, as in Post-Processing > Tonemapping.
+      RemixGui::Combo("Tonemapping Mode", &RtxOptions::tonemappingModeObject(), "Global\0Local\0");
+      if (RtxOptions::tonemappingMode() == TonemappingMode::Global) {
+        ctx->getCommonObjects()->metaToneMapping().showImguiSettings();
+      } else {
+        ctx->getCommonObjects()->metaLocalToneMapping().showImguiSettings();
+      }
       ImGui::Unindent();
     }
 

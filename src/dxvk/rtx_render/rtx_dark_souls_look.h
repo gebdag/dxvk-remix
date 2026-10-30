@@ -75,8 +75,9 @@ namespace dxvk {
 
     RTX_OPTION("rtx.ds1Look", bool, enable, true,
                "Run Dark Souls' own image pipeline on the path-traced radiance (its exposure, fog and scattering, 8-bit "
-               "scene clip, bloom and ColAdj grade, with the values the DS1 proxy reads from the game each frame) instead "
-               "of Remix's tonemapper, bloom, DS1 haze pass and DS1 grading.");
+               "scene clip, bloom, depth of field and ColAdj grade, with the values the DS1 proxy reads from the game each "
+               "frame) instead of Remix's auto exposure, tonemapper and bloom. Off = stock Remix image processing (the "
+               "Post-Processing settings), with no DS1 treatment.");
     RTX_OPTION("rtx.ds1Look", bool, hazeEnable, true, "Apply the game's fog and sky scattering in the scene pass.");
     RTX_OPTION("rtx.ds1Look", bool, bloomEnable, true, "Apply the game's bloom in the composite.");
     RTX_OPTION("rtx.ds1Look", bool, dofEnable, true, "Apply the game's depth of field (FRPG_Fil_Dof) after the scene pass.");

@@ -151,10 +151,6 @@ namespace dxvk {
         RemixGui::DragFloat("Vignette Radius", &vignetteRadiusObject(), 0.001f, 0.0f, 1.4f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
         RemixGui::DragFloat("Vignette Softness", &vignetteSoftnessObject(), 0.001f, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
       }
-
-      // DS1 port: each pass draws its own collapsing header.
-      m_darkSoulsDof.showImguiSettings();
-      m_darkSoulsGrading.showImguiSettings();
     }
   }
 

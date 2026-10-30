@@ -518,6 +518,10 @@ namespace dxvk {
       const float exposure = DxvkDarkSoulsExposure::drawnExposure();
       compositeArgs.ds1SkyGamma = RtxOptions::skyForceHDR() ? 1u : 2u;
       compositeArgs.ds1SkyUnexpose = exposure > 0.0f ? 1.0f / exposure : 1.0f;
+    } else if (RtxOptions::skyForceHDR()) {
+      // Without the look: the float sky target still holds the game's display values; decode them as the
+      // 8-bit sRGB sky target stock Remix would have used, the game's exposure left in.
+      compositeArgs.ds1SkyGamma = 1;
     }
 
     const bool sparseRenderingEnabled = rtOutput.m_raytraceArgs.sparseRenderingArgs.mode != SparseRenderingMode::Off;

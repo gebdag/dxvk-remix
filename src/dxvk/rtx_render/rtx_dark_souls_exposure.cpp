@@ -1,4 +1,5 @@
 #include "rtx_dark_souls_exposure.h"
+#include "rtx_dark_souls_look.h"
 #include "rtx_imgui.h"
 #include "../imgui/imgui.h"
 #include "../../util/log/log.h"
@@ -8,6 +9,10 @@
 #include <cmath>
 
 namespace dxvk {
+
+  bool DxvkDarkSoulsExposure::replacesAutoExposure() {
+    return DxvkDarkSoulsLook::isActive();
+  }
 
   void DxvkDarkSoulsExposure::adapt(float lum) {
     if (!std::isfinite(lum) || lum <= 0.0f) {
@@ -36,9 +41,6 @@ namespace dxvk {
       return;
     }
     ImGui::Indent();
-    RemixGui::Checkbox("Follow the Game's Exposure", &followGameObject());
-    RemixGui::DragFloat("Calibration", &calibrationObject(), 0.01f, 0.01f, 16.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
-    RemixGui::Checkbox("Game's Tone Curve (saturate)", &gameCurveObject());
     if (!gameActive()) {
       ImGui::TextDisabled("No exposure from the game yet (needs the DS1 proxy and a lit draw).");
     } else {

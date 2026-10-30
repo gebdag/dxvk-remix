@@ -123,8 +123,7 @@ namespace dxvk {
       InverseTonemappingShader::getShader();
     }
 
-    // DS1 port: RtxContext::dispatchToneMapping uses the global tonemapper while DS1 follows the game's exposure.
-    if (RtxOptions::tonemappingMode() != TonemappingMode::Global && !DxvkDarkSoulsExposure::followGame()) {
+    if (RtxOptions::tonemappingMode() != TonemappingMode::Global) {
       return;
     }
 
@@ -232,10 +231,10 @@ namespace dxvk {
 
     // Prepare shader arguments
     ToneMappingHistogramArgs pushArgs = {};
-    pushArgs.enableAutoExposure = autoExposureEnabled && !DxvkDarkSoulsExposure::replacesAutoExposure();
+    pushArgs.enableAutoExposure = autoExposureEnabled;
     pushArgs.toneCurveMinStops = toneCurveMinStops();
     pushArgs.toneCurveMaxStops = toneCurveMaxStops();
-    pushArgs.exposureFactor = exp2f(exposureBias() + RtxOptions::calcUserEVBias()) * DxvkDarkSoulsExposure::factor();
+    pushArgs.exposureFactor = exp2f(exposureBias() + RtxOptions::calcUserEVBias());
 
     ctx->pushConstants(0, sizeof(pushArgs), &pushArgs);
 
@@ -288,18 +287,16 @@ namespace dxvk {
 
     // Prepare shader arguments
     ToneMappingApplyToneMappingArgs pushArgs = {};
-    // DS1 port: with the game's exposure, its tone curve is a saturate (the shader's final clamp).
-    pushArgs.toneMappingEnabled = tonemappingEnabled() && !DxvkDarkSoulsExposure::replacesToneCurve();
+    pushArgs.toneMappingEnabled = tonemappingEnabled();
     pushArgs.colorGradingEnabled = colorGradingEnabled();
-    // DS1 port: the game's exposure replaces Remix's metering when followed.
-    pushArgs.enableAutoExposure = autoExposureEnabled && !DxvkDarkSoulsExposure::replacesAutoExposure();
+    pushArgs.enableAutoExposure = autoExposureEnabled;
     pushArgs.finalizeWithACES = finalizeWithACES();
     pushArgs.useLegacyACES = RtxOptions::useLegacyACES();
 
     // Tonemap args
     pushArgs.shadowContrast = shadowContrast();
     pushArgs.shadowContrastEnd = shadowContrastEnd();
-    pushArgs.exposureFactor = exp2f(exposureBias() + RtxOptions::calcUserEVBias()) * DxvkDarkSoulsExposure::factor(); // ev100
+    pushArgs.exposureFactor = exp2f(exposureBias() + RtxOptions::calcUserEVBias()); // ev100
     pushArgs.toneCurveMinStops = toneCurveMinStops();
     pushArgs.toneCurveMaxStops = toneCurveMaxStops();
     pushArgs.debugMode = tuningMode();
