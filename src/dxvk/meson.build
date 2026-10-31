@@ -246,6 +246,8 @@ dxvk_src = files([
   'rtx_render/rtx_ds1_occlusion_depth.h',
   'rtx_render/rtx_dark_souls_swamp.cpp',
   'rtx_render/rtx_dark_souls_swamp.h',
+  'rtx_render/rtx_dark_souls_ripples.cpp',
+  'rtx_render/rtx_dark_souls_ripples.h',
   'rtx_render/rtx_dark_souls_look.cpp',
   'rtx_render/rtx_dark_souls_look.h',
   'rtx_render/rtx_ds1_menu.cpp',
