@@ -33,18 +33,19 @@ namespace dxvk {
                "Size of a ripple cell in metres. The shortest ripple that travels is about 8 cells long.");
     RTX_OPTION("rtx.ds1Ripple", float, stepRate, 60.0f, "Ripple simulation steps per second (fixed, independent of the frame rate).");
     RTX_OPTION("rtx.ds1Ripple", int, maxStepsPerFrame, 3, "At most this many steps per frame; time beyond is dropped, never caught up.");
-    RTX_OPTION("rtx.ds1Ripple", float, gravityScale, 1.0f,
+    RTX_OPTION("rtx.ds1Ripple", float, gravityScale, 0.8f,
                "Scale on gravity: 1 gives real water's wave speeds (about 0.5 m/s at 18 cm wavelength).");
-    RTX_OPTION("rtx.ds1Ripple", float, damping, 0.3f, "Damping on every wavelength, per second (the paper's alpha).");
-    RTX_OPTION("rtx.ds1Ripple", float, viscosity, 3.0e-4f,
+    RTX_OPTION("rtx.ds1Ripple", float, damping, 2.4f, "Damping on every wavelength, per second (the paper's alpha).");
+    RTX_OPTION("rtx.ds1Ripple", float, viscosity, 1.4e-3f,
                "Viscous damping 2 nu k^2 in m^2/s: short ripples die fast, long ones travel. Clean water is 1e-6; "
-               "this stands in for the surface film and the spreading the grid cannot resolve.");
+               "this stands in for the surface film and the spreading the grid cannot resolve. The step holds it at "
+               "its stability limit, 0.1 cellSize^2 * stepRate (0.00135 at 1.5 cm and 60 steps).");
     RTX_OPTION("rtx.ds1Ripple", float, legRadius, 0.06f, "Radius of the wading legs in metres: the bow sits this far ahead.");
     RTX_OPTION("rtx.ds1Ripple", float, sourceRadius, 0.04f, "Width (Gaussian sigma) of the bow and trough, in metres.");
     RTX_OPTION("rtx.ds1Ripple", float, bowEfficiency, 0.1f,
                "Share of the stagnation head U^2 / 2g the legs raise as waves (0.1: about 1 cm at walking pace).");
     RTX_OPTION("rtx.ds1Ripple", float, maxBowHeight, 0.03f, "Highest bow in metres, however fast the player moves.");
-    RTX_OPTION("rtx.ds1Ripple", float, normalScale, 1.0f, "Scale on the ripple slope added to the water normal (1 = the real slope).");
+    RTX_OPTION("rtx.ds1Ripple", float, normalScale, 0.5f, "Scale on the ripple slope added to the water normal (1 = the real slope).");
     RTX_OPTION("rtx.ds1Ripple", float, borderFade, 0.75f, "Metres over which ripples fade towards the window's border.");
   };
 
