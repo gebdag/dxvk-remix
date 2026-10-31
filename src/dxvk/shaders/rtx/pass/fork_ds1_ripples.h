@@ -28,10 +28,16 @@
 // so the window follows the player by whole cells without moving any data. Three passes per frame:
 //   ds1_ripple_map    each cell's water height (a vertical ray to the first DS1 water surface), cells that
 //                     just entered the window cleared, and the wading probe under the player;
-//   ds1_ripple_step   one iWave step: h' = (h (2 - a dt) - h_prev - G (K * h)) / (1 + a dt) + source, cells
-//                     without water held at 0 (they reflect the waves like the paper's obstructions);
+//   ds1_ripple_step   one iWave step: h' = (h (2 - a dt) - h_prev - G (K * h)) / (1 + a dt) + viscous damping
+//                     + source, cells without water held at 0 (they reflect the waves like the paper's
+//                     obstructions);
 //   ds1_ripple_slope  the slope of the field between its last two steps, for the water material.
 // Threads index window cells: thread (i, j) is cell origin + (i, j).
+//
+// Scales are real water's in metres (DS1 world units are metres): G makes waves of about 12 cells run at the
+// gravity wave speed sqrt(g / k) (within 10% from 8 to 16 cells, slower outside: the kernel's response is
+// not linear in k there); damping grows with k^2 like viscous damping, 2 nu k^2, so the grid's shortest
+// waves, which the kernel cannot move, die within a few steps instead of standing in place.
 
 #include "rtx/utility/shader_types.h"
 
@@ -44,6 +50,7 @@
 #define DS1_RIPPLE_BINDING_WATER         23
 #define DS1_RIPPLE_BINDING_PROBE         24
 #define DS1_RIPPLE_BINDING_SLOPE         25
+#define DS1_RIPPLE_BINDING_HEIGHT_NEXT   26
 
 #define DS1_RIPPLE_GROUP_SIZE            16
 #define DS1_RIPPLE_KERNEL_RADIUS         6
@@ -64,7 +71,7 @@
 // raised water bob; that sum is taken out along a Gaussian of 2 cells, which leaves the short waves alone.
 // A 5-point Laplacian of 0.03 lifts the response at the grid's finest scale above 0 (the paper's dips to
 // -0.09 there, which an explicit step amplifies). The response is then 0.24 at a 64-cell wavelength, 3.0
-// at 16, 5.18 at 10 (kDs1RippleKernelResponse10), 5.63 at most (kDs1RippleKernelResponseMax).
+// at 16, 4.39 at 12 (kDs1RippleKernelResponse12), 5.63 at most (kDs1RippleKernelResponseMax, at 8).
 static const float kDs1RippleKernel[7][7] = {
   {  1.0363555f,  0.5744606f,  0.1056878f, -0.0924828f, -0.0757679f, -0.0351083f, -0.0158860f },
   {  0.5744606f,  0.3794225f,  0.0274859f, -0.0977394f, -0.0699547f, -0.0323161f, -0.0149791f },
@@ -74,7 +81,7 @@ static const float kDs1RippleKernel[7][7] = {
   { -0.0351083f, -0.0323161f, -0.0255060f, -0.0179827f, -0.0120753f, -0.0081605f, -0.0056817f },
   { -0.0158860f, -0.0149791f, -0.0127082f, -0.0100059f, -0.0075815f, -0.0056817f, -0.0042725f },
 };
-static const float kDs1RippleKernelResponse10 = 5.179f;
+static const float kDs1RippleKernelResponse12 = 4.388f;
 static const float kDs1RippleKernelResponseMax = 5.629f;
 
 struct Ds1RippleMapArgs {
@@ -99,25 +106,30 @@ struct Ds1RippleStepArgs {
   uint gridSize;
   float cellSize;
 
-  // gravity * dt^2 in cell units, the paper's `gravity`.
+  // The paper's `gravity` (g dt^2 in cell units, scaled to the kernel's response).
   float gravity;
   // alpha * dt.
   float damping;
+  // 2 nu dt / cellSize^2: the step's viscous damping on the 5-point Laplacian of the cell's velocity.
+  float viscosity;
   // Cells over which the field is damped to 0 at the window's border, so waves leave instead of
   // bouncing back.
   float borderCells;
-  // Peak height of the displaced water (metres): the player pushes a Gaussian of it from sourceFrom
-  // to sourceTo this step.
-  float sourceAmplitude;
 
-  vec2 sourceFrom;
-  vec2 sourceTo;
+  // The wading player's legs push a bow of water ahead and leave a trough behind: a height of
+  // bowHeight at legOffset ahead of them, minus the same behind, both Gaussians. That bow moves and
+  // grows with them and is gone once they stand still; each step adds its change, at the start of the
+  // step (position, direction of travel, height ...0) and at its end (...1), which is what radiates.
+  vec2 position0;
+  vec2 position1;
+  vec2 direction0;
+  vec2 direction1;
 
-  // -1 / (2 sigma^2) of the source Gaussian, in 1 / metres^2.
-  float sourceExponent;
-  float pad0;
-  float pad1;
-  float pad2;
+  float bowHeight0;
+  float bowHeight1;
+  float legOffset;
+  // -1 / (2 sigma^2) of the Gaussians, in 1 / metres^2.
+  float bowExponent;
 };
 
 struct Ds1RippleSlopeArgs {

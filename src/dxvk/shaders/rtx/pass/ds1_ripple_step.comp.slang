@@ -20,10 +20,10 @@
 * DEALINGS IN THE SOFTWARE.
 */
 
-// Fork (DS1): one iWave step of the ripple field (fork_ds1_ripples.h), written over the previous step's
-// heights (each cell reads only its own previous height). Cells without water and cells outside the window
-// count as 0. The wading player pushes a Gaussian of water from where they were to where they are: it adds
-// no water overall, so the field keeps no bump where they stand still.
+// Fork (DS1): one iWave step of the ripple field (fork_ds1_ripples.h): the newest heights and the step before
+// them in, the next heights out. Cells without water and cells outside the window count as 0. The wading
+// player's bow (fork_ds1_ripples.h, Ds1RippleStepArgs) adds its change over the step: it adds no water
+// overall and returns to nothing once they stop, so the field keeps no bump where they stand.
 
 #include "rtx/pass/fork_ds1_ripples.h"
 
@@ -32,6 +32,9 @@ RWTexture2D<float> height;
 
 layout(binding = DS1_RIPPLE_BINDING_HEIGHT_PREV)
 RWTexture2D<float> heightPrev;
+
+layout(binding = DS1_RIPPLE_BINDING_HEIGHT_NEXT)
+RWTexture2D<float> heightNext;
 
 layout(binding = DS1_RIPPLE_BINDING_WATER)
 RWTexture2D<float> water;
@@ -50,11 +53,23 @@ int2 wrapTexel(int2 cell, int n)
   return ((cell % n) + n) % n;
 }
 
-float source(vec2 position)
+// The step before's height of a window cell: 0 outside the window and where there is no water.
+float previousAt(int2 windowCell)
 {
-  const vec2 toFrom = position - vec2(cb.sourceFrom.x, cb.sourceFrom.y);
-  const vec2 toTo = position - vec2(cb.sourceTo.x, cb.sourceTo.y);
-  return cb.sourceAmplitude * (exp(dot(toTo, toTo) * cb.sourceExponent) - exp(dot(toFrom, toFrom) * cb.sourceExponent));
+  const int n = int(cb.gridSize);
+  if (any(windowCell < 0) || any(windowCell >= n))
+  {
+    return 0.0f;
+  }
+  const int2 texel = wrapTexel(int2(cb.origin.x, cb.origin.y) + windowCell, n);
+  return water[texel] > DS1_RIPPLE_NO_WATER ? heightPrev[texel] : 0.0f;
+}
+
+float bow(vec2 position, vec2 at, vec2 direction, float bowHeight)
+{
+  const vec2 ahead = position - (at + direction * cb.legOffset);
+  const vec2 behind = position - (at - direction * cb.legOffset);
+  return bowHeight * (exp(dot(ahead, ahead) * cb.bowExponent) - exp(dot(behind, behind) * cb.bowExponent));
 }
 
 [shader("compute")]
@@ -85,11 +100,12 @@ void main(uint2 thread : SV_DispatchThreadID, uint2 groupThread : SV_GroupThread
     return;
   }
 
-  const int2 cell = origin + int2(thread);
+  const int2 windowCell = int2(thread);
+  const int2 cell = origin + windowCell;
   const int2 texel = wrapTexel(cell, n);
   if (water[texel] <= DS1_RIPPLE_NO_WATER)
   {
-    heightPrev[texel] = 0.0f;
+    heightNext[texel] = 0.0f;
     return;
   }
 
@@ -104,17 +120,29 @@ void main(uint2 thread : SV_DispatchThreadID, uint2 groupThread : SV_GroupThread
   }
 
   const float h = tile[centre.y][centre.x];
-  float next = (h * (2.0f - cb.damping) - heightPrev[texel] - cb.gravity * verticalDerivative) / (1.0f + cb.damping);
+  const float hPrev = previousAt(windowCell);
+  float next = (h * (2.0f - cb.damping) - hPrev - cb.gravity * verticalDerivative) / (1.0f + cb.damping);
+
+  // Viscous damping, dv/dt = 2 nu Laplacian(v) on the velocity v = h - hPrev: strongest on the shortest waves.
+  const float velocityLaplacian =
+    (tile[centre.y][centre.x + 1] - previousAt(windowCell + int2(1, 0))) +
+    (tile[centre.y][centre.x - 1] - previousAt(windowCell - int2(1, 0))) +
+    (tile[centre.y + 1][centre.x] - previousAt(windowCell + int2(0, 1))) +
+    (tile[centre.y - 1][centre.x] - previousAt(windowCell - int2(0, 1))) -
+    4.0f * (h - hPrev);
+  next += cb.viscosity * velocityLaplacian;
 
   const float4 wading = probe[int2(0, 0)];
   if (wading.x > 0.5f && wading.y > 0.5f)
   {
-    next += source((vec2(cell) + 0.5f) * cb.cellSize);
+    const vec2 position = (vec2(cell) + 0.5f) * cb.cellSize;
+    next += bow(position, vec2(cb.position1.x, cb.position1.y), vec2(cb.direction1.x, cb.direction1.y), cb.bowHeight1) -
+            bow(position, vec2(cb.position0.x, cb.position0.y), vec2(cb.direction0.x, cb.direction0.y), cb.bowHeight0);
   }
 
   // Damped to 0 over the window's outer cells.
   const int edge = min(min(int(thread.x), int(thread.y)), min(n - 1 - int(thread.x), n - 1 - int(thread.y)));
   next *= lerp(0.8f, 1.0f, saturate(float(edge) / cb.borderCells));
 
-  heightPrev[texel] = next;
+  heightNext[texel] = next;
 }

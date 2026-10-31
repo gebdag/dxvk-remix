@@ -40,6 +40,9 @@ RWTexture2D<float> height;
 layout(binding = DS1_RIPPLE_BINDING_HEIGHT_PREV)
 RWTexture2D<float> heightPrev;
 
+layout(binding = DS1_RIPPLE_BINDING_HEIGHT_NEXT)
+RWTexture2D<float> heightNext;
+
 layout(binding = DS1_RIPPLE_BINDING_WATER)
 RWTexture2D<float> water;
 
@@ -145,6 +148,7 @@ void main(uint2 thread : SV_DispatchThreadID)
   {
     height[texel] = 0.0f;
     heightPrev[texel] = 0.0f;
+    heightNext[texel] = 0.0f;
   }
 
   const vec3 top = vec3((float(cell.x) + 0.5f) * cb.cellSize, cb.rayTop, (float(cell.y) + 0.5f) * cb.cellSize);
