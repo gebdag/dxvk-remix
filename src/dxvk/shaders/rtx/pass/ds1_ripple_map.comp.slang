@@ -22,8 +22,9 @@
 
 // Fork (DS1): the ripple field's water map (fork_ds1_ripples.h). Each cell's water height is the first DS1
 // water surface (textureFlags bit 26) straight below the ray top; cells without one hold no water. Cells
-// that were outside last frame's window start at rest. Thread (0, 0) also probes under the player: they
-// wade when the water there lies above the first solid ground (characters do not count as ground).
+// that were outside last frame's window start at rest. In the collision window, a water cell is inside a
+// body when rays along +-x and +-z just above the waterline all hit a character (a skinned surface, textureFlags
+// bit 29) within reach: the shins, a robe's hem, an enemy wading beside the player.
 
 #include "rtx/pass/fork_ds1_ripples.h"
 #include "rtx/pass/instance_definitions.h"
@@ -46,8 +47,11 @@ RWTexture2D<float> heightNext;
 layout(binding = DS1_RIPPLE_BINDING_WATER)
 RWTexture2D<float> water;
 
-layout(binding = DS1_RIPPLE_BINDING_PROBE)
-RWTexture2D<float4> probe;
+layout(binding = DS1_RIPPLE_BINDING_OCCUPANCY)
+RWTexture2D<float> occupancy;
+
+layout(binding = DS1_RIPPLE_BINDING_OCCUPANCY_PREV)
+RWTexture2D<float> occupancyPrev;
 
 layout(push_constant)
 ConstantBuffer<Ds1RippleMapArgs> cb;
@@ -94,35 +98,29 @@ float traceWater(vec3 origin, float length)
   return -1.0f;
 }
 
-// The distance down to the first opaque surface that is not a character, or -1.
-float traceGround(vec3 origin, float length)
+// Whether the first surface along the ray within reach is a character's. Both faces count: from inside a
+// leg the ray meets its back faces.
+bool hitsBody(vec3 origin, vec3 direction)
 {
   RayDesc ray;
   ray.Origin = origin;
-  ray.Direction = vec3(0.0f, -1.0f, 0.0f);
+  ray.Direction = direction;
   ray.TMin = 0.0f;
-  ray.TMax = length;
+  ray.TMax = cb.bodyReach;
 
-  // The player's own body and anything they carry lie in the way first.
-  for (uint layer = 0; layer < 6; ++layer)
+  RayQuery<0> rayQuery = RayQuery<0>();
+  rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES, OBJECT_MASK_OPAQUE, ray);
+  while (rayQuery.Proceed())
   {
-    RayQuery<0> rayQuery = RayQuery<0>();
-    rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_CULL_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES, OBJECT_MASK_OPAQUE, ray);
-    while (rayQuery.Proceed())
-    {
-    }
-    if (rayQuery.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
-    {
-      return -1.0f;
-    }
-    const float hitT = rayQuery.CommittedRayT();
-    if ((surfaceFlags(rayQuery.CommittedInstanceID(), rayQuery.CommittedGeometryIndex()) & DS1_RIPPLE_SKINNED_FLAG) == 0)
-    {
-      return hitT;
-    }
-    ray.TMin = hitT + 1e-3f;
   }
-  return -1.0f;
+  return rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT &&
+         (surfaceFlags(rayQuery.CommittedInstanceID(), rayQuery.CommittedGeometryIndex()) & DS1_RIPPLE_SKINNED_FLAG) != 0;
+}
+
+bool insideBody(vec3 position)
+{
+  return hitsBody(position, vec3(1.0f, 0.0f, 0.0f)) && hitsBody(position, vec3(-1.0f, 0.0f, 0.0f)) &&
+         hitsBody(position, vec3(0.0f, 0.0f, 1.0f)) && hitsBody(position, vec3(0.0f, 0.0f, -1.0f));
 }
 
 int2 wrapTexel(int2 cell, int n)
@@ -143,8 +141,8 @@ void main(uint2 thread : SV_DispatchThreadID)
   const int2 cell = int2(cb.origin.x, cb.origin.y) + int2(thread);
   const int2 texel = wrapTexel(cell, n);
   const int2 previousOrigin = int2(cb.previousOrigin.x, cb.previousOrigin.y);
-  const bool entered = any(cell < previousOrigin) || any(cell >= previousOrigin + n);
-  if (cb.resetAll != 0 || entered)
+  const bool entered = cb.resetAll != 0 || any(cell < previousOrigin) || any(cell >= previousOrigin + n);
+  if (entered)
   {
     height[texel] = 0.0f;
     heightPrev[texel] = 0.0f;
@@ -153,17 +151,17 @@ void main(uint2 thread : SV_DispatchThreadID)
 
   const vec3 top = vec3((float(cell.x) + 0.5f) * cb.cellSize, cb.rayTop, (float(cell.y) + 0.5f) * cb.cellSize);
   const float waterT = traceWater(top, cb.rayLength);
-  water[texel] = waterT >= 0.0f ? cb.rayTop - waterT : DS1_RIPPLE_NO_WATER;
+  const float waterHeight = waterT >= 0.0f ? cb.rayTop - waterT : DS1_RIPPLE_NO_WATER;
+  water[texel] = waterHeight;
 
-  if (thread.x == 0 && thread.y == 0)
+  // Just above the waterline: the water surface itself is not opaque and does not count anyway.
+  const int2 collisionCell = int2(thread) - int2(cb.collisionMin.x, cb.collisionMin.y);
+  const bool inCollision = all(collisionCell >= 0) && all(collisionCell < int(cb.collisionSize));
+  const float body = inCollision && waterT >= 0.0f && insideBody(vec3(top.x, waterHeight + 0.02f, top.z)) ? 1.0f : 0.0f;
+  occupancy[texel] = body;
+  // A body already standing in a cell that just entered the window has pushed no water yet.
+  if (entered)
   {
-    const float probeWater = traceWater(cb.probe, cb.rayLength);
-    const float probeGround = traceGround(cb.probe, cb.rayLength);
-    // Ground under the water, a couple of centimetres down at least (wet floors are no water to wade).
-    const bool wading = probeWater >= 0.0f && (probeGround < 0.0f || probeGround > probeWater + 0.02f);
-    const float wasWading = cb.resetAll != 0 ? 0.0f : probe[int2(0, 0)].x;
-    probe[int2(0, 0)] = float4(wading ? 1.0f : 0.0f, wasWading,
-                               probeWater >= 0.0f ? cb.probe.y - probeWater : DS1_RIPPLE_NO_WATER,
-                               probeGround >= 0.0f ? cb.probe.y - probeGround : DS1_RIPPLE_NO_WATER);
+    occupancyPrev[texel] = body;
   }
 }

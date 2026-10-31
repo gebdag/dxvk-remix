@@ -27,10 +27,12 @@
 // window of world cells around the player, stored toroidally: cell (x, z) lives in texel (x mod N, z mod N),
 // so the window follows the player by whole cells without moving any data. Three passes per frame:
 //   ds1_ripple_map    each cell's water height (a vertical ray to the first DS1 water surface), cells that
-//                     just entered the window cleared, and the wading probe under the player;
+//                     just entered the window cleared, and in the collision window around the player which
+//                     cells a character's body fills at the waterline;
 //   ds1_ripple_step   one iWave step: h' = (h (2 - a dt) - h_prev - G (K * h)) / (1 + a dt) + viscous damping
-//                     + source, cells without water held at 0 (they reflect the waves like the paper's
-//                     obstructions);
+//                     + source, cells without water or inside a body held at 0 (they reflect the waves like
+//                     the paper's obstructions). The source is the bodies' movement: water rises around
+//                     cells a body has just filled and sinks around cells it has just left;
 //   ds1_ripple_slope  the slope of the field between its last two steps, for the water material.
 // Threads index window cells: thread (i, j) is cell origin + (i, j).
 //
@@ -48,9 +50,11 @@
 #define DS1_RIPPLE_BINDING_HEIGHT        21
 #define DS1_RIPPLE_BINDING_HEIGHT_PREV   22
 #define DS1_RIPPLE_BINDING_WATER         23
-#define DS1_RIPPLE_BINDING_PROBE         24
+#define DS1_RIPPLE_BINDING_OCCUPANCY     24
 #define DS1_RIPPLE_BINDING_SLOPE         25
 #define DS1_RIPPLE_BINDING_HEIGHT_NEXT   26
+// The bodies at the waterline as of the last step (DS1_RIPPLE_BINDING_OCCUPANCY: as of this frame).
+#define DS1_RIPPLE_BINDING_OCCUPANCY_PREV 27
 
 #define DS1_RIPPLE_GROUP_SIZE            16
 #define DS1_RIPPLE_KERNEL_RADIUS         6
@@ -96,9 +100,16 @@ struct Ds1RippleMapArgs {
   // The vertical water rays run from rayTop down rayLength.
   float rayTop;
 
-  // Where the wading probe looks down from (the player's head).
-  vec3 probe;
   float rayLength;
+  // A cell is inside a body when rays along +-x and +-z, bodyReach long, all hit a character (a skinned
+  // surface) at the waterline: a leg is narrower than that, the gap between two legs is open sideways.
+  float bodyReach;
+  // The bodies are looked for in the window cells collisionMin .. collisionMin + collisionSize - 1.
+  uint collisionSize;
+  uint pad0;
+  ivec2 collisionMin;
+  uint pad1;
+  uint pad2;
 };
 
 struct Ds1RippleStepArgs {
@@ -116,20 +127,11 @@ struct Ds1RippleStepArgs {
   // bouncing back.
   float borderCells;
 
-  // The wading player's legs push a bow of water ahead and leave a trough behind: a height of
-  // bowHeight at legOffset ahead of them, minus the same behind, both Gaussians. That bow moves and
-  // grows with them and is gone once they stand still; each step adds its change, at the start of the
-  // step (position, direction of travel, height ...0) and at its end (...1), which is what radiates.
-  vec2 position0;
-  vec2 position1;
-  vec2 direction0;
-  vec2 direction1;
-
-  float bowHeight0;
-  float bowHeight1;
-  float legOffset;
-  // -1 / (2 sigma^2) of the Gaussians, in 1 / metres^2.
-  float bowExponent;
+  // The window cells collisionMin .. collisionMin + collisionSize - 1 hold the bodies.
+  ivec2 collisionMin;
+  uint collisionSize;
+  // Height of the water a body pushes aside per cell it fills, over the frame's steps (metres).
+  float displacement;
 };
 
 struct Ds1RippleSlopeArgs {

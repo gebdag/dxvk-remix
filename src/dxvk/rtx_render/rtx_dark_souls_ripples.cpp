@@ -29,7 +29,8 @@ namespace dxvk {
         RW_TEXTURE2D(DS1_RIPPLE_BINDING_HEIGHT_PREV)
         RW_TEXTURE2D(DS1_RIPPLE_BINDING_HEIGHT_NEXT)
         RW_TEXTURE2D(DS1_RIPPLE_BINDING_WATER)
-        RW_TEXTURE2D(DS1_RIPPLE_BINDING_PROBE)
+        RW_TEXTURE2D(DS1_RIPPLE_BINDING_OCCUPANCY)
+        RW_TEXTURE2D(DS1_RIPPLE_BINDING_OCCUPANCY_PREV)
       END_PARAMETER()
     };
 
@@ -43,7 +44,8 @@ namespace dxvk {
         RW_TEXTURE2D(DS1_RIPPLE_BINDING_HEIGHT_PREV)
         RW_TEXTURE2D(DS1_RIPPLE_BINDING_HEIGHT_NEXT)
         RW_TEXTURE2D(DS1_RIPPLE_BINDING_WATER)
-        RW_TEXTURE2D(DS1_RIPPLE_BINDING_PROBE)
+        RW_TEXTURE2D(DS1_RIPPLE_BINDING_OCCUPANCY)
+        RW_TEXTURE2D(DS1_RIPPLE_BINDING_OCCUPANCY_PREV)
       END_PARAMETER()
     };
 
@@ -64,11 +66,10 @@ namespace dxvk {
     PREWARM_SHADER_PIPELINE(Ds1RippleStepShader);
     PREWARM_SHADER_PIPELINE(Ds1RippleSlopeShader);
 
-    // A frame that moves the player more than this (metres) is a warp or a load, not wading.
-    constexpr float kMaxFrameMove = 1.0f;
-    // The player's velocity is smoothed over this time (seconds): the head sways as they walk.
-    constexpr float kVelocitySmoothing = 0.1f;
     constexpr float kGravity = 9.81f;
+    // A leg or a robe's hem at the waterline is narrower than this (metres); a cell is inside a body when
+    // rays this long along +-x and +-z all hit it.
+    constexpr float kBodyReach = 0.3f;
     // The water rays start this far above the head and reach this far down.
     constexpr float kRayAboveHead = 1.0f;
     constexpr float kRayLength = 8.0f;
@@ -84,7 +85,9 @@ namespace dxvk {
       Resources::Resource heights[3];
       uint32_t newest = 0;
       Resources::Resource water;
-      Resources::Resource probe;
+      // occupancy[current] holds the bodies at the waterline this frame, the other one as of the last step.
+      Resources::Resource occupancy[2];
+      uint32_t current = 0;
       Resources::Resource slope;
       bool reset = true;
       ivec2 origin { 0, 0 };
@@ -97,13 +100,6 @@ namespace dxvk {
       uint32_t steps = 0;
       float alpha = 0.0f;
       Vector3 head { 0.0f, 0.0f, 0.0f };
-      // The bow at the last step and now (Ds1RippleStepArgs).
-      vec2 position0 { 0.0f, 0.0f };
-      vec2 position1 { 0.0f, 0.0f };
-      vec2 direction0 { 1.0f, 0.0f };
-      vec2 direction1 { 1.0f, 0.0f };
-      float bowHeight0 = 0.0f;
-      float bowHeight1 = 0.0f;
       uint32_t textureIndex = BINDING_INDEX_INVALID;
       uint32_t samplerIndex = BINDING_INDEX_INVALID;
     };
@@ -113,21 +109,6 @@ namespace dxvk {
     // Fixed-step clock: time not yet stepped.
     double s_lastTime = -1.0;
     double s_accumulator = 0.0;
-    // The player's last position and smoothed velocity (x, z), and the bow as of the last step.
-    vec2 s_lastHead { 0.0f, 0.0f };
-    vec2 s_velocity { 0.0f, 0.0f };
-    vec2 s_bowPosition { 0.0f, 0.0f };
-    vec2 s_bowDirection { 1.0f, 0.0f };
-    float s_bowHeight = 0.0f;
-
-    vec2 normalized(vec2 v, vec2 fallback) {
-      const float length = std::hypot(v.x, v.y);
-      return length > 1e-4f ? vec2 { v.x / length, v.y / length } : fallback;
-    }
-
-    vec2 mix(vec2 a, vec2 b, float t) {
-      return vec2 { a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t };
-    }
 
     double nowSeconds() {
       using namespace std::chrono;
@@ -145,11 +126,13 @@ namespace dxvk {
       s_field.heights[1] = Resources::createImageResource(dctx, "DS1 ripple height B", extent, VK_FORMAT_R32_SFLOAT);
       s_field.heights[2] = Resources::createImageResource(dctx, "DS1 ripple height C", extent, VK_FORMAT_R32_SFLOAT);
       s_field.water = Resources::createImageResource(dctx, "DS1 ripple water", extent, VK_FORMAT_R32_SFLOAT);
-      s_field.probe = Resources::createImageResource(dctx, "DS1 ripple probe", VkExtent3D { 1, 1, 1 }, VK_FORMAT_R32G32B32A32_SFLOAT);
+      s_field.occupancy[0] = Resources::createImageResource(dctx, "DS1 ripple occupancy A", extent, VK_FORMAT_R32_SFLOAT);
+      s_field.occupancy[1] = Resources::createImageResource(dctx, "DS1 ripple occupancy B", extent, VK_FORMAT_R32_SFLOAT);
       s_field.slope = Resources::createImageResource(dctx, "DS1 ripple slope", extent, VK_FORMAT_R16G16B16A16_SFLOAT);
       s_field.gridSize = gridSize;
       s_field.cellSize = cellSize;
       s_field.newest = 0;
+      s_field.current = 0;
       s_field.reset = true;
     }
   }
@@ -179,23 +162,11 @@ namespace dxvk {
     // Fixed steps on the wall clock. A long frame (a load, a hitch) drops the time instead of catching up.
     const double stepTime = 1.0 / std::clamp(double(stepRate()), 10.0, 240.0);
     const double now = nowSeconds();
-    const vec2 position { head.x, head.z };
-    const float frameTime = s_lastTime < 0.0 ? 0.0f : float(std::min(now - s_lastTime, 0.25));
-    const bool warped = std::hypot(position.x - s_lastHead.x, position.y - s_lastHead.y) > kMaxFrameMove;
-    if (s_lastTime < 0.0 || s_field.reset || warped) {
+    if (s_lastTime < 0.0 || s_field.reset) {
       s_accumulator = 0.0;
-      s_velocity = vec2 { 0.0f, 0.0f };
-      s_bowPosition = position;
-      s_bowHeight = 0.0f;
     } else {
-      s_accumulator += frameTime;
-      if (frameTime > 0.0f) {
-        const float follow = 1.0f - std::exp(-frameTime / kVelocitySmoothing);
-        s_velocity.x += ((position.x - s_lastHead.x) / frameTime - s_velocity.x) * follow;
-        s_velocity.y += ((position.y - s_lastHead.y) / frameTime - s_velocity.y) * follow;
-      }
+      s_accumulator += std::min(now - s_lastTime, 0.25);
     }
-    s_lastHead = position;
     s_lastTime = now;
     const uint32_t maxSteps = uint32_t(std::clamp(maxStepsPerFrame(), 1, 8));
     uint32_t steps = uint32_t(s_accumulator / stepTime);
@@ -210,21 +181,6 @@ namespace dxvk {
     s_frame.steps = steps;
     s_frame.alpha = float(std::clamp(s_accumulator / stepTime, 0.0, 1.0));
     s_frame.head = head;
-    // A leg moving at U through water lifts it ahead by at most the stagnation head U^2 / 2g; the waves it
-    // sheds carry bowEfficiency of that.
-    const float speed = std::hypot(s_velocity.x, s_velocity.y);
-    s_frame.position0 = s_bowPosition;
-    s_frame.direction0 = s_bowDirection;
-    s_frame.bowHeight0 = s_bowHeight;
-    s_frame.position1 = position;
-    s_frame.direction1 = normalized(s_velocity, s_bowDirection);
-    s_frame.bowHeight1 = std::min(std::max(bowEfficiency(), 0.0f) * speed * speed / (2.0f * kGravity),
-                                  std::max(maxBowHeight(), 0.0f));
-    if (steps > 0) {
-      s_bowPosition = s_frame.position1;
-      s_bowDirection = s_frame.direction1;
-      s_bowHeight = s_frame.bowHeight1;
-    }
 
     SceneManager& scene = ctx->getSceneManager();
     scene.trackTexture(TextureRef(s_field.slope.view), s_frame.textureIndex, true, false);
@@ -273,6 +229,9 @@ namespace dxvk {
 
     const uint32_t n = s_field.gridSize;
     const uint32_t groups = (n + DS1_RIPPLE_GROUP_SIZE - 1) / DS1_RIPPLE_GROUP_SIZE;
+    // The bodies are looked for in a square centred on the player, inside the window.
+    const uint32_t collisionCells = std::min(uint32_t(std::max(collisionSize(), 0.0f) / s_field.cellSize), n);
+    const ivec2 collisionMin { int(n - collisionCells) / 2, int(n - collisionCells) / 2 };
 
     {
       Ds1RippleMapArgs args = {};
@@ -282,8 +241,10 @@ namespace dxvk {
       args.cellSize = s_field.cellSize;
       args.resetAll = s_field.reset ? 1u : 0u;
       args.rayTop = s_frame.head.y + kRayAboveHead;
-      args.probe = vec3 { s_frame.head.x, s_frame.head.y, s_frame.head.z };
       args.rayLength = kRayLength;
+      args.bodyReach = kBodyReach;
+      args.collisionSize = collisionCells;
+      args.collisionMin = collisionMin;
       ctx->pushConstants(0, sizeof(args), &args);
       ctx->bindAccelerationStructure(DS1_RIPPLE_BINDING_TLAS, tlas);
       ctx->bindResourceBuffer(DS1_RIPPLE_BINDING_SURFACES, DxvkBufferSlice(surfaceBuffer, 0, surfaceBuffer->info().size));
@@ -291,7 +252,8 @@ namespace dxvk {
       ctx->bindResourceView(DS1_RIPPLE_BINDING_HEIGHT_PREV, s_field.heights[1].view, nullptr);
       ctx->bindResourceView(DS1_RIPPLE_BINDING_HEIGHT_NEXT, s_field.heights[2].view, nullptr);
       ctx->bindResourceView(DS1_RIPPLE_BINDING_WATER, s_field.water.view, nullptr);
-      ctx->bindResourceView(DS1_RIPPLE_BINDING_PROBE, s_field.probe.view, nullptr);
+      ctx->bindResourceView(DS1_RIPPLE_BINDING_OCCUPANCY, s_field.occupancy[s_field.current].view, nullptr);
+      ctx->bindResourceView(DS1_RIPPLE_BINDING_OCCUPANCY_PREV, s_field.occupancy[1 - s_field.current].view, nullptr);
       ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, Ds1RippleMapShader::getShader());
       ctx->dispatch(groups, groups, 1);
       s_field.reset = false;
@@ -307,11 +269,8 @@ namespace dxvk {
                                     3.5 / kDs1RippleKernelResponseMax);
     // The explicit diffusion step stays stable below 0.25 on the 5-point Laplacian.
     const double viscosityStep = std::min(2.0 * std::max(double(viscosity()), 0.0) * stepTime / (cell * cell), 0.2);
-    const float sigma = std::max(sourceRadius(), s_field.cellSize);
 
     for (uint32_t step = 0; step < s_frame.steps; ++step) {
-      const float t0 = float(step) / float(s_frame.steps);
-      const float t1 = float(step + 1) / float(s_frame.steps);
       Ds1RippleStepArgs args = {};
       args.origin = s_field.origin;
       args.gridSize = n;
@@ -320,14 +279,10 @@ namespace dxvk {
       args.damping = float(std::max(damping(), 0.0f) * stepTime);
       args.viscosity = float(viscosityStep);
       args.borderCells = kBorderCells;
-      args.position0 = mix(s_frame.position0, s_frame.position1, t0);
-      args.position1 = mix(s_frame.position0, s_frame.position1, t1);
-      args.direction0 = normalized(mix(s_frame.direction0, s_frame.direction1, t0), s_frame.direction1);
-      args.direction1 = normalized(mix(s_frame.direction0, s_frame.direction1, t1), s_frame.direction1);
-      args.bowHeight0 = s_frame.bowHeight0 + (s_frame.bowHeight1 - s_frame.bowHeight0) * t0;
-      args.bowHeight1 = s_frame.bowHeight0 + (s_frame.bowHeight1 - s_frame.bowHeight0) * t1;
-      args.legOffset = std::max(legRadius(), 0.0f);
-      args.bowExponent = -1.0f / (2.0f * sigma * sigma);
+      args.collisionMin = collisionMin;
+      args.collisionSize = collisionCells;
+      // The bodies' movement since the last step, shared out over this frame's steps.
+      args.displacement = displacement() / float(s_frame.steps);
       const uint32_t previous = (s_field.newest + 2) % 3;
       const uint32_t next = (s_field.newest + 1) % 3;
       ctx->pushConstants(0, sizeof(args), &args);
@@ -335,10 +290,16 @@ namespace dxvk {
       ctx->bindResourceView(DS1_RIPPLE_BINDING_HEIGHT_PREV, s_field.heights[previous].view, nullptr);
       ctx->bindResourceView(DS1_RIPPLE_BINDING_HEIGHT_NEXT, s_field.heights[next].view, nullptr);
       ctx->bindResourceView(DS1_RIPPLE_BINDING_WATER, s_field.water.view, nullptr);
-      ctx->bindResourceView(DS1_RIPPLE_BINDING_PROBE, s_field.probe.view, nullptr);
+      ctx->bindResourceView(DS1_RIPPLE_BINDING_OCCUPANCY, s_field.occupancy[s_field.current].view, nullptr);
+      ctx->bindResourceView(DS1_RIPPLE_BINDING_OCCUPANCY_PREV, s_field.occupancy[1 - s_field.current].view, nullptr);
       ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, Ds1RippleStepShader::getShader());
       ctx->dispatch(groups, groups, 1);
       s_field.newest = next;
+    }
+    // This frame's bodies are what the next steps measure movement from; a frame without steps keeps the
+    // last step's, so no movement is lost between steps.
+    if (s_frame.steps > 0) {
+      s_field.current = 1 - s_field.current;
     }
 
     {

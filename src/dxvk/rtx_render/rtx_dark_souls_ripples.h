@@ -11,10 +11,11 @@ namespace dxvk {
   // of world cells that follows the player, stepped at a fixed rate on the GPU, whose slope the DS1 water
   // material adds to the game's wave layers (fork_ds1_ripples.h has the passes, the layout and the kernel).
   //
-  // The source is the player: rtx.ds1Lights.playerAnchor (the head, sent by the proxy every frame) gives
-  // the position; a probe ray under it decides whether they wade (water above the first solid ground).
-  // Moving, their legs raise a bow ahead and a trough behind that grow with their speed (U^2 / 2g, the
-  // stagnation head) and vanish when they stop; the change radiates as waves, standing still makes none.
+  // The window follows rtx.ds1Lights.playerAnchor (the player's head, sent by the proxy every frame). The
+  // sources are the characters' bodies where they cross the water: in a square around the player, rays at
+  // the waterline find which cells a character fills (the shins, a robe's hem, an enemy beside them). Those
+  // cells hold the water at 0, so waves wrap around the legs, and the water a body pushes aside as it moves
+  // rises around it and sinks behind it. A planted foot makes no waves, a swinging leg does.
   class DxvkDarkSoulsRipples {
   public:
     // Before the frame's bindless tables are built: creates the field, plans the frame's steps and
@@ -40,11 +41,10 @@ namespace dxvk {
                "Viscous damping 2 nu k^2 in m^2/s: short ripples die fast, long ones travel. Clean water is 1e-6; "
                "this stands in for the surface film and the spreading the grid cannot resolve. The step holds it at "
                "its stability limit, 0.1 cellSize^2 * stepRate (0.00135 at 1.5 cm and 60 steps).");
-    RTX_OPTION("rtx.ds1Ripple", float, legRadius, 0.06f, "Radius of the wading legs in metres: the bow sits this far ahead.");
-    RTX_OPTION("rtx.ds1Ripple", float, sourceRadius, 0.04f, "Width (Gaussian sigma) of the bow and trough, in metres.");
-    RTX_OPTION("rtx.ds1Ripple", float, bowEfficiency, 0.1f,
-               "Share of the stagnation head U^2 / 2g the legs raise as waves (0.1: about 1 cm at walking pace).");
-    RTX_OPTION("rtx.ds1Ripple", float, maxBowHeight, 0.03f, "Highest bow in metres, however fast the player moves.");
+    RTX_OPTION("rtx.ds1Ripple", float, displacement, 0.01f,
+               "Height of the water a body pushes aside per cell it moves into, in metres (spread over the cells around it).");
+    RTX_OPTION("rtx.ds1Ripple", float, collisionSize, 3.0f,
+               "Side of the square around the player in which characters' bodies push the water, in metres.");
     RTX_OPTION("rtx.ds1Ripple", float, normalScale, 0.5f, "Scale on the ripple slope added to the water normal (1 = the real slope).");
     RTX_OPTION("rtx.ds1Ripple", float, borderFade, 0.75f, "Metres over which ripples fade towards the window's border.");
   };

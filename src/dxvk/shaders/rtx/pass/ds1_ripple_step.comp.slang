@@ -21,9 +21,10 @@
 */
 
 // Fork (DS1): one iWave step of the ripple field (fork_ds1_ripples.h): the newest heights and the step before
-// them in, the next heights out. Cells without water and cells outside the window count as 0. The wading
-// player's bow (fork_ds1_ripples.h, Ds1RippleStepArgs) adds its change over the step: it adds no water
-// overall and returns to nothing once they stop, so the field keeps no bump where they stand.
+// them in, the next heights out. Cells without water, cells inside a body and cells outside the window count
+// as 0, so the waves wrap around legs. A body that moved since the last step pushed its water aside: the
+// water rises around the cells it has just filled and sinks around the cells it has just left, spread over a
+// few cells (the displaced water does not stay in the body's own cells). A body standing still pushes none.
 
 #include "rtx/pass/fork_ds1_ripples.h"
 
@@ -39,8 +40,11 @@ RWTexture2D<float> heightNext;
 layout(binding = DS1_RIPPLE_BINDING_WATER)
 RWTexture2D<float> water;
 
-layout(binding = DS1_RIPPLE_BINDING_PROBE)
-RWTexture2D<float4> probe;
+layout(binding = DS1_RIPPLE_BINDING_OCCUPANCY)
+RWTexture2D<float> occupancy;
+
+layout(binding = DS1_RIPPLE_BINDING_OCCUPANCY_PREV)
+RWTexture2D<float> occupancyPrev;
 
 layout(push_constant)
 ConstantBuffer<Ds1RippleStepArgs> cb;
@@ -53,6 +57,11 @@ int2 wrapTexel(int2 cell, int n)
   return ((cell % n) + n) % n;
 }
 
+bool isOpen(int2 texel)
+{
+  return water[texel] > DS1_RIPPLE_NO_WATER && occupancy[texel] < 0.5f;
+}
+
 // The step before's height of a window cell: 0 outside the window and where there is no water.
 float previousAt(int2 windowCell)
 {
@@ -62,14 +71,35 @@ float previousAt(int2 windowCell)
     return 0.0f;
   }
   const int2 texel = wrapTexel(int2(cb.origin.x, cb.origin.y) + windowCell, n);
-  return water[texel] > DS1_RIPPLE_NO_WATER ? heightPrev[texel] : 0.0f;
+  return isOpen(texel) ? heightPrev[texel] : 0.0f;
 }
 
-float bow(vec2 position, vec2 at, vec2 direction, float bowHeight)
+// The water the bodies pushed aside since the last step around a window cell: the change in what they
+// fill, spread over 5x5 cells by binomial weights (1 4 6 4 1)^2 / 256.
+float displaced(int2 windowCell)
 {
-  const vec2 ahead = position - (at + direction * cb.legOffset);
-  const vec2 behind = position - (at - direction * cb.legOffset);
-  return bowHeight * (exp(dot(ahead, ahead) * cb.bowExponent) - exp(dot(behind, behind) * cb.bowExponent));
+  const int n = int(cb.gridSize);
+  const int2 collisionMin = int2(cb.collisionMin.x, cb.collisionMin.y);
+  if (any(windowCell < collisionMin - 2) || any(windowCell >= collisionMin + int(cb.collisionSize) + 2))
+  {
+    return 0.0f;
+  }
+  const float weights[5] = { 1.0f, 4.0f, 6.0f, 4.0f, 1.0f };
+  float sum = 0.0f;
+  for (int dy = -2; dy <= 2; ++dy)
+  {
+    for (int dx = -2; dx <= 2; ++dx)
+    {
+      const int2 other = windowCell + int2(dx, dy);
+      if (any(other < 0) || any(other >= n))
+      {
+        continue;
+      }
+      const int2 texel = wrapTexel(int2(cb.origin.x, cb.origin.y) + other, n);
+      sum += weights[dy + 2] * weights[dx + 2] * (occupancy[texel] - occupancyPrev[texel]);
+    }
+  }
+  return sum / 256.0f;
 }
 
 [shader("compute")]
@@ -89,7 +119,7 @@ void main(uint2 thread : SV_DispatchThreadID, uint2 groupThread : SV_GroupThread
     if (all(windowCell >= 0) && all(windowCell < n))
     {
       const int2 texel = wrapTexel(origin + windowCell, n);
-      h = water[texel] > DS1_RIPPLE_NO_WATER ? height[texel] : 0.0f;
+      h = isOpen(texel) ? height[texel] : 0.0f;
     }
     tile[local.y][local.x] = h;
   }
@@ -103,7 +133,7 @@ void main(uint2 thread : SV_DispatchThreadID, uint2 groupThread : SV_GroupThread
   const int2 windowCell = int2(thread);
   const int2 cell = origin + windowCell;
   const int2 texel = wrapTexel(cell, n);
-  if (water[texel] <= DS1_RIPPLE_NO_WATER)
+  if (!isOpen(texel))
   {
     heightNext[texel] = 0.0f;
     return;
@@ -132,13 +162,7 @@ void main(uint2 thread : SV_DispatchThreadID, uint2 groupThread : SV_GroupThread
     4.0f * (h - hPrev);
   next += cb.viscosity * velocityLaplacian;
 
-  const float4 wading = probe[int2(0, 0)];
-  if (wading.x > 0.5f && wading.y > 0.5f)
-  {
-    const vec2 position = (vec2(cell) + 0.5f) * cb.cellSize;
-    next += bow(position, vec2(cb.position1.x, cb.position1.y), vec2(cb.direction1.x, cb.direction1.y), cb.bowHeight1) -
-            bow(position, vec2(cb.position0.x, cb.position0.y), vec2(cb.direction0.x, cb.direction0.y), cb.bowHeight0);
-  }
+  next += cb.displacement * displaced(windowCell);
 
   // Damped to 0 over the window's outer cells.
   const int edge = min(min(int(thread.x), int(thread.y)), min(n - 1 - int(thread.x), n - 1 - int(thread.y)));
