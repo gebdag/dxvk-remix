@@ -1,5 +1,4 @@
 #include "rtx_dark_souls_ripples.h"
-#include "rtx_dark_souls_light_falloff.h"
 #include "rtx_context.h"
 #include "rtx_scene_manager.h"
 #include "rtx_shader_manager.h"
@@ -70,8 +69,8 @@ namespace dxvk {
     // A leg or a robe's hem at the waterline is narrower than this (metres); a cell is inside a body when
     // rays this long along +-x and +-z all hit it.
     constexpr float kBodyReach = 0.3f;
-    // The water rays start this far above the head and reach this far down.
-    constexpr float kRayAboveHead = 1.0f;
+    // The water rays start this far above the player's feet and reach this far down.
+    constexpr float kRayAbovePlayer = 2.5f;
     constexpr float kRayLength = 8.0f;
     // Water within this distance of a cell's water height takes its ripples.
     constexpr float kHeightTolerance = 0.3f;
@@ -99,7 +98,7 @@ namespace dxvk {
       bool active = false;
       uint32_t steps = 0;
       float alpha = 0.0f;
-      Vector3 head { 0.0f, 0.0f, 0.0f };
+      Vector3 player { 0.0f, 0.0f, 0.0f };
       uint32_t textureIndex = BINDING_INDEX_INVALID;
       uint32_t samplerIndex = BINDING_INDEX_INVALID;
     };
@@ -139,8 +138,8 @@ namespace dxvk {
 
   void DxvkDarkSoulsRipples::prepare(RtxContext* ctx) {
     s_frame = {};
-    const Vector3 head = DxvkDarkSoulsLightFalloff::playerAnchor();
-    if (!enable() || (head.x == 0.0f && head.y == 0.0f && head.z == 0.0f)) {
+    const Vector3 player = playerPosition();
+    if (!enable() || (player.x == 0.0f && player.y == 0.0f && player.z == 0.0f)) {
       s_lastTime = -1.0;
       return;
     }
@@ -152,7 +151,7 @@ namespace dxvk {
     }
 
     // The window centred on the player, in whole cells; a jump of more than half a window starts over.
-    const ivec2 origin { floorDiv(head.x, cell) - int(size / 2), floorDiv(head.z, cell) - int(size / 2) };
+    const ivec2 origin { floorDiv(player.x, cell) - int(size / 2), floorDiv(player.z, cell) - int(size / 2) };
     s_field.previousOrigin = s_field.reset ? origin : s_field.origin;
     s_field.origin = origin;
     if (std::abs(origin.x - s_field.previousOrigin.x) > int(size / 2) || std::abs(origin.y - s_field.previousOrigin.y) > int(size / 2)) {
@@ -180,7 +179,7 @@ namespace dxvk {
     s_frame.active = true;
     s_frame.steps = steps;
     s_frame.alpha = float(std::clamp(s_accumulator / stepTime, 0.0, 1.0));
-    s_frame.head = head;
+    s_frame.player = player;
 
     SceneManager& scene = ctx->getSceneManager();
     scene.trackTexture(TextureRef(s_field.slope.view), s_frame.textureIndex, true, false);
@@ -202,7 +201,7 @@ namespace dxvk {
     args.invWindowSize = 1.0f / windowSize;
     args.borderFade = std::max(borderFade(), 0.01f);
     args.normalScale = normalScale();
-    args.referenceHeight = s_frame.head.y;
+    args.referenceHeight = s_frame.player.y;
     args.heightTolerance = kHeightTolerance;
     args.textureIndex = s_frame.textureIndex;
     args.samplerIndex = s_frame.samplerIndex;
@@ -240,7 +239,7 @@ namespace dxvk {
       args.gridSize = n;
       args.cellSize = s_field.cellSize;
       args.resetAll = s_field.reset ? 1u : 0u;
-      args.rayTop = s_frame.head.y + kRayAboveHead;
+      args.rayTop = s_frame.player.y + kRayAbovePlayer;
       args.rayLength = kRayLength;
       args.bodyReach = kBodyReach;
       args.collisionSize = collisionCells;
@@ -308,7 +307,7 @@ namespace dxvk {
       args.gridSize = n;
       args.cellSize = s_field.cellSize;
       args.alpha = s_frame.alpha;
-      args.referenceHeight = s_frame.head.y;
+      args.referenceHeight = s_frame.player.y;
       ctx->pushConstants(0, sizeof(args), &args);
       ctx->bindResourceView(DS1_RIPPLE_BINDING_HEIGHT, s_field.heights[s_field.newest].view, nullptr);
       ctx->bindResourceView(DS1_RIPPLE_BINDING_HEIGHT_PREV, s_field.heights[(s_field.newest + 2) % 3].view, nullptr);

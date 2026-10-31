@@ -11,7 +11,7 @@ namespace dxvk {
   // of world cells that follows the player, stepped at a fixed rate on the GPU, whose slope the DS1 water
   // material adds to the game's wave layers (fork_ds1_ripples.h has the passes, the layout and the kernel).
   //
-  // The window follows rtx.ds1Lights.playerAnchor (the player's head, sent by the proxy every frame). The
+  // The window follows rtx.ds1Ripple.playerPosition (the player's feet, sent by the proxy every frame). The
   // sources are the characters' bodies where they cross the water: in a square around the player, rays at
   // the waterline find which cells a character fills (the shins, a robe's hem, an enemy beside them). Those
   // cells hold the water at 0, so waves wrap around the legs, and the water a body pushes aside as it moves
@@ -29,6 +29,8 @@ namespace dxvk {
     static void dispatch(RtxContext* ctx);
 
     RTX_OPTION("rtx.ds1Ripple", bool, enable, true, "Ripples on DS1 water around the wading player.");
+    RTX_OPTION_FLAG("rtx.ds1Ripple", Vector3, playerPosition, Vector3(0.0f), RtxOptionFlags::NoSave,
+                    "Set by the DS1 proxy every frame the player moves: their position (feet), where the ripple window is centred.");
     RTX_OPTION("rtx.ds1Ripple", int, gridSize, 512, "Cells along each side of the ripple window (a multiple of 16).");
     RTX_OPTION("rtx.ds1Ripple", float, cellSize, 0.015f,
                "Size of a ripple cell in metres. The shortest ripple that travels is about 8 cells long.");
