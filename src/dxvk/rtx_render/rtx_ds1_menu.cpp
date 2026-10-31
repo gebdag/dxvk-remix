@@ -19,6 +19,7 @@
 #include "rtx_dark_souls_exposure.h"
 #include "rtx_dark_souls_ambient.h"
 #include "rtx_dark_souls_swamp.h"
+#include "rtx_dark_souls_ripples.h"
 #include "rtx_dark_souls_specular.h"
 #include "../dxvk_context.h"
 #include "../imgui/imgui.h"
@@ -51,6 +52,15 @@ namespace dxvk {
       RemixGui::SliderFloat("Secondary Normal LoD Bias", &TranslucentMaterialOptions::animatedWaterSecondaryNormalLodBiasObject(), 0.0f, 16.0f, "%.2f", kClamp);
       RemixGui::SliderFloat2("Primary Normal Motion", &TranslucentMaterialOptions::animatedWaterPrimaryNormalMotionObject(), -0.5f, 0.5f, "%.3f", kClamp);
       RemixGui::SliderFloat2("Secondary Normal Motion", &TranslucentMaterialOptions::animatedWaterSecondaryNormalMotionObject(), -0.5f, 0.5f, "%.3f", kClamp);
+      ImGui::Separator();
+      RemixGui::Checkbox("Ripples Around the Player", &DxvkDarkSoulsRipples::enableObject());
+      RemixGui::SliderFloat("Ripple Gravity Scale", &DxvkDarkSoulsRipples::gravityScaleObject(), 0.1f, 3.0f, "%.2f", kClamp);
+      RemixGui::SliderFloat("Ripple Damping (1/s)", &DxvkDarkSoulsRipples::dampingObject(), 0.0f, 5.0f, "%.2f", kClamp);
+      RemixGui::DragFloat("Ripple Viscosity (m2/s)", &DxvkDarkSoulsRipples::viscosityObject(), 1.0e-5f, 0.0f, 2.0e-3f, "%.5f", kClamp);
+      RemixGui::SliderFloat("Ripple Displacement (m)", &DxvkDarkSoulsRipples::displacementObject(), 0.0f, 0.05f, "%.4f", kClamp);
+      RemixGui::SliderFloat("Ripple Collision Area (m)", &DxvkDarkSoulsRipples::collisionSizeObject(), 0.5f, 7.0f, "%.1f", kClamp);
+      RemixGui::SliderFloat("Ripple Normal Scale", &DxvkDarkSoulsRipples::normalScaleObject(), 0.0f, 5.0f, "%.2f", kClamp);
+      RemixGui::SliderFloat("Ripple Cell Size (m)", &DxvkDarkSoulsRipples::cellSizeObject(), 0.01f, 0.05f, "%.3f", kClamp);
       ImGui::Unindent();
     }
 

@@ -38,6 +38,7 @@
 #include "rtx/pass/view_distance_args.h"
 #include "rtx/pass/fork_ds1_ambient.h"
 #include "rtx/pass/fork_ds1_swamp.h"
+#include "rtx/pass/fork_ds1_ripples.h"
 #include "rtx/concept/light/light_types.h"
 #include "rtx/concept/surface/surface_shared.h"
 #include "rtx/algorithm/nee_cache_data.h"
@@ -182,6 +183,8 @@ struct RaytraceArgs {
   Ds1AmbientArgs ds1Ambient;
   // Fork: Dark Souls' FRPG_Snow surfaces, the Blighttown swamp (fork_ds1_swamp.h).
   Ds1SwampArgs ds1Swamp;
+  // Fork: the ripple field around the wading player, for DS1 water (fork_ds1_ripples.h).
+  Ds1RippleArgs ds1Ripple;
   NrcArgs nrcArgs;
   SharcArgs sharcArgs;
   SssArgs sssArgs;

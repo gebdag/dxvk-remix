@@ -41,6 +41,29 @@ f16vec3 translucentSurfaceMaterialInteractionResolveTransmittanceColor(f16vec3 t
   return gammaToLinear(transmittanceColor);
 }
 
+// Fork (DS1): the normal with the ripple field around the wading player added (fork_ds1_ripples.h). For
+// small slopes the normal of a sum of heights follows the sum of their gradients, so the field's slope adds
+// to the game's wave layers as a gradient along the surface. Only water at its cell's water height takes it
+// (another body above or below shares the cells), fading out towards the window's border.
+vec3 ds1RippleNormal(vec3 normal, vec3 position, vec3 geometryNormal)
+{
+  const vec2 local = position.xz - cb.ds1Ripple.windowMin;
+  const float edge = min(min(local.x, local.y), min(cb.ds1Ripple.windowSize - local.x, cb.ds1Ripple.windowSize - local.y));
+  if (!(edge > 0.0f))
+  {
+    return normal;
+  }
+  const vec4 field = textures[cb.ds1Ripple.textureIndex].SampleLevel(
+    samplers[cb.ds1Ripple.samplerIndex], position.xz * cb.ds1Ripple.invWindowSize, 0.0f);
+  if (!(abs(position.y - (cb.ds1Ripple.referenceHeight + field.z)) < cb.ds1Ripple.heightTolerance))
+  {
+    return normal;
+  }
+  vec3 gradient = vec3(field.x, 0.0f, field.y) * (saturate(edge / cb.ds1Ripple.borderFade) * cb.ds1Ripple.normalScale);
+  gradient -= geometryNormal * dot(gradient, geometryNormal);
+  return normalize(normal - gradient);
+}
+
 // Translucent Surface Material Interaction Functions
 
 TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreate(
@@ -125,6 +148,11 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
       tangentNormal = normalBlendRNM(tangentNormal2, tangentNormal);
     }
     normal = normalize(mul(tangentToWorld, tangentNormal));
+  }
+
+  if (surface.isDs1Water && cb.ds1Ripple.enable != 0)
+  {
+    normal = ds1RippleNormal(normal, surfaceInteraction.position, vec3(surfaceInteraction.geometryNormal));
   }
 
   // Note: Diffuse layer override encapsulated in if the diffuse layer flag is set or not as this override is able to be done on the CPU.

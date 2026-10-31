@@ -79,6 +79,7 @@
 #include "rtx_dark_souls_exposure.h"
 #include "rtx_dark_souls_ambient.h"
 #include "rtx_dark_souls_swamp.h"
+#include "rtx_dark_souls_ripples.h"
 #include "rtx_dark_souls_look.h"
 #include "rtx_dark_souls_light_falloff.h"
 #include "rtx_hotkeys.h"
@@ -715,6 +716,8 @@ namespace dxvk {
 
         // Fork (DS1): keep the player light out of walls before anything samples the lights.
         DxvkDarkSoulsLightFalloff::dispatchPlayerLightClearance(this);
+        // Fork (DS1): the ripple field the water material samples.
+        DxvkDarkSoulsRipples::dispatch(this);
 
         // Volumetric Lighting
         dispatchVolumetrics(rtOutput);
@@ -1564,6 +1567,7 @@ namespace dxvk {
     constants.domeLightArgs = getSceneManager().getLightManager().getDomeLightArgs();
     DxvkDarkSoulsAmbient::fillShaderArgs(constants.ds1Ambient);
     DxvkDarkSoulsSwamp::fillShaderArgs(constants.ds1Swamp);
+    DxvkDarkSoulsRipples::fillShaderArgs(constants.ds1Ripple);
     // DS1 look: the sky raster comes from the game's own sky shader, exposure included.
     constants.ds1Ambient.skyGamma = 0;
     constants.ds1Ambient.skyUnexpose = 1.0f;
