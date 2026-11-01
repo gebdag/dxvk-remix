@@ -223,6 +223,7 @@ namespace dxvk {
 
     const bool m_enableDrawCallConversion;
     bool m_rtxInjectTriggered = false;
+    Rc<DxvkImage> m_ds1MenuSceneTarget;
     bool m_forceGeometryCopy = false;
     DWORD m_texcoordIndex = 0;
 

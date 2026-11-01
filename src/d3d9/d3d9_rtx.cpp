@@ -515,7 +515,19 @@ namespace dxvk {
       }
     }
 
-    if (!s_isDxvkResolutionEnvVarSet) {
+    // DS1: a menu's character view, converted to fixed function by the proxy, is the frame's scene. Its render target,
+    // square or for a row of views wide (no other target has either shape), is what the path traced frame is written
+    // into, once the game moves on to another target.
+    bool isDs1MenuScene = false;
+    if (!m_parent->UseProgrammableVS()) {
+      const auto& rtExtent = d3d9State().renderTargets[kRenderTargetIndex]->GetSurfaceExtent();
+      if ((rtExtent.width == rtExtent.height || rtExtent.width >= 3 * rtExtent.height) && rtExtent.width <= 4096) {
+        isDs1MenuScene = true;
+        m_ds1MenuSceneTarget = d3d9State().renderTargets[kRenderTargetIndex]->GetCommonTexture()->GetImage();
+      }
+    }
+
+    if (!s_isDxvkResolutionEnvVarSet && !isDs1MenuScene) {
       // NOTE: This can fail when setting DXVK_RESOLUTION_WIDTH or HEIGHT
       const bool isPrimary = isRenderTargetPrimary(*m_activePresentParams, d3d9State().renderTargets[kRenderTargetIndex]->GetCommonTexture()->Desc());
 
@@ -605,6 +617,16 @@ namespace dxvk {
 
   PrepareDrawFlags D3D9Rtx::internalPrepareDraw(const IndexContext& indexContext, const VertexContext vertexContext[caps::MaxStreams], const DrawContext& drawContext) {
     ScopedCpuProfileZone();
+
+    // DS1: the menu's character view is finished, the path traced frame goes into its render target.
+    if (m_ds1MenuSceneTarget != nullptr && !m_rtxInjectTriggered &&
+        d3d9State().renderTargets[kRenderTargetIndex]->GetCommonTexture()->GetImage() != m_ds1MenuSceneTarget) {
+      m_parent->Flush();
+      m_parent->EmitCs([cReflexFrameId = GetReflexFrameId(), cTarget = m_ds1MenuSceneTarget](DxvkContext* ctx) {
+        static_cast<RtxContext*>(ctx)->injectRTX(cReflexFrameId, cTarget);
+      });
+      m_rtxInjectTriggered = true;
+    }
 
     // RTX was injected => treat everything else as rasterized,
     // unless this draw targets a raytraced render target (e.g. render-to-texture
@@ -1471,6 +1493,7 @@ namespace dxvk {
 
     // Reset for the next frame
     m_rtxInjectTriggered = false;
+    m_ds1MenuSceneTarget = nullptr;
     m_drawCallID = 0;
     m_seenCameraPositionsPrev = std::move(m_seenCameraPositions);
 
