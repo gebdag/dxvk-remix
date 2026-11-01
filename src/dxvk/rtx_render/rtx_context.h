@@ -242,6 +242,8 @@ namespace dxvk {
     VkFormat m_skyRtColorFormat = VK_FORMAT_B10G11R11_UFLOAT_PACK32;
     VkClearValue m_skyClearValue;
     bool m_skyClearDirty = false;
+    // Fork: the frame whose first sky draw last cleared the sky matte's depth (rasterizeToSkyMatte).
+    uint32_t m_skyMatteDepthFrame = UINT32_MAX;
 
     bool shouldUseDLSS() const;
     bool shouldUseRayReconstruction() const;

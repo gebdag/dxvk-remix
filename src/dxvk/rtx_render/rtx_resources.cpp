@@ -1077,6 +1077,38 @@ namespace dxvk {
     return m_skyMatte;
   }
 
+  Rc<DxvkImageView> Resources::getSkyMatteDepth(Rc<DxvkContext> ctx) {
+    if (m_skyMatteDepth == nullptr || m_skyMatteDepth->imageInfo().extent != m_targetExtent) {
+      DxvkImageCreateInfo desc;
+      desc.type = VK_IMAGE_TYPE_2D;
+      desc.format = VK_FORMAT_D32_SFLOAT;
+      desc.flags = 0;
+      desc.sampleCount = VK_SAMPLE_COUNT_1_BIT;
+      desc.extent = m_targetExtent;
+      desc.numLayers = 1;
+      desc.mipLevels = 1;
+      desc.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+      desc.stages = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+      desc.access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+      desc.tiling = VK_IMAGE_TILING_OPTIMAL;
+      desc.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+      const Rc<DxvkImage> image = ctx->getDevice()->createImage(desc, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                                               DxvkMemoryStats::Category::RTXRenderTarget, "sky matte depth");
+
+      DxvkImageViewCreateInfo viewInfo;
+      viewInfo.type = VK_IMAGE_VIEW_TYPE_2D;
+      viewInfo.format = VK_FORMAT_D32_SFLOAT;
+      viewInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+      viewInfo.aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
+      viewInfo.minLevel = 0;
+      viewInfo.numLevels = 1;
+      viewInfo.minLayer = 0;
+      viewInfo.numLayers = 1;
+      m_skyMatteDepth = ctx->getDevice()->createImageView(image, viewInfo);
+    }
+    return m_skyMatteDepth;
+  }
+
   Resources::Resource Resources::getSkyProbe(Rc<DxvkContext> ctx, VkFormat format) {
     if (format == VK_FORMAT_UNDEFINED) {
       return m_skyProbe;

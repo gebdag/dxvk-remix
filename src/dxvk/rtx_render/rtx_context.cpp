@@ -2692,20 +2692,49 @@ namespace dxvk {
       allocAndMapFixedFunctionVSConstantBuffer() = modified;
     }
 
+    // Fork: the sky layers depth-test each other as the game draws them. A game can lay its sky's depth down
+    // in a depth-only pre-pass and draw the layers themselves without depth writes (DS1's Northern Undead
+    // Asylum: its mountain rings' depth, which the cloud bowls behind them test against); without a depth
+    // attachment every blended layer covered the layers before it. So the matte has its own depth, cleared at
+    // the frame's first sky draw: opaque layers write it, as that pre-pass did, and blended ones test
+    // against it with the game's own test.
+    const Rc<DxvkImageView> skyDepthView = getResourceManager().getSkyMatteDepth(this);
     DxvkRenderTargets skyRt;
     skyRt.color[0].view = getResourceManager().getCompatibleViewForView(skyMatteView, m_skyRtColorFormat);
     skyRt.color[0].layout = VK_IMAGE_LAYOUT_GENERAL;
+    skyRt.depth.view = skyDepthView;
+    skyRt.depth.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     bindRenderTargets(skyRt);
 
     if (m_skyClearDirty) {
       DxvkContext::clearRenderTarget(skyMatteView, VK_IMAGE_ASPECT_COLOR_BIT, m_skyClearValue);
     }
+    const uint32_t frameId = m_device->getCurrentFrameId();
+    if (m_skyMatteDepthFrame != frameId) {
+      VkClearValue farDepth = {};
+      farDepth.depthStencil.depth = 1.0f;
+      DxvkContext::clearRenderTarget(skyDepthView, VK_IMAGE_ASPECT_DEPTH_BIT, farDepth);
+      m_skyMatteDepthFrame = frameId;
+    }
+
+    const DxvkDsInfo gameDepthState = m_state.gp.state.ds;
+    const bool opaqueLayer = !m_state.gp.state.omBlend[0].blendEnable();
+    m_state.gp.state.ds = DxvkDsInfo(
+      gameDepthState.enableDepthTest(),
+      gameDepthState.enableDepthWrite() || (opaqueLayer && gameDepthState.enableDepthTest()),
+      VK_FALSE,
+      VK_FALSE,
+      gameDepthState.depthCompareOp());
+    m_flags.set(DxvkContextFlag::GpDirtyPipelineState);
 
     if (params.indexCount == 0) {
       DxvkContext::draw(params.vertexCount, params.instanceCount, params.vertexOffset, 0);
     } else {
       DxvkContext::drawIndexed(params.indexCount, params.instanceCount, params.firstIndex, params.vertexOffset, 0);
     }
+
+    m_state.gp.state.ds = gameDepthState;
+    m_flags.set(DxvkContextFlag::GpDirtyPipelineState);
 
     // Restore state
     if (prevClipSpaceJitterEnabled >= 0) {
