@@ -413,10 +413,11 @@ struct RtSurface {
       writeGPUHelper(data, offset, ds1SelfLit[1]);
       writeGPUHelper(data, offset, ds1SelfLit[2]);
     } else {
-      // Fork: data15.x, the DS1 lightmap level (Surface::ds1SunLightmap, textureFlags bit 28); data15.z, the
-      // DS1 environment reflection weight (Surface::ds1EnvReflection).
+      // Fork: data15.x, the DS1 lightmap level (Surface::ds1SunLightmap, textureFlags bit 28); data15.y, a
+      // DS1 soft sprite's feather (Surface::ds1ParticleFeather); data15.z, the DS1 environment reflection
+      // weight (Surface::ds1EnvReflection).
       writeGPUHelper(data, offset, ds1Lightmapped ? ds1SunLightmap : uint32_t{});
-      writeGPUHelper(data, offset, uint32_t{});
+      writeGPUHelper(data, offset, alphaState.isParticle ? ds1ParticleFeather : 0.0f);
       writeGPUHelper(data, offset, ds1SpecularTag);
     }
     assert(gpuMaterialIndex == MATERIAL_INDEX_INVALID || gpuMaterialIndex < MATERIAL_INDEX_MAX_VALUE);
@@ -478,6 +479,8 @@ struct RtSurface {
   float ds1WaterSmear = 0.0f;
   // Fork: DS1 environment reflection weight (data15.z), see Surface::ds1EnvReflection; 0 = none.
   uint32_t ds1SpecularTag = 0;
+  // Fork: DS1 soft sprite feather in metres (data15.y), see Surface::ds1ParticleFeather; 0 = none.
+  float ds1ParticleFeather = 0.0f;
   // Fork: DS1 albedo offset (data15.xyz, flag bit 27), see Surface::ds1AlbedoOffset.
   bool hasDs1AlbedoOffset = false;
   float ds1AlbedoOffset[3] = {};
@@ -2119,6 +2122,9 @@ struct LegacyMaterialData {
   // 0 = none), see Surface::ds1EnvReflection. Per draw,
   // not part of the identity.
   uint32_t ds1SpecularTag = 0;
+  // Fork: a DS1 soft sprite's feather in metres from the stage-2 tag, see Surface::ds1ParticleFeather.
+  // Per draw, not part of the identity.
+  float ds1ParticleFeather = 0.0f;
   // Fork: a DS1 albedo offset (the skin tone, PS c156) from the stage-5 tag, see
   // Surface::ds1AlbedoOffset. Per draw, not part of the identity.
   bool hasDs1AlbedoOffset = false;

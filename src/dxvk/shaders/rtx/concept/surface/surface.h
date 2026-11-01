@@ -660,6 +660,19 @@ struct Surface
       return !data15Taken && (data15.z & 0x80000000u) != 0 ? f16tof32(data15.z & 0xFFFFu) : -1.0f;
     }
   }
+
+  // Fork: a DS1 soft sprite's feather in metres, or 0 when it has none. The game fades the sprite's alpha
+  // by saturate(0.5 + (scene depth - sprite depth) / feather) (FRPG_Sfx_SimpleSprite_Base.fxh ZFeather; see
+  // ds1ParticleSoftBlend), the feather a per-vertex distance of which the proxy sends the draw's mean.
+  // data15.y on the same surfaces as ds1EnvReflection (written only for particles).
+  property float ds1ParticleFeather
+  {
+    get
+    {
+      const bool data15Taken = packedFlagGet(data13.z, (1 << 14) | (1 << 26) | (1 << 27) | (1 << 30));
+      return data15Taken ? 0.0f : asfloat(data15.y);
+    }
+  }
 };
 
 // Note: Minimal version of typical Surface Interaction for transmission across passes.

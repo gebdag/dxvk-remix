@@ -1259,6 +1259,10 @@ namespace dxvk {
         // sat((|N.V| - c176.x) * c176.y), with oo = c176.x * 255 and cc = c176.y * 16. Packed as
         // Surface::ds1ViewFade reads it: bit 2 on, bits 3-8 the offset in 63rds, bits 9-15 the scale in 8ths.
         const uint32_t viewFadeTag = d3d9State().textureStages[2][DXVK_TSS_CONSTANT];
+        // Fork: a DS1 soft sprite's feather in the same stage (0xD8000000 | millimetres, the draw's mean):
+        // its alpha fades by the scene depth over that distance (Surface::ds1ParticleFeather).
+        m_activeDrawCallState.materialData.ds1ParticleFeather =
+          (viewFadeTag >> 24) == 0xD8u ? static_cast<float>(viewFadeTag & 0xFFFFFFu) * 0.001f : 0.0f;
         m_activeDrawCallState.materialData.ds1ViewFade = 0;
         if ((viewFadeTag >> 24) == 0xD6u) {
           const uint32_t offset = (((viewFadeTag >> 8) & 0xFFu) * 63u + 127u) / 255u;

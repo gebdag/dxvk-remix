@@ -1143,6 +1143,7 @@ namespace dxvk {
         currentInstance.surface.ds1WaterStrength = drawCall.getMaterialData().ds1WaterStrength;
         currentInstance.surface.ds1WaterSmear = drawCall.getMaterialData().ds1WaterSmear;
         currentInstance.surface.ds1SpecularTag = drawCall.getMaterialData().ds1SpecularTag;
+        currentInstance.surface.ds1ParticleFeather = drawCall.getMaterialData().ds1ParticleFeather;
         currentInstance.surface.hasDs1AlbedoOffset = drawCall.getMaterialData().hasDs1AlbedoOffset;
         std::copy(std::begin(drawCall.getMaterialData().ds1AlbedoOffset), std::end(drawCall.getMaterialData().ds1AlbedoOffset),
                   currentInstance.surface.ds1AlbedoOffset);

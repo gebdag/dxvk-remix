@@ -786,7 +786,23 @@ uint8_t convertPrimaryRayMaskToUnordered(uint8_t primaryRayMask, uint8_t unorder
   return (primaryRayMask & OBJECT_MASK_ALL_DYNAMIC) | unorderedRayMask;
 }
 
-// For handling blending between unordered interactions (i.e. particles), we will be using this technique: 
+// How much of a particle's blend survives where it nears the surface behind it: a DS1 soft sprite's own fade
+// (Surface::ds1ParticleFeather), else Remix's over a share of the view distance (rtx.particleSoftnessFactor).
+// The game fades a soft sprite from 0 half a feather behind the surface to 1 half a feather in front, its
+// depth pushed that far towards the camera so it still draws behind the surface. A ray ends at the surface,
+// so the sprite fades out over the half in front instead: whole where the game's is, gone at the surface
+// rather than cut off at half.
+float ds1ParticleSoftBlend(Surface surface, float gapToSurface, float tMax)
+{
+  const float feather = surface.ds1ParticleFeather;
+  if (feather > 0.0f)
+  {
+    return saturate(2.0f * gapToSurface / feather);
+  }
+  return saturate(gapToSurface / (tMax * uint16BitsToF32(cb.particleSoftnessFactor)));
+}
+
+// For handling blending between unordered interactions (i.e. particles), we will be using this technique:
 //  https://casual-effects.blogspot.com/2014/03/weighted-blended-order-independent.html
 //  With a small addition to handle emissive interactions roughly correctly
 float oitDepthWeight(float hitT, float tMax)
@@ -1132,7 +1148,7 @@ float resolveVertexUnorderedParticles<
       continue;
     }
 
-    const float softBlendFactor = saturate((ray.tMax - rayHitInfo.hitDistance) / (ray.tMax * uint16BitsToF32(cb.particleSoftnessFactor)));
+    const float softBlendFactor = ds1ParticleSoftBlend(surface, ray.tMax - rayHitInfo.hitDistance, ray.tMax);
     // Fork (DS1): only sprites fade out softly near geometry. An unlit glow mesh carrying the self-lit tag
     // (Bed of Chaos's glyph shells, wrapped tight around the boss's core) has no such fade in the game.
     const float blendFactor = surface.isParticle && !surface.hasDs1SelfLit ? softBlendFactor : 1.0f;
@@ -1680,7 +1696,7 @@ void resolveVertexUnordered<
       // Note: This is done to avoid raster particles handled by this seprated logic from clipping in ugly ways against geometry by
       // fading out portions of particles closer to walls. Only done for Surfaces labeled as particles.
 
-      const float softBlendFactor = saturate((ray.tMax - rayHitInfo.hitDistance) / (ray.tMax * uint16BitsToF32(cb.particleSoftnessFactor)));
+      const float softBlendFactor = ds1ParticleSoftBlend(surface, ray.tMax - rayHitInfo.hitDistance, ray.tMax);
       // Fork (DS1): only sprites fade out softly near geometry. An unlit glow mesh carrying the self-lit tag
     // (Bed of Chaos's glyph shells, wrapped tight around the boss's core) has no such fade in the game.
     const float blendFactor = surface.isParticle && !surface.hasDs1SelfLit ? softBlendFactor : 1.0f;
