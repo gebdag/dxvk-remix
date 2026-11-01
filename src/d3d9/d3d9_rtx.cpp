@@ -766,11 +766,15 @@ namespace dxvk {
     // DS1 port: explicit per-draw sky tag for compatibility proxies (see rtx.skyMarkerEnabled). Applied
     // after the heuristics above, which rewrite the Sky category from their own sources and would
     // otherwise clear it.
+    // 0xD15D05C2: a sky layer that is also the game's light shaft source (DrawCallState::ds1ShaftSource).
     constexpr uint32_t kSkyMarker = 0xD15D05C1;
-    if (RtxOptions::skyMarkerEnabled() &&
-        d3d9State().textureStages[0][DXVK_TSS_CONSTANT] == kSkyMarker) {
+    constexpr uint32_t kShaftSourceSkyMarker = 0xD15D05C2;
+    const uint32_t skyTag = d3d9State().textureStages[0][DXVK_TSS_CONSTANT];
+    m_activeDrawCallState.ds1ShaftSource = false;
+    if (RtxOptions::skyMarkerEnabled() && (skyTag == kSkyMarker || skyTag == kShaftSourceSkyMarker)) {
       m_activeDrawCallState.setCategory(InstanceCategories::Sky, true);
       m_activeDrawCallState.skyAutoDetected = false;
+      m_activeDrawCallState.ds1ShaftSource = skyTag == kShaftSourceSkyMarker;
     }
 
     if (RtxOptions::fogIgnoreSky() && m_activeDrawCallState.categories.test(InstanceCategories::Sky)) {

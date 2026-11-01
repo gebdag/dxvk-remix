@@ -510,6 +510,9 @@ namespace dxvk
     Resources::Resource getSkyMatte(Rc<DxvkContext> ctx, VkFormat format = VK_FORMAT_UNDEFINED);
     // Fork: the sky matte's depth (RtxContext::rasterizeToSkyMatte), the matte's extent.
     Rc<DxvkImageView> getSkyMatteDepth(Rc<DxvkContext> ctx);
+    // Fork (DS1): the game's light shaft source, the sky layers it redraws for its shaft filter, at the sky
+    // matte's extent and format (RtxContext::rasterizeToSkyMatte).
+    Resources::Resource getDs1ShaftSource(Rc<DxvkContext> ctx, VkFormat format = VK_FORMAT_UNDEFINED);
     Rc<DxvkImageView> getCompatibleViewForView(const Rc<DxvkImageView>& view, VkFormat format);
 
     Rc<DxvkSampler> getSampler(const VkFilter filter, const VkSamplerMipmapMode mipFilter,
@@ -609,6 +612,7 @@ namespace dxvk
     Resources::Resource m_skyProbe;
     Resources::Resource m_skyMatte;
     Rc<DxvkImageView> m_skyMatteDepth;
+    Resources::Resource m_ds1ShaftSource;
 
     fast_unordered_cache<Rc<DxvkSampler>> m_samplerCache;
     fast_unordered_cache<std::pair<Rc<DxvkImageView>, uint32_t>> m_viewCache;

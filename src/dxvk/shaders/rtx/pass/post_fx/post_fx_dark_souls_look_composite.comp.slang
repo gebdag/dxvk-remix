@@ -1,7 +1,7 @@
 // Fork: FRPG_Fil_HDR_ColAdj on the DS1 scene value (see post_fx_dark_souls_look.h):
 //   col = sat(scene * c56.z) + bloom.rgb * lerp(c56.x, c71.y, bloom.a) + lightShaft * c56.y
 //   out = sat(dot((col, 1), c62..c64))      (an 8-bit target)
-// with the light shafts path traced (post_fx_dark_souls_look_shafts.comp.slang).
+// with the light shafts from the game's LightShaft chain (post_fx_dark_souls_look_shafts.comp.slang).
 // The result is the displayed value; it goes back out as value^2.2 so the final output pass
 // (linearToGamma, x^(1/2.2)) returns it unchanged.
 

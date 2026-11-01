@@ -63,6 +63,8 @@ namespace dxvk {
   class RtxContext : public DxvkContext {
 
   public:
+    // Fork (DS1): true when this frame drew the game's light shaft source (Resources::getDs1ShaftSource).
+    bool ds1ShaftSourceReady();
     
     RtxContext(const Rc<DxvkDevice>& device);
     ~RtxContext();
@@ -244,6 +246,8 @@ namespace dxvk {
     bool m_skyClearDirty = false;
     // Fork: the frame whose first sky draw last cleared the sky matte's depth (rasterizeToSkyMatte).
     uint32_t m_skyMatteDepthFrame = UINT32_MAX;
+    // Fork (DS1): the last frame a shaft source layer was drawn into the shaft source (ds1ShaftSourceReady).
+    uint32_t m_ds1ShaftSourceFrame = UINT32_MAX;
 
     bool shouldUseDLSS() const;
     bool shouldUseRayReconstruction() const;

@@ -866,13 +866,9 @@ namespace dxvk {
           ds1LookPass.dispatchDof(this,
             rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite), rtOutput.m_primaryLinearViewZ,
             ds1Jitter, ds1MissLinearViewZ);
-          ds1LookPass.dispatchShafts(this,
-            rtOutput.m_finalOutput.resource(Resources::AccessType::Read).image->mipLevelExtent(0),
-            rtOutput.m_primaryLinearViewZ, getSceneManager().getCamera().getShaderConstants(),
-            ds1Jitter, ds1MissLinearViewZ);
           ds1LookPass.dispatchComposite(this,
             rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite), rtOutput.m_primaryLinearViewZ,
-            ds1Jitter, ds1MissLinearViewZ);
+            getSceneManager().getCamera(), ds1Jitter, ds1MissLinearViewZ);
         }
         // NV-DXVK end
 
@@ -2716,6 +2712,16 @@ namespace dxvk {
       DxvkContext::clearRenderTarget(skyDepthView, VK_IMAGE_ASPECT_DEPTH_BIT, farDepth);
       m_skyMatteDepthFrame = frameId;
     }
+    // Fork (DS1): the game clears its shaft source to black before its layers.
+    Rc<DxvkImageView> shaftSourceView;
+    if (drawCallState.ds1ShaftSource) {
+      shaftSourceView = getResourceManager().getDs1ShaftSource(this, m_skyColorFormat).view;
+      if (m_ds1ShaftSourceFrame != frameId) {
+        VkClearValue black = {};
+        DxvkContext::clearRenderTarget(shaftSourceView, VK_IMAGE_ASPECT_COLOR_BIT, black);
+        m_ds1ShaftSourceFrame = frameId;
+      }
+    }
 
     const DxvkDsInfo gameDepthState = m_state.gp.state.ds;
     const bool opaqueLayer = !m_state.gp.state.omBlend[0].blendEnable();
@@ -2733,6 +2739,23 @@ namespace dxvk {
       DxvkContext::drawIndexed(params.indexCount, params.instanceCount, params.firstIndex, params.vertexOffset, 0);
     }
 
+    // Fork (DS1): the same layer into the light shaft source. The game's shaft pass tests its layers only
+    // against the scene's depth (the look's shaft bright pass masks the source to where primary rays miss),
+    // so here they draw in order with no depth.
+    if (shaftSourceView != nullptr) {
+      DxvkRenderTargets shaftRt;
+      shaftRt.color[0].view = getResourceManager().getCompatibleViewForView(shaftSourceView, m_skyRtColorFormat);
+      shaftRt.color[0].layout = VK_IMAGE_LAYOUT_GENERAL;
+      bindRenderTargets(shaftRt);
+      m_state.gp.state.ds = DxvkDsInfo(VK_FALSE, VK_FALSE, VK_FALSE, VK_FALSE, VK_COMPARE_OP_ALWAYS);
+      m_flags.set(DxvkContextFlag::GpDirtyPipelineState);
+      if (params.indexCount == 0) {
+        DxvkContext::draw(params.vertexCount, params.instanceCount, params.vertexOffset, 0);
+      } else {
+        DxvkContext::drawIndexed(params.indexCount, params.instanceCount, params.firstIndex, params.vertexOffset, 0);
+      }
+    }
+
     m_state.gp.state.ds = gameDepthState;
     m_flags.set(DxvkContextFlag::GpDirtyPipelineState);
 
@@ -2746,6 +2769,10 @@ namespace dxvk {
     } else {
       allocAndMapFixedFunctionVSConstantBuffer() = prevCB.fixedFunction;
     }
+  }
+
+  bool RtxContext::ds1ShaftSourceReady() {
+    return m_ds1ShaftSourceFrame == m_device->getCurrentFrameId() && getResourceManager().getDs1ShaftSource(nullptr).isValid();
   }
 
   void RtxContext::initSkyProbe() {

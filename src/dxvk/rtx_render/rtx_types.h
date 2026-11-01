@@ -772,6 +772,9 @@ struct DrawCallState {
   // Used by tryHandleSky to optionally bypass cubemap rasterization for autoDetected sky,
   // since it may be world geometry that should go through reprojection instead.
   bool skyAutoDetected = false;
+  // Fork (DS1): a sky layer the game also draws into its light shaft source (marker 0xD15D05C2): it is
+  // rasterized into the shaft source as well as the sky matte (RtxContext::rasterizeToSkyMatte).
+  bool ds1ShaftSource = false;
 
   void setupCategoriesForTexture();
   void setupCategoriesForGeometry();

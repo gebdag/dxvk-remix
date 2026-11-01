@@ -83,15 +83,18 @@
 // Fork: Remix's own tonemapped frame (linear), which rtx.ds1Look.intensity below 1 blends the look with.
 #define POST_FX_DS_LOOK_COMPOSITE_STOCK      4
 
-// Light shafts: the game's FRPG_Fil_LightShaft (a radial blur of the frame's bright sky towards the
-// shaft sun, added by ColAdj times c56.y) as single scattering along each view ray, path traced:
-// the composite adds them where ColAdj adds the game's. The TLAS sits at the common ray tracing
-// index, the resource every ray tracing pass binds there.
-#define POST_FX_DS_LOOK_SHAFTS_TLAS          0
+// Light shafts: the game's FRPG_Fil_LightShaft chain. Its source is not the frame: after the scene the
+// game draws some sky layers again (Undead Parish: the dome and the shaft planes, not the cloud layers)
+// into a 512x360 buffer cleared to black, with the same constants, depth tested against a copy of the
+// scene's depth (FRPG_Fil_DepthCopy). The DS1 proxy tags those layers' main-pass draws and the runtime
+// rasterizes them into its shaft source (Resources::getDs1ShaftSource), which the bright pass masks to
+// where primary rays miss. A bright pass of it at c71.x (BrightPassFilter, the same threshold near and
+// far; PostFxDarkSoulsLookBrightArgs::skySource), GaussBlur5x5, then two radial blurs towards
+// the shaft sun's screen position (c69), (c70.x, c70.y, c70.z) = (100, 0.04, 0.434) and (10, 1, 0.92)
+// in the game; the composite adds the result times c56.y where ColAdj does.
+#define POST_FX_DS_LOOK_SHAFTS_INPUT         0
 #define POST_FX_DS_LOOK_SHAFTS_OUTPUT        1
-#define POST_FX_DS_LOOK_SHAFTS_LINEAR_VIEW_Z 2
-#define POST_FX_DS_LOOK_SHAFTS_SKY_PROBE     3
-#define POST_FX_DS_LOOK_SHAFTS_CONSTANTS     4
+#define POST_FX_DS_LOOK_SHAFTS_CONSTANTS     2
 
 #define DS_LOOK_MAX_TAPS 64
 
@@ -217,7 +220,15 @@ struct PostFxDarkSoulsLookBrightArgs {
   float thresholdFar;   // c71.x
   float depthBegin;     // c71.z: bloom depth rate = sat((viewZ - begin) / (end - begin))
   float depthEnd;       // c71.w
-  float pad0;
+  // 1: the scene is the light shaft source (sky layers, as the sky matte holds them), masked to where
+  // primary rays miss and turned into the game's scene value as the
+  // scene pass turns a primary miss: (skyBrightness * ds1SkyRadiance(matte))^(1/2.2) * exposure.
+  uint skySource;
+
+  float skyBrightness;  // rtx.skyBrightness
+  float exposure;       // as PostFxDarkSoulsLookSceneArgs::exposure
+  float skyUnexpose;    // Ds1AmbientArgs's
+  uint skyGamma;
 };
 
 struct PostFxDarkSoulsLookFilterArgs {
@@ -254,35 +265,17 @@ struct PostFxDarkSoulsLookCompositeArgs {
   uint pad0;
 };
 
+// One FRPG_Fil_LightShaft pass (post_fx_dark_souls_look_shafts.comp.slang).
 struct PostFxDarkSoulsLookShaftArgs {
-  Camera camera;
-  // The sky probe holds the game's sky raster; this maps it to radiance (ds1SkyRadiance).
-  Ds1AmbientArgs ambient;
-
-  // -- Struct objects should go above this line to preserve alignment --
-
-  uvec2 outputSize;
+  uvec2 outputSize;     // input and output are the same size (the bright pass size)
   vec2 invOutputSize;
 
-  vec2 depthJitterUv;   // render-resolution UV jitter of the view Z buffer
-  float missLinearViewZ;
-  float exposure;       // c135.x / c135.y: radiance^(1/2.2) * this = the game's 8-bit value
+  vec2 sunUv;           // c69.xy: the shaft sun's screen position, unclamped (it may lie off screen)
+  float maxLength;      // c70.x: the most the taps reach, in texels
+  float decay;          // c70.z: each tap's weight times this
 
-  vec3 direction;       // towards the shaft sun (the proxy recovers it from c69)
-  float threshold;      // the shaft bright pass threshold for the sky (c71.x)
-
-  // The sky as a shell of this radius around the camera: a sun ray from a point in the air
-  // leaves through it at the cloud (or gap) it is shadowed by.
-  float cloudDistance;
-  // Points farther than this from the camera, and geometry farther than this from a point,
-  // do not shadow the sun.
-  float occlusionDistance;
-  uint samples;
-  uint frameIndex;
-
-  float gain;
-  float anisotropy;     // Henyey-Greenstein g of the scattering (0 = isotropic, like the game's)
-  // The scattering air's density rises towards the shell as exp((t - cloudDistance) / layerDepth).
-  float layerDepth;
+  float weight;         // c70.y
   uint pad0;
+  uint pad1;
+  uint pad2;
 };
