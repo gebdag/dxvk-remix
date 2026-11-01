@@ -39,15 +39,30 @@ static const uint kPrimarySurfaceFlagPrimaryRayMiss = 1 << 4;
 // Fork: bits 8-11 carry the primary surface's DS1 haze set (Surface::ds1HazeSet) to the DS1 look's
 // scene pass. The primary surface flags texture is R16_UINT for this (R8 upstream).
 static const uint kPrimarySurfaceFlagDs1HazeSetShift = 8;
+// Fork: bits 12-15 the primary surface's DS1 specular gain (Surface::ds1EffectSpecularGain) for the composite, as
+// a code c for a gain of 2^(c / 2): a SpEffect's specular scale beyond what a base reflectivity of 1 holds.
+static const uint kPrimarySurfaceFlagDs1SpecularGainShift = 12;
+
+uint ds1SpecularGainEncode(float gain)
+{
+  return uint(clamp(round(2.0f * log2(max(gain, 1.0f))), 0.0f, 15.0f));
+}
+
+float ds1SpecularGainDecode(uint flags)
+{
+  return exp2(float((flags >> kPrimarySurfaceFlagDs1SpecularGainShift) & 0xF) * 0.5f);
+}
 
 void motionBlurSurfaceFlagsWriteToGBuffer(
   MotionBlurSurfaceFlags motionBlurSurfaceFlags,
   ivec2 position,
   RWTexture2D<uint> motionBlurSurfaceFlagsTexture,
-  uint ds1HazeSet = 0)
+  uint ds1HazeSet = 0,
+  float ds1SpecularGain = 1.0f)
 {
-  // Fork: the DS1 haze set (bits 8-11); motion blur reads only bits 0-3.
+  // Fork: the DS1 haze set (bits 8-11) and specular gain (bits 12-15); motion blur reads only bits 0-3.
   uint encodedFlags = (ds1HazeSet & 0xF) << kPrimarySurfaceFlagDs1HazeSetShift;
+  encodedFlags |= ds1SpecularGainEncode(ds1SpecularGain) << kPrimarySurfaceFlagDs1SpecularGainShift;
   encodedFlags = packedFlagSet(encodedFlags, motionBlurSurfaceFlags.isViewModel ? (1 << 0) : 0);
   encodedFlags = packedFlagSet(encodedFlags, motionBlurSurfaceFlags.isStatic ? (1 << 1) : 0);
   encodedFlags = packedFlagSet(encodedFlags, motionBlurSurfaceFlags.isEmissive ? (1 << 2) : 0);

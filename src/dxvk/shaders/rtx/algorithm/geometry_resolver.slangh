@@ -583,7 +583,8 @@ void geometryResolverOutputSurface<
     motionBlurSurfaceFlags.isViewModel = isViewModel;
     motionBlurSurfaceFlags.isStatic = surface.isStatic;
     motionBlurSurfaceFlags.isEmissive = isRadianceOutput;
-    motionBlurSurfaceFlagsWriteToGBuffer(motionBlurSurfaceFlags, ivec2(pixelCoordinate), PrimarySurfaceFlags, surface.ds1HazeSet);
+    motionBlurSurfaceFlagsWriteToGBuffer(motionBlurSurfaceFlags, ivec2(pixelCoordinate), PrimarySurfaceFlags, surface.ds1HazeSet,
+      surface.ds1EffectSpecularGain);
   }
   else if (storesGBuffer && cb.writeSecondaryDenoisingGuides)
   {

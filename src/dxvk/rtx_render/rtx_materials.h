@@ -387,8 +387,14 @@ struct RtSurface {
 
     // Fork: a DS1 water surface, which never has a clip plane, carries its third wave layer here instead
     // (Surface::ds1WaterLayer3).
+    // Other surfaces without a clip plane carry their SpEffect colouring there as eight halfs, all 0 for none
+    // (Surface::hasDs1Effect).
     if (isDs1Water && !isClipPlaneEnabled) {
       writeGPUHelper(data, offset, Vector4(ds1WaterLayer3[0], ds1WaterLayer3[1], ds1WaterLayer3[2], ds1WaterLayer3[3]));
+    } else if (!isClipPlaneEnabled) {
+      for (int i = 0; i < 8; i += 2) {
+        writeGPUHelper(data, offset, uint32_t(glm::packHalf1x16(ds1Effect[i])) | (uint32_t(glm::packHalf1x16(ds1Effect[i + 1])) << 16));
+      }
     } else {
       writeGPUHelper(data, offset, clipPlane);
     }
@@ -485,6 +491,8 @@ struct RtSurface {
   float ds1WaterSmear = 0.0f;
   // Fork: DS1 water's third wave layer (data14 in place of the clip plane), see Surface::ds1WaterLayer3.
   float ds1WaterLayer3[4] = {};
+  // Fork: a DS1 SpEffect colouring (data14 as halfs in place of the clip plane), see Surface::hasDs1Effect.
+  float ds1Effect[8] = {};
   // Fork: DS1 environment reflection weight (data15.z), see Surface::ds1EnvReflection; 0 = none.
   uint32_t ds1SpecularTag = 0;
   // Fork: DS1 soft sprite feather in metres (data15.y), see Surface::ds1ParticleFeather; 0 = none.
@@ -2128,6 +2136,9 @@ struct LegacyMaterialData {
   float ds1WaterSmear = 0.0f;
   // Fork: the third wave layer: scale and offset relative to layer 1's uv, normal strength.
   float ds1WaterLayer3[4] = {};
+  // Fork: a DS1 SpEffect colouring (rim rgb, facing rgb, specular boost, Phong exponent; all 0 = none), see
+  // Surface::hasDs1Effect. Per draw, not part of the identity.
+  float ds1Effect[8] = {};
   // Fork: the DS1 environment reflection weight from the stage-1 tag as data15.z holds it (bit 31 | half;
   // 0 = none), see Surface::ds1EnvReflection. Per draw,
   // not part of the identity.

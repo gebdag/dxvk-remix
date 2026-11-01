@@ -1049,6 +1049,39 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     opaqueSurfaceMaterialInteraction.albedo = min(albedo, vec3(1.0f) - ds1SwampReflectivity);
   }
 
+  // Fork (DS1): a SpEffect colouring (Surface::hasDs1Effect). The game adds lerp(rim, facing, (min(|N.V|, 0.7) - 0.1)
+  // / 0.6) to its lit colour in display gamma: phantoms glow at their silhouette and darken inside, Iron Flesh gets
+  // a dark outline, and the effect's specular scale makes the surface dull or chrome. The positive part shines as
+  // emission (its gamma value to the 2.2 power, as the game's scene value maps to radiance); the negative part
+  // removes its share of a lit colour of about kDs1EffectLitLevel. A specular boost below 1 scales the base
+  // reflectivity in gamma; above 1 the composite applies it (Surface::ds1EffectSpecularGain), and the lobe takes
+  // the Phong exponent's roughness (a Phong exponent n is about a Blinn-Phong 4n).
+  vec3 ds1EffectGlow = vec3(0.0f);
+  if (surface.hasDs1Effect && !noReflectance)
+  {
+    const float kDs1EffectLitLevel = 0.3f;
+    const float facing = min(abs(dot(normalize(minimalRayInteraction.viewDirection), normalize(vec3(opaqueSurfaceMaterialInteraction.shadingNormal)))), 0.7f);
+    const vec3 add = facing <= 0.1f ? surface.ds1EffectRim : lerp(surface.ds1EffectRim, surface.ds1EffectFacing, (facing - 0.1f) / 0.6f);
+    const vec3 keep = saturate(1.0f + min(add, vec3(0.0f)) / kDs1EffectLitLevel);
+    vec3 effectAlbedo = vec3(opaqueSurfaceMaterialInteraction.albedo) * keep;
+    vec3 effectF0 = vec3(opaqueSurfaceMaterialInteraction.baseReflectivity);
+    const float boost = surface.ds1EffectSpecularBoost;
+    if (boost > 0.0f)
+    {
+      if (boost < 1.0f)
+      {
+        effectF0 = gammaToLinear(linearToGamma(effectF0) * boost);
+      }
+      else
+      {
+        roughness = min(roughness, pow(2.0f / (4.0f * max(surface.ds1EffectSpecularExponent, 0.0f) + 2.0f), 0.25f));
+      }
+    }
+    opaqueSurfaceMaterialInteraction.albedo = effectAlbedo;
+    opaqueSurfaceMaterialInteraction.baseReflectivity = effectF0 * keep;
+    ds1EffectGlow = pow(max(add, vec3(0.0f)), vec3(kSRGBGamma));
+  }
+
   // Note: Roughness loaded from texture is a perceptual roughness value (for optimal encoding), so this works as intended.
   calcRoughness(roughness, opaqueSurfaceMaterial.anisotropy,
     opaqueSurfaceMaterialInteraction.isotropicRoughness,
@@ -1140,6 +1173,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     }
   }
 
+  emissiveRadiance += ds1EffectGlow;
   opaqueSurfaceMaterialInteraction.emissiveRadiance = emissiveRadiance;
 
   opaqueSurfaceMaterialInteraction.subsurfaceMaterialInteraction =

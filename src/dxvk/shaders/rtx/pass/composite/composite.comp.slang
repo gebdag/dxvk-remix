@@ -737,6 +737,8 @@ vec4 compositeResult(
     primaryAttenuation = r11g11b10ToColor(PrimaryAttenuation[compactedCoordinate]);
     primaryAlbedo = PrimaryAlbedo[compactedCoordinate].xyz;
     primarySpecularAlbedo = PrimarySpecularAlbedo[compactedCoordinate].xyz;
+    // Fork (DS1): a SpEffect's specular scale beyond a base reflectivity of 1 (Surface::ds1EffectSpecularGain).
+    primarySpecularAlbedo *= ds1SpecularGainDecode(PrimarySurfaceFlags[pixelCoordinate]);
     perceptualRoughness = PrimaryVirtualWorldNormalPerceptualRoughness[compactedCoordinate].w;
   }
 

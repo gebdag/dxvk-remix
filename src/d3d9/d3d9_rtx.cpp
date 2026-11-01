@@ -1295,6 +1295,17 @@ namespace dxvk {
           water.ds1WaterLayer3[2] = hasLayer3 ? layer3.data[2].y : 0.0f;
           water.ds1WaterLayer3[3] = hasLayer3 ? layer3.data[3].x : 0.0f;
         }
+        // Fork: a DS1 SpEffect colouring (the game's FRPG_Gst_* shaders: phantoms, Iron Flesh) in stage 4's texture
+        // transform, D3DTTFF_COUNT3: rows 1-2 the rim and facing colours, _31 the specular boost, _32 the Phong
+        // exponent (the proxy's ffp_state::apply_sp_effect). See Surface::hasDs1Effect.
+        const bool hasEffect = (d3d9State().textureStages[4][DXVK_TSS_TEXTURETRANSFORMFLAGS] & 0xFF) == D3DTTFF_COUNT3;
+        const Matrix4& effect = d3d9State().transforms[GetTransformIndex(D3DTS_TEXTURE4)];
+        const float effectValues[8] = { effect.data[0].x, effect.data[0].y, effect.data[0].z,
+                                        effect.data[1].x, effect.data[1].y, effect.data[1].z,
+                                        effect.data[2].x, effect.data[2].y };
+        for (int i = 0; i < 8; ++i) {
+          water.ds1Effect[i] = hasEffect ? effectValues[i] : 0.0f;
+        }
         // Fork: on other draws stage 1's D3DTSS_CONSTANT can carry the DS1 environment reflection weight,
         // 0xD7000000 | half (the proxy's env_reflection.cpp), kept while its option is on. See
         // Surface::ds1EnvReflection.

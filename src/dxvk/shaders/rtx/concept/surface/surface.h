@@ -640,6 +640,43 @@ struct Surface
     get { return asfloat(data14); }
   }
 
+  // Fork: a DS1 SpEffect colouring: the game's FRPG_Gst_* shaders (phantoms, Iron Flesh) add a colour by view
+  // angle, from the rim colour edge-on to the facing colour seen straight on, and scale the specular. data14 as
+  // halfs on surfaces with no clip plane that are not water, all 0 for none (RtSurface::writeGPUData).
+  property bool hasDs1Effect
+  {
+    get { return !isDs1Water && !isClipPlaneEnabled && any(data14 != 0u); }
+  }
+
+  property vec3 ds1EffectRim
+  {
+    get { return vec3(f16tof32(data14.x & 0xFFFFu), f16tof32(data14.x >> 16), f16tof32(data14.y & 0xFFFFu)); }
+  }
+
+  property vec3 ds1EffectFacing
+  {
+    get { return vec3(f16tof32(data14.y >> 16), f16tof32(data14.z & 0xFFFFu), f16tof32(data14.z >> 16)); }
+  }
+
+  // The effect's specular map scale over the material's own (c101), and its Phong exponent (c102).
+  property float ds1EffectSpecularBoost
+  {
+    get { return f16tof32(data14.w & 0xFFFFu); }
+  }
+
+  property float ds1EffectSpecularExponent
+  {
+    get { return f16tof32(data14.w >> 16); }
+  }
+
+  // The specular boost above 1 in linear terms: the game scales its specular in display gamma, so by the boost to
+  // the 2.2 power in linear. A base reflectivity cannot hold it (Iron Flesh: 10 over 1.5, 65x), so the composite
+  // scales the primary specular by it (kPrimarySurfaceFlagDs1SpecularGainShift).
+  property float ds1EffectSpecularGain
+  {
+    get { return hasDs1Effect && ds1EffectSpecularBoost > 1.0f ? pow(ds1EffectSpecularBoost, 2.2f) : 1.0f; }
+  }
+
   // Layer 1 and layer 2 normal strengths, relative to the water normal map as authored.
   property vec2 ds1WaterStrength
   {
