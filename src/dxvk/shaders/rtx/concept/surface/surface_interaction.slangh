@@ -104,6 +104,15 @@ bool isSurfaceClipped(Surface surface, MinimalSurfaceInteraction surfaceInteract
   return clipDistance < 0.0;
 }
 
+// Fork (DS1): whether a lighting ray that left a surface with originNormal passes this hit on a thin wall
+// (Surface::isDs1ThinWall): a face turned back towards the origin's, within the 0.5 m gap of such pairs
+// (scripts/gen_thin_walls.py in the proxy). hitFrontNormal is the hit triangle's normal, facing the ray.
+bool ds1IsThinWallPass(Surface surface, vec3 hitFrontNormal, vec3 rayDirection, float hitDistance, vec3 originNormal)
+{
+  return surface.isDs1ThinWall && dot(hitFrontNormal, originNormal) < -0.95f &&
+    hitDistance * abs(dot(hitFrontNormal, rayDirection)) < 0.5f;
+}
+
 // <0, 1> -> <-0.5, 0.5>
 vec2 texcoordToOffsetFromTextureCenter(vec2 texcoord)
 {

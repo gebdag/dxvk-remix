@@ -59,6 +59,7 @@ PathState pathStateCreateEmpty(GeometryFlags geometryFlags)
   pathState.firstBounceHitDistance = kEmptyPixelHitDistance;
   pathState.mediumMaterialIndex = SURFACE_INDEX_INVALID;
   
+  pathState.ds1OriginNormal = 0;
   pathState.continueResolving = true;
   pathState.continuePath = true;
   pathState.insideMedium = false;
@@ -596,6 +597,7 @@ void integratePathVertex(
       pathState.origin = sampledRay.origin;
       pathState.coneRadius = sampledRay.coneRadius;
       pathState.direction = sampledRay.direction;
+      pathState.ds1OriginNormal = sphereDirectionToSnorm2x16(surfaceInteraction.geometryNormal);
       pathState.solidAnglePdf = solidAnglePdf;
     }
     
@@ -1563,6 +1565,16 @@ void integrateIndirectPath(
   }
 
   pathState.continuePath &= any(pathState.throughput > 0.0f);
+
+  // Fork (DS1): the first bounce leaves the primary surface (IBasePayloadState::ds1OriginNormal).
+  if (pathState.continuePath)
+  {
+    const MinimalSurfaceInteraction ds1Origin = minimalSurfaceInteractionReadFromGBuffer(compactedCoordinate, indirectPathTextures.PrimaryWorldPositionWorldTriangleNormal);
+    if (ds1Origin.isValid)
+    {
+      pathState.ds1OriginNormal = sphereDirectionToSnorm2x16(ds1Origin.geometryNormal);
+    }
+  }
 
   if (pathState.continuePath)
   {

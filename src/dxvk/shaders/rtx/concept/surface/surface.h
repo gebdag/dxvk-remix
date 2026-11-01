@@ -521,6 +521,16 @@ struct Surface
     set { data13.z = newValue ? packedFlagSet(data13.z, 1u << 31) : packedFlagUnset(data13.z, 1u << 31); }
   }
 
+  // Fork: a DS1 thin wall (the proxy's thin wall marker): a mesh with single-sided faces a few centimetres from
+  // faces of its model, their fronts turned towards each other. The game culls whichever face is seen from behind
+  // and its lights cast no shadows, so each view shows its own face. A lighting ray leaving one of those faces
+  // meets the front of the other at once: it passes (ds1IsThinWallPass), and the wall stays lit. Rays arriving
+  // from outside meet a back face or a front not turned towards their origin, and stop.
+  property bool isDs1ThinWall
+  {
+    get { return packedFlagGet(data13.x, 1u << 31); }
+  }
+
   // Fork: the DS1 haze set the draw was tagged with (1-15, 0 = none): the slot of its own fog and
   // scattering constants in the DS1 look's scene pass (post_fx_dark_souls_haze.h).
   property uint ds1HazeSet
@@ -559,8 +569,8 @@ struct Surface
 
   property uint8_t decalSortOrder
   {
-    get { return uint8_t((data13.x >> 24) & 0xFF); }
-    set { data13.x = (data13.x & 0x00FFFFFF) | (uint32_t(newValue & 0xFF) << 24); }
+    get { return uint8_t((data13.x >> 24) & 0x7F); }
+    set { data13.x = (data13.x & 0x80FFFFFF) | (uint32_t(newValue & 0x7F) << 24); }
   }
 
   property uint objectPickingValue

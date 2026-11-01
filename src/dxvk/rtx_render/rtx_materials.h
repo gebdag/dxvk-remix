@@ -336,7 +336,8 @@ struct RtSurface {
     textureSpritesheetData |= (static_cast<uint32_t>(std::max<uint8_t>(1, spriteSheetCols)) << 8);
     textureSpritesheetData |= (static_cast<uint32_t>(spriteSheetFPS) << 16);
     // pack decalSortOrder into data13.x's last 8 bits.
-    textureSpritesheetData |= (static_cast<uint32_t>(decalSortOrder) << 24);
+    // Fork: bit 31, a DS1 thin wall (Surface::isDs1ThinWall); the sort order keeps the 7 bits below it.
+    textureSpritesheetData |= (static_cast<uint32_t>(decalSortOrder & 0x7F) << 24) | (isDs1ThinWall ? (1u << 31) : 0);
 
     writeGPUHelper(data, offset, textureSpritesheetData);
 
@@ -477,6 +478,8 @@ struct RtSurface {
   bool isDs1Swamp = false;
   // Fork: a DS1 blend skirt decal, lit on its own surface (textureFlags bit 31, Surface::isDs1SkirtDecal).
   bool isDs1SkirtDecal = false;
+  // Fork: a DS1 thin wall, passed by lighting rays leaving the face in front of it (Surface::isDs1ThinWall).
+  bool isDs1ThinWall = false;
   // Fork: DS1 haze set slot (1-15, 0 = none), see post_fx_dark_souls_haze.h.
   uint8_t ds1HazeSet = 0;
   // Fork: exposure power of a DS1 unlit sprite (0-2), see Surface::ds1UnlitExposurePower.
@@ -2119,6 +2122,8 @@ struct LegacyMaterialData {
   bool isDs1Swamp = false; // fork: DS1 swamp marker, see fork_ds1_swamp.h
   // Fork: drawn with the DS1 proxy's skirt decal marker (Surface::isDs1SkirtDecal). Per draw, not part of the identity.
   bool isDs1SkirtDecal = false;
+  // Fork: drawn with the DS1 proxy's thin wall marker (Surface::isDs1ThinWall). Per draw, not part of the identity.
+  bool isDs1ThinWall = false;
   // Fork: DS1 haze set slot from the haze marker (not part of the material's identity: the same
   // material is drawn in several regions).
   uint8_t ds1HazeSet = 0;

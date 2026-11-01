@@ -75,6 +75,9 @@ interface IBasePayloadState
   property bool continueResolving { get; set; }
   property bool directionAltered { get; set; }
   property vec4 accumulatedRotation { get; set; }
+  // Fork (DS1): the geometry normal of the surface the ray left, as sphereDirectionToSnorm2x16; 0 = none, the ray
+  // passes no thin wall (Surface::isDs1ThinWall).
+  property uint ds1OriginNormal { get; }
 
 #ifdef RAY_PIPELINE
   // Returns if the caller should reorder before invokeHitObject, along with coherence hints to use

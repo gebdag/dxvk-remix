@@ -377,6 +377,15 @@ float resolveVertex<T: IBasePayloadState>(
 
   // Process user clip planes and view distance
 
+  if (resolveVertexState.continueResolving && resolveVertexState.ds1OriginNormal != 0 && rayInteraction.frontHit &&
+      ds1IsThinWallPass(surface, surfaceInteraction.triangleNormal, ray.direction, rayInteraction.hitDistance,
+                        snorm2x16ToSphereDirection(resolveVertexState.ds1OriginNormal)))
+  {
+    // Fork (DS1): the inside-out face of a thin wall, seen from the face behind it (Surface::isDs1ThinWall).
+    resolveVertexFinalContinue(ray, surfaceInteraction, teleport, teleportMatrix, resolveVertexState);
+    return 1.0f;
+  }
+
   if (isSurfaceClipped(surface, surfaceInteraction) && resolveVertexState.continueResolving)
   {
     // Continue resolving when we hit a clipped geometry to find possible objects behind it.

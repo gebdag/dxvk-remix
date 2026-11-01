@@ -93,6 +93,9 @@ struct PathState : IBasePayloadState
                      //          bounceIteration(uint:4b)
                      // [24-31]: roughness (unorm8)
 
+  // Fork (DS1): see IBasePayloadState::ds1OriginNormal.
+  uint _ds1OriginNormal;
+
   // Need to track pixel coordinate for sparse rendering where threads can remap to different pixels
   u16vec2 _pixelCoordinate;
 
@@ -449,6 +452,12 @@ struct PathState : IBasePayloadState
   {
       get { return _direction; }
       set { _direction = f16vec3(newValue); }
+  }
+
+  property uint ds1OriginNormal
+  {
+    get { return _ds1OriginNormal; }
+    set { _ds1OriginNormal = newValue; }
   }
 
   // Track the portal ID that an indirect ray crosses
