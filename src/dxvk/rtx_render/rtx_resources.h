@@ -510,8 +510,8 @@ namespace dxvk
     Resources::Resource getSkyMatte(Rc<DxvkContext> ctx, VkFormat format = VK_FORMAT_UNDEFINED);
     // Fork: the sky matte's depth (RtxContext::rasterizeToSkyMatte), the matte's extent.
     Rc<DxvkImageView> getSkyMatteDepth(Rc<DxvkContext> ctx);
-    // Fork (DS1): the game's light shaft source, the sky layers it redraws for its shaft filter, at the sky
-    // matte's extent and format (RtxContext::rasterizeToSkyMatte).
+    // Fork (DS1): the game's light shaft source, the sky layers it redraws for its shaft filter, as a cube
+    // around the camera in the sky probe's format (RtxContext::rasterizeToSkyProbe).
     Resources::Resource getDs1ShaftSource(Rc<DxvkContext> ctx, VkFormat format = VK_FORMAT_UNDEFINED);
     Rc<DxvkImageView> getCompatibleViewForView(const Rc<DxvkImageView>& view, VkFormat format);
 

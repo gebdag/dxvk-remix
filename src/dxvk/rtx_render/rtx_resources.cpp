@@ -1081,10 +1081,11 @@ namespace dxvk {
     if (format == VK_FORMAT_UNDEFINED) {
       return m_ds1ShaftSource;
     }
-    if (!m_ds1ShaftSource.isValid() || m_ds1ShaftSource.image->info().extent != m_targetExtent ||
-        m_ds1ShaftSource.image->info().format != format) {
-      m_ds1ShaftSource = createImageResource(ctx, "DS1 light shaft source", m_targetExtent, format,
-                                             1, VK_IMAGE_TYPE_2D, VK_IMAGE_VIEW_TYPE_2D,
+    // The game's shaft buffer is 512 wide over the screen; a 512 face covers 90 degrees about as finely.
+    constexpr uint32_t kSide = 512;
+    if (!m_ds1ShaftSource.isValid() || m_ds1ShaftSource.image->info().format != format) {
+      m_ds1ShaftSource = createImageResource(ctx, "DS1 light shaft source", VkExtent3D { kSide, kSide, 1 }, format,
+                                             6, VK_IMAGE_TYPE_2D, VK_IMAGE_VIEW_TYPE_CUBE,
                                              VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
     }
     return m_ds1ShaftSource;

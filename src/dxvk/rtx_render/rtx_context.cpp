@@ -2712,16 +2712,6 @@ namespace dxvk {
       DxvkContext::clearRenderTarget(skyDepthView, VK_IMAGE_ASPECT_DEPTH_BIT, farDepth);
       m_skyMatteDepthFrame = frameId;
     }
-    // Fork (DS1): the game clears its shaft source to black before its layers.
-    Rc<DxvkImageView> shaftSourceView;
-    if (drawCallState.ds1ShaftSource) {
-      shaftSourceView = getResourceManager().getDs1ShaftSource(this, m_skyColorFormat).view;
-      if (m_ds1ShaftSourceFrame != frameId) {
-        VkClearValue black = {};
-        DxvkContext::clearRenderTarget(shaftSourceView, VK_IMAGE_ASPECT_COLOR_BIT, black);
-        m_ds1ShaftSourceFrame = frameId;
-      }
-    }
 
     const DxvkDsInfo gameDepthState = m_state.gp.state.ds;
     const bool opaqueLayer = !m_state.gp.state.omBlend[0].blendEnable();
@@ -2737,23 +2727,6 @@ namespace dxvk {
       DxvkContext::draw(params.vertexCount, params.instanceCount, params.vertexOffset, 0);
     } else {
       DxvkContext::drawIndexed(params.indexCount, params.instanceCount, params.firstIndex, params.vertexOffset, 0);
-    }
-
-    // Fork (DS1): the same layer into the light shaft source. The game's shaft pass tests its layers only
-    // against the scene's depth (the look's shaft bright pass masks the source to where primary rays miss),
-    // so here they draw in order with no depth.
-    if (shaftSourceView != nullptr) {
-      DxvkRenderTargets shaftRt;
-      shaftRt.color[0].view = getResourceManager().getCompatibleViewForView(shaftSourceView, m_skyRtColorFormat);
-      shaftRt.color[0].layout = VK_IMAGE_LAYOUT_GENERAL;
-      bindRenderTargets(shaftRt);
-      m_state.gp.state.ds = DxvkDsInfo(VK_FALSE, VK_FALSE, VK_FALSE, VK_FALSE, VK_COMPARE_OP_ALWAYS);
-      m_flags.set(DxvkContextFlag::GpDirtyPipelineState);
-      if (params.indexCount == 0) {
-        DxvkContext::draw(params.vertexCount, params.instanceCount, params.vertexOffset, 0);
-      } else {
-        DxvkContext::drawIndexed(params.indexCount, params.instanceCount, params.firstIndex, params.vertexOffset, 0);
-      }
     }
 
     m_state.gp.state.ds = gameDepthState;
@@ -2773,6 +2746,26 @@ namespace dxvk {
 
   bool RtxContext::ds1ShaftSourceReady() {
     return m_ds1ShaftSourceFrame == m_device->getCurrentFrameId() && getResourceManager().getDs1ShaftSource(nullptr).isValid();
+  }
+
+  void RtxContext::initDs1ShaftSource() {
+    const Rc<DxvkImage> image = getResourceManager().getDs1ShaftSource(this, m_skyColorFormat).image;
+    if (m_ds1ShaftSourceImage == image) {
+      return;
+    }
+    m_ds1ShaftSourceImage = image;
+    DxvkImageViewCreateInfo viewInfo;
+    viewInfo.type = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = m_skyRtColorFormat;
+    viewInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    viewInfo.aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.minLevel = 0;
+    viewInfo.numLevels = 1;
+    viewInfo.numLayers = 1;
+    for (uint32_t n = 0; n < 6; n++) {
+      viewInfo.minLayer = n;
+      m_ds1ShaftSourcePlanes[n] = m_device->createImageView(image, viewInfo);
+    }
   }
 
   void RtxContext::initSkyProbe() {
@@ -2919,6 +2912,34 @@ namespace dxvk {
         DxvkContext::drawIndexed(params.indexCount, params.instanceCount, params.firstIndex, params.vertexOffset, 0);
       } else {
         DxvkContext::draw(params.vertexCount, params.instanceCount, params.vertexOffset, 0);
+      }
+
+      // Fork (DS1): a layer the game also draws for its light shaft filter goes into the shaft source cube
+      // too, with the same view of this plane. The game clears that buffer to black before its layers.
+      if (drawCallState.ds1ShaftSource) {
+        initDs1ShaftSource();
+        const uint32_t frameId = m_device->getCurrentFrameId();
+        if (m_ds1ShaftSourceFrame != frameId) {
+          VkClearValue black = {};
+          for (auto& face : m_ds1ShaftSourcePlanes) {
+            DxvkContext::clearRenderTarget(face, VK_IMAGE_ASPECT_COLOR_BIT, black);
+          }
+          m_ds1ShaftSourceFrame = frameId;
+        }
+        const auto& shaftExt = getResourceManager().getDs1ShaftSource(this).image->info().extent;
+        VkViewport shaftViewport { 0, float(shaftExt.height), float(shaftExt.width), -float(shaftExt.height), 0.f, 1.f };
+        VkRect2D shaftScissor { { 0, 0 }, { shaftExt.width, shaftExt.height } };
+        setViewports(1, &shaftViewport, &shaftScissor);
+        DxvkRenderTargets shaftRt;
+        shaftRt.color[0].view = m_ds1ShaftSourcePlanes[plane];
+        shaftRt.color[0].layout = VK_IMAGE_LAYOUT_GENERAL;
+        bindRenderTargets(shaftRt);
+        if (params.indexCount > 0) {
+          DxvkContext::drawIndexed(params.indexCount, params.instanceCount, params.firstIndex, params.vertexOffset, 0);
+        } else {
+          DxvkContext::draw(params.vertexCount, params.instanceCount, params.vertexOffset, 0);
+        }
+        setViewports(1, &viewport, &scissor);
       }
     }
 

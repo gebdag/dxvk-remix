@@ -246,8 +246,12 @@ namespace dxvk {
     bool m_skyClearDirty = false;
     // Fork: the frame whose first sky draw last cleared the sky matte's depth (rasterizeToSkyMatte).
     uint32_t m_skyMatteDepthFrame = UINT32_MAX;
-    // Fork (DS1): the last frame a shaft source layer was drawn into the shaft source (ds1ShaftSourceReady).
+    // Fork (DS1): the last frame a shaft source layer was drawn into the shaft source (ds1ShaftSourceReady),
+    // and that cube's face views (initDs1ShaftSource).
     uint32_t m_ds1ShaftSourceFrame = UINT32_MAX;
+    Rc<DxvkImage> m_ds1ShaftSourceImage;
+    Rc<DxvkImageView> m_ds1ShaftSourcePlanes[6];
+    void initDs1ShaftSource();
 
     bool shouldUseDLSS() const;
     bool shouldUseRayReconstruction() const;

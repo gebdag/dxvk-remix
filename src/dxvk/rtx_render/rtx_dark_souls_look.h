@@ -23,7 +23,7 @@ namespace dxvk {
   //   bloom            BrightPassFilter, GaussBlur5x5, 2x downsample, GaussBlur5x5 and the
   //                    15-tap Bloom pair, with the game's kernels (dispatchComposite).
   //   light shafts     BrightPassFilter, GaussBlur5x5 and two LightShaft radial blurs towards
-  //                    the shaft sun, where the game runs them (dispatchComposite).
+  //                    the shaft sun, where the game runs them, on view directions (dispatchComposite).
   //   composite        FRPG_Fil_HDR_ColAdj: sat(scene * c56.z) + bloom * rate, the colour
   //                    matrix c62..c64, saturated.
   //
@@ -168,15 +168,15 @@ namespace dxvk {
                              const Resources::Resource& output, float sigmaX, float sigmaY);
     void dispatchFilter(Rc<DxvkContext>& ctx, const Rc<DxvkBuffer>& constants, const Resources::Resource& input,
                         const Resources::Resource& output, const vec4* taps, uint32_t tapCount, bool gated = false);
-    // BrightPassFilter: the scene (skySource: the light shaft source) into m_base[0], thresholded by lerp(near, far, depth rate).
+    // BrightPassFilter: the scene into m_base[0], thresholded by lerp(near, far, depth rate).
     void dispatchBright(Rc<DxvkContext>& ctx, const Rc<DxvkBuffer>& constants, const Resources::Resource& scene,
                         const Resources::Resource& linearViewZ, const float jitterOffset[2], float missLinearViewZ,
-                        float thresholdNear, float thresholdFar, bool skySource);
-    // One LightShaft pass at the bright pass size; pass = c70 (reach, weight, decay).
-    void dispatchShaftPass(Rc<DxvkContext>& ctx, const Rc<DxvkBuffer>& constants, const Resources::Resource& input,
-                           const Resources::Resource& output, const vec2& sunUv, const Vector3& pass);
-    // The game's c69 for this camera: shaftDirection through the view-projection, undivided, as uv.
-    static bool shaftSunUv(const RtCamera& camera, vec2& uv);
+                        float thresholdNear, float thresholdFar);
+    // The light shaft chain on view directions into m_base[1] (post_fx_dark_souls_look_shafts.comp.slang);
+    // false when there is nothing to run it on this frame.
+    bool dispatchShafts(Rc<DxvkContext>& ctx, const Resources::Resource& linearViewZ, const RtCamera& camera,
+                        const float jitterOffset[2], float missLinearViewZ);
+    void ensureShaftCubes(Rc<DxvkContext>& ctx);
     struct MeterGrid {
       uint32_t width, height, groupsX, groupsY;
       uint32_t groups() const { return groupsX * groupsY; }
@@ -207,9 +207,10 @@ namespace dxvk {
     Rc<DxvkBuffer> m_nearConstants;
     Rc<DxvkBuffer> m_dofFilterConstants[6];
     Rc<DxvkBuffer> m_dofConstants;
-    Rc<DxvkBuffer> m_shaftBrightConstants;
-    Rc<DxvkBuffer> m_shaftConstants[2];
-    vec2 m_shaftSunUv = { 0.0f, 0.0f }; // the last frame's, for the menu
+    Rc<DxvkBuffer> m_shaftConstants[4];
+    // The light shaft chain's cubes: bright source, blurred, first pass; each with a 2D array view to write.
+    Resources::Resource m_shaftCube[3];
+    Rc<DxvkImageView> m_shaftCubeTarget[3];
 
     // intensity below 1: the radiance copy and Remix's own tonemapped frame (blendImage).
     Resources::Resource m_blend[2];

@@ -110,8 +110,12 @@ namespace dxvk {
       SHADER_SOURCE(PostFxDarkSoulsLookShaftsShader, VK_SHADER_STAGE_COMPUTE_BIT, post_fx_dark_souls_look_shafts)
 
       BEGIN_PARAMETER()
-        SAMPLER2D(POST_FX_DS_LOOK_SHAFTS_INPUT)
+        ACCELERATION_STRUCTURE(POST_FX_DS_LOOK_SHAFTS_TLAS)
+        SAMPLERCUBE(POST_FX_DS_LOOK_SHAFTS_SOURCE)
+        SAMPLERCUBE(POST_FX_DS_LOOK_SHAFTS_INPUT)
+        RW_TEXTURE2DARRAY(POST_FX_DS_LOOK_SHAFTS_OUTPUT_CUBE)
         RW_TEXTURE2D(POST_FX_DS_LOOK_SHAFTS_OUTPUT)
+        TEXTURE2D(POST_FX_DS_LOOK_SHAFTS_LINEAR_VIEW_Z)
         CONSTANT_BUFFER(POST_FX_DS_LOOK_SHAFTS_CONSTANTS)
       END_PARAMETER()
     };
@@ -182,6 +186,10 @@ namespace dxvk {
     // The game's kernels, read from its draws (PS c22..c36 offsets, c38..c52 weights). Offsets
     // are in texels of the pass's input.
     //
+    // Side of the light shaft chain's cubes: 0.35 degrees a texel, about the game's 256-wide buffer at its
+    // field of view.
+    constexpr uint32_t kShaftCubeSize = 256;
+
     // FRPG_Fil_GaussBlur5x5: a 13-tap diamond, a sigma 1 Gaussian normalised to 1.
     constexpr float kGaussCentre = 0.183858f, kGaussEdge = 0.111515f, kGaussDiagonal = 0.067638f, kGaussFar = 0.024882f;
     const vec4 kGauss5x5[13] = {
@@ -284,7 +292,6 @@ namespace dxvk {
         c = makeConstants(sizeof(PostFxDarkSoulsLookFilterArgs), "DS1 Look DoF Filter Constants");
       }
       m_dofConstants = makeConstants(sizeof(PostFxDarkSoulsLookDofArgs), "DS1 Look DoF Constants");
-      m_shaftBrightConstants = makeConstants(sizeof(PostFxDarkSoulsLookBrightArgs), "DS1 Look Shaft Bright Constants");
       for (auto& c : m_shaftConstants) {
         c = makeConstants(sizeof(PostFxDarkSoulsLookShaftArgs), "DS1 Look Shaft Constants");
       }
@@ -685,7 +692,7 @@ namespace dxvk {
   void DxvkDarkSoulsLook::dispatchBright(Rc<DxvkContext>& ctx, const Rc<DxvkBuffer>& constants,
                                          const Resources::Resource& scene, const Resources::Resource& linearViewZ,
                                          const float jitterOffset[2], float missLinearViewZ,
-                                         float thresholdNear, float thresholdFar, bool skySource) {
+                                         float thresholdNear, float thresholdFar) {
     const VkExtent3D extent = scene.image->mipLevelExtent(0);
     const VkExtent3D viewZExtent = linearViewZ.image->mipLevelExtent(0);
     PostFxDarkSoulsLookBrightArgs args = {};
@@ -697,15 +704,6 @@ namespace dxvk {
     args.thresholdFar = thresholdFar;
     args.depthBegin = depthBegin();
     args.depthEnd = depthEnd();
-    if (skySource) {
-      // The sky raster's decode, as the composite decodes primary misses (CompositePass::dispatch).
-      const float drawn = DxvkDarkSoulsExposure::drawnExposure();
-      args.skySource = 1;
-      args.skyBrightness = RtxOptions::skyBrightness();
-      args.exposure = sceneExposure();
-      args.skyUnexpose = drawn > 0.0f ? 1.0f / drawn : 1.0f;
-      args.skyGamma = RtxOptions::skyForceHDR() ? 1u : 2u;
-    }
     ctx->writeToBuffer(constants, 0, sizeof(args), &args);
     ctx->getCommandList()->trackResource<DxvkAccess::Read>(constants);
 
@@ -718,38 +716,87 @@ namespace dxvk {
     ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
   }
 
-  void DxvkDarkSoulsLook::dispatchShaftPass(Rc<DxvkContext>& ctx, const Rc<DxvkBuffer>& constants,
-                                            const Resources::Resource& input, const Resources::Resource& output,
-                                            const vec2& sunUv, const Vector3& pass) {
-    PostFxDarkSoulsLookShaftArgs args = {};
-    args.outputSize = { m_baseWidth, m_baseHeight };
-    args.invOutputSize = { 1.0f / float(m_baseWidth), 1.0f / float(m_baseHeight) };
-    args.sunUv = sunUv;
-    args.maxLength = pass.x;
-    args.weight = pass.y;
-    args.decay = pass.z;
-    ctx->writeToBuffer(constants, 0, sizeof(args), &args);
-    ctx->getCommandList()->trackResource<DxvkAccess::Read>(constants);
-
-    ctx->bindResourceView(POST_FX_DS_LOOK_SHAFTS_INPUT, input.view, nullptr);
-    ctx->bindResourceSampler(POST_FX_DS_LOOK_SHAFTS_INPUT, m_linearSampler);
-    ctx->bindResourceView(POST_FX_DS_LOOK_SHAFTS_OUTPUT, output.view, nullptr);
-    ctx->bindResourceBuffer(POST_FX_DS_LOOK_SHAFTS_CONSTANTS, DxvkBufferSlice(constants, 0, constants->info().size));
-    ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookShaftsShader::getShader());
-    const VkExtent3D workgroups = util::computeBlockCount(VkExtent3D { m_baseWidth, m_baseHeight, 1 }, VkExtent3D { 16, 8, 1 });
-    ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
+  void DxvkDarkSoulsLook::ensureShaftCubes(Rc<DxvkContext>& ctx) {
+    if (m_shaftCube[0].isValid()) {
+      return;
+    }
+    const VkExtent3D side { kShaftCubeSize, kShaftCubeSize, 1 };
+    static const char* kNames[3] = { "DS1 look shaft source cube", "DS1 look shaft blur cube", "DS1 look shaft pass 1 cube" };
+    for (int i = 0; i < 3; ++i) {
+      m_shaftCube[i] = Resources::createImageResource(ctx, kNames[i], side, VK_FORMAT_R16G16B16A16_SFLOAT, 6,
+                                                      VK_IMAGE_TYPE_2D, VK_IMAGE_VIEW_TYPE_CUBE, VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT);
+      DxvkImageViewCreateInfo viewInfo;
+      viewInfo.type = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+      viewInfo.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+      viewInfo.usage = VK_IMAGE_USAGE_STORAGE_BIT;
+      viewInfo.aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+      viewInfo.minLevel = 0;
+      viewInfo.numLevels = 1;
+      viewInfo.minLayer = 0;
+      viewInfo.numLayers = 6;
+      m_shaftCubeTarget[i] = m_device->createImageView(m_shaftCube[i].image, viewInfo);
+    }
   }
 
-  bool DxvkDarkSoulsLook::shaftSunUv(const RtCamera& camera, vec2& uv) {
-    const Vector3 d = shaftDirection();
-    const double length = std::sqrt(double(d.x) * d.x + double(d.y) * d.y + double(d.z) * d.z);
-    if (!(length > 0.0)) {
+  bool DxvkDarkSoulsLook::dispatchShafts(Rc<DxvkContext>& ctx, const Resources::Resource& linearViewZ, const RtCamera& camera,
+                                         const float jitterOffset[2], float missLinearViewZ) {
+    RtxContext* rtxCtx = static_cast<RtxContext*>(ctx.ptr());
+    const auto& tlas = rtxCtx->getResourceManager().getTLAS(Tlas::Opaque).accelStructure;
+    const Vector3 sun = shaftDirection();
+    const float sunLength = std::sqrt(sun.x * sun.x + sun.y * sun.y + sun.z * sun.z);
+    if (!rtxCtx->ds1ShaftSourceReady() || tlas.ptr() == nullptr || !(sunLength > 0.0f)) {
       return false;
     }
-    // c69 = the direction through the view-projection without the perspective divide, as uv.
-    const Vector4d clip = camera.getViewToProjection() * (camera.getWorldToView() * Vector4d(d.x / length, d.y / length, d.z / length, 0.0));
-    uv = vec2 { float(0.5 * clip.x + 0.5), float(0.5 - 0.5 * clip.y) };
-    return std::isfinite(uv.x) && std::isfinite(uv.y);
+    ScopedGpuProfileZone(ctx, "Dark Souls 1 Look: Light Shafts");
+    ensureShaftCubes(ctx);
+
+    PostFxDarkSoulsLookShaftArgs args = {};
+    args.camera = camera.getShaderConstants();
+    args.cubeSize = kShaftCubeSize;
+    args.outputSize = { m_baseWidth, m_baseHeight };
+    args.sunDirection = { sun.x / sunLength, sun.y / sunLength, sun.z / sunLength };
+    // The game's buffer spans the screen's width: a texel is 2 / (P00 * width) of tangent at the centre.
+    const double p00 = camera.getViewToProjection()[0][0];
+    args.texelAngle = float(std::atan(2.0 / (std::abs(p00) * double(std::max(m_baseWidth, 1u)))));
+    args.threshold = std::min(shaftThreshold(), 0.999f);
+    // The sky raster's decode, as the composite decodes primary misses (CompositePass::dispatch).
+    const float drawn = DxvkDarkSoulsExposure::drawnExposure();
+    args.skyBrightness = RtxOptions::skyBrightness();
+    args.exposure = sceneExposure();
+    args.skyUnexpose = drawn > 0.0f ? 1.0f / drawn : 1.0f;
+    args.skyGamma = RtxOptions::skyForceHDR() ? 1u : 2u;
+    const VkExtent3D viewZExtent = linearViewZ.image->mipLevelExtent(0);
+    args.depthJitterUv = { jitterOffset[0] / float(viewZExtent.width), jitterOffset[1] / float(viewZExtent.height) };
+    args.missLinearViewZ = missLinearViewZ;
+
+    const Resources::Resource source = rtxCtx->getResourceManager().getDs1ShaftSource(ctx);
+    ctx->bindAccelerationStructure(POST_FX_DS_LOOK_SHAFTS_TLAS, tlas);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SHAFTS_SOURCE, source.view, nullptr);
+    ctx->bindResourceSampler(POST_FX_DS_LOOK_SHAFTS_SOURCE, m_linearSampler);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SHAFTS_LINEAR_VIEW_Z, linearViewZ.view, nullptr);
+    ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookShaftsShader::getShader());
+
+    // Source -> cube 0, blur -> cube 1, pass 1 -> cube 2, pass 2 -> m_base[1]. Unused slots still need a view.
+    const Vector3 passes[4] = { Vector3(0.0f), Vector3(0.0f), shaftPass1(), shaftPass2() };
+    for (uint32_t mode = 0; mode < 4; ++mode) {
+      args.mode = mode;
+      args.maxLength = passes[mode].x;
+      args.weight = passes[mode].y;
+      args.decay = passes[mode].z;
+      ctx->writeToBuffer(m_shaftConstants[mode], 0, sizeof(args), &args);
+      ctx->getCommandList()->trackResource<DxvkAccess::Read>(m_shaftConstants[mode]);
+      ctx->bindResourceBuffer(POST_FX_DS_LOOK_SHAFTS_CONSTANTS,
+                              DxvkBufferSlice(m_shaftConstants[mode], 0, m_shaftConstants[mode]->info().size));
+      ctx->bindResourceView(POST_FX_DS_LOOK_SHAFTS_INPUT, mode == 0 ? source.view : m_shaftCube[mode - 1].view, nullptr);
+      ctx->bindResourceSampler(POST_FX_DS_LOOK_SHAFTS_INPUT, m_linearSampler);
+      ctx->bindResourceView(POST_FX_DS_LOOK_SHAFTS_OUTPUT_CUBE, m_shaftCubeTarget[std::min(mode, 2u)], nullptr);
+      ctx->bindResourceView(POST_FX_DS_LOOK_SHAFTS_OUTPUT, m_base[1].view, nullptr);
+      const VkExtent3D workgroups = mode == 3
+        ? util::computeBlockCount(VkExtent3D { m_baseWidth, m_baseHeight, 1 }, VkExtent3D { 16, 8, 1 })
+        : util::computeBlockCount(VkExtent3D { kShaftCubeSize, kShaftCubeSize, 6 }, VkExtent3D { 16, 8, 1 });
+      ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
+    }
+    return true;
   }
 
   void DxvkDarkSoulsLook::dispatchComposite(
@@ -766,7 +813,7 @@ namespace dxvk {
     const bool bloom = bloomEnable() && gameActive();
 
     if (bloom) {
-      dispatchBright(ctx, m_brightConstants, inOutColor, linearViewZ, jitterOffset, missLinearViewZ, thresholdNear(), thresholdFar(), false);
+      dispatchBright(ctx, m_brightConstants, inOutColor, linearViewZ, jitterOffset, missLinearViewZ, thresholdNear(), thresholdFar());
 
       vec4 vertical[15], horizontal[15];
       bloomTaps(vertical, true);
@@ -779,23 +826,9 @@ namespace dxvk {
       dispatchFilter(ctx, m_filterConstants[4], m_half[0], m_half[1], horizontal, 15);
     }
 
-    // The game's light shaft chain, in the bright pass buffers the bloom is done with: BrightPassFilter of
-    // the shaft source at the shaft threshold (the same near and far), GaussBlur5x5, the two LightShaft passes.
-    // Result in m_base[1].
-    RtxContext* rtxCtx = static_cast<RtxContext*>(ctx.ptr());
-    vec2 sunUv;
-    const bool shafts = shaftEnable() && shaftActive() && gameActive() && rtxCtx->ds1ShaftSourceReady() &&
-                        shaftSunUv(camera, sunUv);
-    if (shafts) {
-      ScopedGpuProfileZone(ctx, "Dark Souls 1 Look: Light Shafts");
-      const Resources::Resource source = rtxCtx->getResourceManager().getDs1ShaftSource(ctx);
-      dispatchBright(ctx, m_shaftBrightConstants, source, linearViewZ, jitterOffset, missLinearViewZ,
-                     shaftThreshold(), shaftThreshold(), true);
-      dispatchFilter(ctx, m_filterConstants[5], m_base[0], m_base[1], kGauss5x5, 13);
-      dispatchShaftPass(ctx, m_shaftConstants[0], m_base[1], m_base[0], sunUv, shaftPass1());
-      dispatchShaftPass(ctx, m_shaftConstants[1], m_base[0], m_base[1], sunUv, shaftPass2());
-    }
-    m_shaftSunUv = shafts ? sunUv : vec2 { 0.0f, 0.0f };
+    // The game's light shaft chain, the result in m_base[1] (the bloom is done with the bright pass buffers).
+    const bool shafts = shaftEnable() && shaftActive() && gameActive() &&
+                        dispatchShafts(ctx, linearViewZ, camera, jitterOffset, missLinearViewZ);
 
     PostFxDarkSoulsLookCompositeArgs args = {};
     args.imageSize = { extent.width, extent.height };
@@ -882,7 +915,7 @@ namespace dxvk {
       if (shaftActive()) {
         const Vector3 d = shaftDirection();
         const Vector3 p1 = shaftPass1(), p2 = shaftPass2();
-        ImGui::Text("shaft sun %.3f, %.3f, %.3f  on screen %.4f, %.4f", d.x, d.y, d.z, m_shaftSunUv.x, m_shaftSunUv.y);
+        ImGui::Text("shaft sun %.3f, %.3f, %.3f", d.x, d.y, d.z);
         ImGui::Text("threshold %.3f  weight %.2f  passes (%.0f, %.3f, %.3f) (%.0f, %.3f, %.3f)", shaftThreshold(), shaftWeight(),
                     p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
       } else {
