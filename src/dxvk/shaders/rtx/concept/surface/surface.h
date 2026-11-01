@@ -681,10 +681,12 @@ struct Surface
 
   // The specular boost above 1 in linear terms: the game scales its specular in display gamma, so by the boost to
   // the 2.2 power in linear. A base reflectivity cannot hold it (Iron Flesh: 10 over 1.5, 65x), so the composite
-  // scales the primary specular by it (kPrimarySurfaceFlagDs1SpecularGainShift).
+  // scales the primary specular by it (kPrimarySurfaceFlagDs1SpecularGainShift). At most 24x: the game's Phong
+  // sees a few lights, the path traced lobe everything bright around it, and at 65x Iron Flesh whited out under
+  // a Darksign's flash (frame_20261101_140244) while staying the game's silver in shade (frame_20261101_025534).
   property float ds1EffectSpecularGain
   {
-    get { return hasDs1Effect && ds1EffectSpecularBoost > 1.0f ? pow(ds1EffectSpecularBoost, 2.2f) : 1.0f; }
+    get { return hasDs1Effect && ds1EffectSpecularBoost > 1.0f ? min(pow(ds1EffectSpecularBoost, 2.2f), 24.0f) : 1.0f; }
   }
 
   // Layer 1 and layer 2 normal strengths, relative to the water normal map as authored.
