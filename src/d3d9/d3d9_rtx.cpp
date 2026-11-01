@@ -1231,16 +1231,10 @@ namespace dxvk {
         if (lightmapTag == 0xD2000001u) {
           m_activeDrawCallState.setCategory(InstanceCategories::HairCards, true);
         }
-        // Fork: DS1 blended shell in stage 4's D3DTSS_CONSTANT (0xD4000001): an alpha-faded map mesh that
-        // does not lie on a surface (a giant tree's fading top), shaded as its own surface: a cutout.
-        m_activeDrawCallState.materialData.isDs1Shell = d3d9State().textureStages[4][DXVK_TSS_CONSTANT] == 0xD4000001u;
         // Fork: DS1 window glass pass (stage 4 0xD4000002): blended, but single-sided as the game draws it
         // (see RtInstance flags). A window built twice, an outer pane facing out and an inner one facing
         // in, then shows each view only its own pane.
         m_activeDrawCallState.materialData.isDs1SingleSided = d3d9State().textureStages[4][DXVK_TSS_CONSTANT] == 0xD4000002u;
-        if (m_activeDrawCallState.materialData.isDs1Shell) {
-          m_activeDrawCallState.setCategory(InstanceCategories::AlphaBlendToCutout, true);
-        }
         // Fork: DS1 albedo offset in stage 5's D3DTSS_CONSTANT (0xD3rrggbb, signed bytes / 255): the
         // character creator's skin tone, which the game's character shaders add to the diffuse
         // texture (PS c156). See Surface::ds1AlbedoOffset.

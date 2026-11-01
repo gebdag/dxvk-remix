@@ -732,8 +732,7 @@ namespace dxvk {
     // otherwise derive the alpha test state from the drawcall (via its legacy material data).
     if (forceCutoutAlphaTest) {
       out.alphaTestType = AlphaTestType::kGreater;
-      const float cutout = drawCall.getMaterialData().isDs1Shell ? RtxOptions::ds1ShellCutoutAlpha() : RtxOptions::forceCutoutAlpha();
-      out.alphaTestReferenceValue = static_cast<uint8_t>(std::clamp(cutout, 0.0f, 1.0f) * 255.0);
+      out.alphaTestReferenceValue = static_cast<uint8_t>(RtxOptions::forceCutoutAlpha() * 255.0);
     } else if (forceHairCardAlphaTest) {
       // A legacy "greater than 0" test on a blended draw only discards empty texels: the game's blend
       // draws the coverage. As a cutout it would keep every faint texel solid, so the cutout threshold

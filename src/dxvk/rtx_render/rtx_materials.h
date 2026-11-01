@@ -2127,8 +2127,6 @@ struct LegacyMaterialData {
   // Surface::ds1SelfLit. Per draw, not part of the identity.
   bool hasDs1SelfLit = false;
   float ds1SelfLit[3] = {};
-  // Fork: a DS1 blended shell (stage-4 tag 0xD4000001), cut out at rtx.ds1ShellCutoutAlpha. Per draw.
-  bool isDs1Shell = false;
   // Fork: a DS1 window glass pass (stage-4 tag 0xD4000002): blended but culled by the game's cull mode.
   bool isDs1SingleSided = false;
   // Fork: the DS1 view fade from the stage-2 tag (FRPG_NtoA's c176), packed for Surface::ds1ViewFade.
