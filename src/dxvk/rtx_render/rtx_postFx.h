@@ -27,8 +27,6 @@
 #include "rtx_objectpicking.h"
 #include "rtx_resources.h"
 // DS1 port: the two Dark Souls post-processing passes are owned by DxvkPostFx.
-#include "rtx_dark_souls_dof.h"
-#include "rtx_dark_souls_grading.h"
 #include "rtx_dark_souls_haze.h"
 #include "rtx_dark_souls_look.h"
 
@@ -76,8 +74,6 @@ namespace dxvk {
     void showImguiSettings();
 
     // DS1 port: the Dark Souls menu (showDs1Menu, rtx_ds1_menu.h) draws these passes' panels.
-    DxvkDarkSoulsDof& darkSoulsDof() { return m_darkSoulsDof; }
-    DxvkDarkSoulsGrading& darkSoulsGrading() { return m_darkSoulsGrading; }
     DxvkDarkSoulsHaze& darkSoulsHaze() { return m_darkSoulsHaze; }
     DxvkDarkSoulsLook& darkSoulsLook() { return m_darkSoulsLook; }
 
@@ -119,8 +115,6 @@ namespace dxvk {
   public:
     // DS1 port: dispatched from RtxContext after dispatchPostFxLensEffects, not from
     // DxvkPostFx::dispatch - they run on post-tonemap LDR data and need RtxContext's copyImage.
-    DxvkDarkSoulsDof m_darkSoulsDof;
-    DxvkDarkSoulsGrading m_darkSoulsGrading;
     DxvkDarkSoulsHaze m_darkSoulsHaze;
     DxvkDarkSoulsLook m_darkSoulsLook;
   };

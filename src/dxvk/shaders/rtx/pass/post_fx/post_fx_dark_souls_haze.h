@@ -1,15 +1,11 @@
 #pragma once
 
-// Fork: Dark Souls' haze on the tonemapped frame (post_fx_dark_souls_haze.comp.slang).
-// Filled by fork_hooks::dispatchDs1Haze (rtx_fork_ds1_haze.cpp) from the rtx.ds1Haze.*
-// options, which the DS1 proxy sets each frame from the game's shader constants.
+// Fork: Dark Souls' haze constants for the DS1 look's scene pass (post_fx_dark_souls_look.h). Filled by
+// DxvkDarkSoulsHaze::fillArgs from the rtx.ds1Haze.* options, which the DS1 proxy sets each frame from the
+// game's shader constants.
 
 #include "rtx/utility/shader_types.h"
 #include "rtx/concept/camera/camera.h"
-
-#define POST_FX_DS_HAZE_INOUT         0
-#define POST_FX_DS_HAZE_LINEAR_VIEW_Z 1
-#define POST_FX_DS_HAZE_CONSTANTS     2
 
 // DS1 applies its per-region DrawParams per draw: every lit draw carries its own fog and
 // scattering constants. The proxy tags each draw with a slot (Surface::ds1HazeSet, 1-15) and sends

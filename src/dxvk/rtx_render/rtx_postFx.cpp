@@ -21,9 +21,6 @@
 */
 #include "rtx_context.h"
 #include "rtx_postFx.h"
-// DS1 port: Dark Souls post-processing passes.
-#include "rtx_dark_souls_dof.h"
-#include "rtx_dark_souls_grading.h"
 #include "dxvk_device.h"
 #include "dxvk_scoped_annotation.h"
 #include "rtx_render/rtx_shader_manager.h"
@@ -110,10 +107,7 @@ namespace dxvk {
 
   DxvkPostFx::DxvkPostFx(DxvkDevice* device)
   : m_vkd(device->vkd())
-  // DS1 port: both passes need the device to build their pipelines.
-  , m_darkSoulsDof(device)
-  , m_darkSoulsGrading(device)
-  , m_darkSoulsHaze(device)
+  // DS1 port: the look pass needs the device to build its pipelines.
   , m_darkSoulsLook(device)
   {
   }

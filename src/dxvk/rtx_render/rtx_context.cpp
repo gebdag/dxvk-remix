@@ -82,7 +82,6 @@
 #include "rtx_dark_souls_ripples.h"
 #include "rtx_dark_souls_look.h"
 #include "rtx_dark_souls_light_falloff.h"
-#include "rtx_hotkeys.h"
 
 // Destructor requires the struct definitions
 #include "rtx_sky.h"
@@ -970,7 +969,6 @@ namespace dxvk {
 
     // Update time on the frame end so all other systems can benefit from a global time
     GlobalTime::get().update();
-    pollGlobalHotkeys();
   }
 
   // Called right before D3D9 present

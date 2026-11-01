@@ -11,30 +11,15 @@ namespace dxvk {
   class DxvkDevice;
 
   // Dark Souls 1 haze: the fog and sky-scattering tail of the game's map and
-  // character pixel shaders, applied to the tonemapped frame with the game's own
-  // per-area values (post_fx_dark_souls_haze.comp.slang). Runs right after tone
-  // mapping, before the DS1 DoF and grading, as in the game.
+  // character pixel shaders, with the game's own per-area values. The DS1 look's
+  // scene pass applies it (rtx.ds1Look.hazeEnable switches it).
   //
   // The DS1 proxy reads those values from its draws and sets the game-state
   // options below each frame through the Remix API (SetConfigVariable); they are
-  // never saved. enable, displayGain and skyDistance are the user's.
+  // never saved. displayGain and skyDistance are the user's.
   class DxvkDarkSoulsHaze {
   public:
-    explicit DxvkDarkSoulsHaze(DxvkDevice* device);
-    ~DxvkDarkSoulsHaze() = default;
-
-    void dispatch(
-      Rc<DxvkContext> ctx,
-      const Resources::Resource& inOutColor,
-      const Resources::Resource& linearViewZ,
-      const VkExtent3D& extent,
-      const Camera& camera,
-      const float jitterOffset[2],
-      float missLinearViewZ);
-
     void showImguiSettings();
-
-    bool isEnabled() const { return enable() && active(); }
 
     // The haze constants for this frame, also used by the DS1 look's scene pass. False when the
     // game has sent no haze values (the args are then zeroed: no fog, no scattering).
@@ -42,12 +27,6 @@ namespace dxvk {
                   const Camera& camera, const float jitterOffset[2], float missLinearViewZ) const;
 
   private:
-    DxvkDevice* m_device;
-    Rc<DxvkBuffer> m_constants;
-
-    RTX_OPTION("rtx.ds1Haze", bool, enable, true,
-               "Applies Dark Souls' own fog and sky scattering to the tonemapped frame, with the game's per-area values "
-               "(set each frame by the DS1 proxy). The formulas run on the frame gamma encoded, as the game's shaders do.");
     RTX_OPTION("rtx.ds1Haze", float, displayGain, 1.0f,
                "Scale on the colours the haze adds (fog colour and in-scatter), on top of the game's exposure.");
     RTX_OPTION("rtx.ds1Haze", float, skyDistance, 0.0f,

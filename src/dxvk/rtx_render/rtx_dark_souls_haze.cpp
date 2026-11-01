@@ -1,29 +1,12 @@
 #include "rtx_dark_souls_haze.h"
 #include "rtx_dark_souls_exposure.h"
 #include "rtx_options.h"
-#include "dxvk_device.h"
-#include "dxvk_scoped_annotation.h"
-#include "rtx_render/rtx_shader_manager.h"
 #include "rtx_imgui.h"
 #include "../imgui/imgui.h"
-
-#include <rtx_shaders/post_fx_dark_souls_haze.h>
 
 namespace dxvk {
 
   namespace {
-    class PostFxDarkSoulsHazeShader : public ManagedShader {
-      SHADER_SOURCE(PostFxDarkSoulsHazeShader, VK_SHADER_STAGE_COMPUTE_BIT, post_fx_dark_souls_haze)
-
-      BEGIN_PARAMETER()
-        RW_TEXTURE2D(POST_FX_DS_HAZE_INOUT)
-        TEXTURE2D(POST_FX_DS_HAZE_LINEAR_VIEW_Z)
-        CONSTANT_BUFFER(POST_FX_DS_HAZE_CONSTANTS)
-      END_PARAMETER()
-    };
-
-    PREWARM_SHADER_PIPELINE(PostFxDarkSoulsHazeShader);
-
     vec3 toVec3(const Vector3& v) { return vec3 { v.x, v.y, v.z }; }
 
     // rtx.ds1Haze.sets, parsed when it changes: per slot, the slot number, PS c103..c111 and
@@ -84,10 +67,6 @@ namespace dxvk {
     }
   }
 
-  DxvkDarkSoulsHaze::DxvkDarkSoulsHaze(DxvkDevice* device)
-    : m_device(device) {
-  }
-
   bool DxvkDarkSoulsHaze::fillArgs(PostFxDarkSoulsHazeArgs& args, const VkExtent3D& extent,
                                    const Resources::Resource& linearViewZ, const Camera& camera,
                                    const float jitterOffset[2], float missLinearViewZ) const {
@@ -127,41 +106,6 @@ namespace dxvk {
       args.sets[i] = s_sets[i];
     }
     return active();
-  }
-
-  void DxvkDarkSoulsHaze::dispatch(
-    Rc<DxvkContext> ctx,
-    const Resources::Resource& inOutColor,
-    const Resources::Resource& linearViewZ,
-    const VkExtent3D& extent,
-    const Camera& camera,
-    const float jitterOffset[2],
-    float missLinearViewZ) {
-    ScopedGpuProfileZone(ctx, "Dark Souls 1 Haze");
-
-    if (m_constants == nullptr) {
-      DxvkBufferCreateInfo info;
-      info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-      info.stages = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-      info.access = VK_ACCESS_TRANSFER_WRITE_BIT;
-      info.size = sizeof(PostFxDarkSoulsHazeArgs);
-      m_constants = m_device->createBuffer(info, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, DxvkMemoryStats::Category::RTXBuffer,
-                                           "Dark Souls Haze Constant Buffer");
-    }
-
-    PostFxDarkSoulsHazeArgs args;
-    fillArgs(args, extent, linearViewZ, camera, jitterOffset, missLinearViewZ);
-
-    ctx->writeToBuffer(m_constants, 0, sizeof(args), &args);
-    ctx->getCommandList()->trackResource<DxvkAccess::Read>(m_constants);
-
-    ctx->bindResourceView(POST_FX_DS_HAZE_INOUT, inOutColor.view, nullptr);
-    ctx->bindResourceView(POST_FX_DS_HAZE_LINEAR_VIEW_Z, linearViewZ.view, nullptr);
-    ctx->bindResourceBuffer(POST_FX_DS_HAZE_CONSTANTS, DxvkBufferSlice(m_constants, 0, m_constants->info().size));
-    ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsHazeShader::getShader());
-
-    const VkExtent3D workgroups = util::computeBlockCount(extent, VkExtent3D { 16, 8, 1 });
-    ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
   }
 
   void DxvkDarkSoulsHaze::showImguiSettings() {
