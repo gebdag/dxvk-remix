@@ -258,13 +258,20 @@ void main(uint2 pixel : SV_DispatchThreadID)
   const vec4 frame = InOutColor[pixel];
   const vec3 radiance = max(frame.rgb, vec3(0.0f));
 
-  vec3 g = pow(radiance, vec3(1.0f / 2.2f)) * cb.exposure;
+  // The primary additive sprites' share of the colour and, in negative channels, what subtractive ones take off
+  // (Ds1AdditiveRadiance), at this frame's jittered sample positions, as for view Z.
+  const vec3 particles = AdditiveRadiance.SampleLevel(viewZUV, 0.0f).rgb;
+  const vec3 additive = pow(max(particles, vec3(0.0f)), vec3(1.0f / 2.2f)) * cb.exposure;
+  const vec3 subtract = min(pow(max(-particles, vec3(0.0f)), vec3(1.0f / 2.2f)) * cb.exposure, vec3(0.98f));
+
+  // The resolve scaled what is behind a subtractive layer by 1 - subtract: back to what it was.
+  vec3 g = pow(radiance, vec3(1.0f / 2.2f)) * cb.exposure / (vec3(1.0f) - subtract);
   g = g * resolvedA.rgb + resolvedB;
   // The game draws its additive particles after the fog, unfogged (their vertex shader gets c159.xy = (1, 0) for
   // them), and adds them in gamma: the haze above dimmed their share of the colour by the haze gain, so it
-  // goes back. That share is this frame's raster at its jittered sample positions, as for view Z.
-  const vec3 additive = max(AdditiveRadiance.SampleLevel(viewZUV, 0.0f).rgb, vec3(0.0f));
-  g += pow(additive, vec3(1.0f / 2.2f)) * cb.exposure * max(1.0f - resolvedA.rgb, vec3(0.0f));
+  // goes back. And it takes its subtractive ones off in gamma, absolutely, whatever is behind them.
+  g += additive * max(1.0f - resolvedA.rgb, vec3(0.0f));
+  g = max(g - subtract, vec3(0.0f));
 
   // The far DoF rate in its own texture: the game keeps it in its scene's alpha, but here other
   // passes run before the DoF.

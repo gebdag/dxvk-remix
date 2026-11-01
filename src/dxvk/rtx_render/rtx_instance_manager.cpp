@@ -1198,8 +1198,11 @@ namespace dxvk {
             tmpMaterialData = *materialData;
             materialData = &tmpMaterialData;
             tmpMaterialData.getOpaqueMaterialData().setEnableEmission(true);
+            // An additive or subtractive layer adds or takes off exactly the game's colour: the proxy folds the game's
+            // own factors into it (ffp_state::draw_sprite_up). A further intensity of 2 showed a crystal lizard's halo
+            // +17 where the game adds +10 (frame_20261101_135906).
             tmpMaterialData.getOpaqueMaterialData().setEmissiveIntensity(currentInstance.surface.alphaState.emissiveBlend
-              ? RtxOptions::emissiveBlendOverrideEmissiveIntensity() : RtxOptions::unlitBlendedEmissiveIntensity());
+              || currentInstance.surface.alphaState.blendType == BlendType::kSubtractive ? 1.0f : RtxOptions::unlitBlendedEmissiveIntensity());
             tmpMaterialData.getOpaqueMaterialData().setEmissiveColorTexture(tmpMaterialData.getOpaqueMaterialData().getAlbedoOpacityTexture());
           } else if (currentInstance.surface.alphaState.emissiveBlend && RtxOptions::enableEmissiveBlendEmissiveOverride() && useLegacyAlphaState) {
             // Here we need to do deep copy and patch the material

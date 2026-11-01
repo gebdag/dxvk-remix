@@ -1257,6 +1257,11 @@ namespace dxvk {
         const uint32_t selfLitTag = d3d9State().textureStages[3][DXVK_TSS_CONSTANT];
         auto& selfLit = m_activeDrawCallState.materialData;
         selfLit.hasDs1SelfLit = (selfLitTag >> 24) == 0xD5u;
+        // A blended self-lit layer's vertex colour is its fade (the game's model particles: 255 at one end of
+        // a wisp, 0 at the other), never baked lighting to normalise away, as for the unlit marker above.
+        if (selfLit.hasDs1SelfLit && d3d9State().renderStates[D3DRS_ALPHABLENDENABLE]) {
+          selfLit.isVertexColorBakedLighting = false;
+        }
         for (int c = 0; c < 3; ++c) {
           selfLit.ds1SelfLit[c] = selfLit.hasDs1SelfLit
             ? std::pow(static_cast<float>((selfLitTag >> (16 - 8 * c)) & 0xFFu) * (16.0f / 255.0f), 2.2f) : 0.0f;

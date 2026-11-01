@@ -797,16 +797,14 @@ uint8_t convertPrimaryRayMaskToUnordered(uint8_t primaryRayMask, uint8_t unorder
 
 // How much of a particle's blend survives where it nears the surface behind it: a DS1 soft sprite's own fade
 // (Surface::ds1ParticleFeather), else Remix's over a share of the view distance (rtx.particleSoftnessFactor).
-// The game fades a soft sprite from 0 half a feather behind the surface to 1 half a feather in front, its
-// depth pushed that far towards the camera so it still draws behind the surface. A ray ends at the surface,
-// so the sprite fades out over the half in front instead: whole where the game's is, gone at the surface
-// rather than cut off at half.
+// The game fades a soft sprite by saturate(gap / feather) from its depth pushed half a feather towards the
+// camera, which the proxy does to its vertices (ffp_state::push_soft_sprite): gap is that pushed sprite's.
 float ds1ParticleSoftBlend(Surface surface, float gapToSurface, float tMax)
 {
   const float feather = surface.ds1ParticleFeather;
   if (feather > 0.0f)
   {
-    return saturate(2.0f * gapToSurface / feather);
+    return saturate(gapToSurface / feather);
   }
   return saturate(gapToSurface / (tMax * uint16BitsToF32(cb.particleSoftnessFactor)));
 }
@@ -1190,7 +1188,7 @@ float resolveVertexUnorderedParticles<
     // Fork: subtractive layers come off the additive sum (lit ones have nothing to subtract).
     if (surface.blendType == uint8_t(BlendType::kSubtractive))
     {
-      if (surface.isUnlit)
+      if (surface.isUnlit || surface.hasDs1SelfLit)
       {
         unlitSubtractGammaSum += linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation);
       }
@@ -1299,7 +1297,13 @@ float resolveVertexUnorderedParticles<
     // display value.
     const float3 unlitGamma = unlitAdditiveGammaSum + unlitBlendGamma;
     emissiveRadiance += pow(max(unlitGamma - unlitSubtractGammaSum, 0.0f), kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation;
-    radianceAttenuation *= pow(saturate(1.0f - max(unlitSubtractGammaSum - unlitGamma, 0.0f)), kSRGBGamma);
+    const float3 subtractLeft = max(unlitSubtractGammaSum - unlitGamma, 0.0f);
+    radianceAttenuation *= pow(saturate(1.0f - subtractLeft), kSRGBGamma);
+    // Fork (DS1): the game's subtraction is absolute. The attenuation above only scales what is behind, so a layer
+    // hardly shows on a dark surface (the Dark Hand's red): the look's scene pass makes it exact, from these
+    // channels going negative in Ds1AdditiveRadiance.
+    ds1AdditiveRadiance = (pow(max(unlitAdditiveGammaSum - unlitSubtractGammaSum, 0.0f), kSRGBGamma) - pow(subtractLeft, kSRGBGamma)) *
+      cb.opaqueMaterialArgs.unlitExposureCompensation / pathSelectionProbability;
   }
   else
   {
@@ -1740,7 +1744,7 @@ void resolveVertexUnordered<
       // Fork: subtractive layers come off the additive sum (lit ones have nothing to subtract).
       if (surface.blendType == uint8_t(BlendType::kSubtractive))
       {
-        if (surface.isUnlit)
+        if (surface.isUnlit || surface.hasDs1SelfLit)
         {
           unlitSubtractGammaSum += linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation);
         }
