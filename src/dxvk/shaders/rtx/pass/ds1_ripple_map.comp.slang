@@ -23,8 +23,15 @@
 // Fork (DS1): the ripple field's water map (fork_ds1_ripples.h). Each cell's water height is the first DS1
 // water surface (textureFlags bit 26) straight below the ray top; cells without one hold no water. Cells
 // that were outside last frame's window start at rest. In the collision window, a water cell is inside a
-// body when rays along +-x and +-z just above the waterline all hit a character (a skinned surface, textureFlags
+// body when rays along +-x and +-z just above the waterline all meet a character (a skinned surface, textureFlags
 // bit 29) within reach: the shins, a robe's hem, an enemy wading beside the player.
+//
+// Shallow water (the game has plenty: a few centimetres over cobbles, rubble or mud) lies at or under the
+// ground in places. Just above its waterline the rays started in the floor or met it first, so only the odd
+// deeper spot registered a foot, and each such flicker became a point source. So the test runs just above the
+// waterline or the ground under the cell, whichever is higher, and only character surfaces count along the
+// rays. Ground more than kMaxGroundAboveWater above the water buries it: a character on a ledge or a bridge
+// pushes no water below.
 
 #include "rtx/pass/fork_ds1_ripples.h"
 #include "rtx/pass/instance_definitions.h"
@@ -98,8 +105,11 @@ float traceWater(vec3 origin, float length)
   return -1.0f;
 }
 
-// Whether the first surface along the ray within reach is a character's. Both faces count: from inside a
-// leg the ray meets its back faces.
+// The ground, as a height above the water, may be up to this far above the water for a body there to push it.
+static const float kMaxGroundAboveWater = 0.15f;
+
+// Whether a character's surface lies along the ray within reach; the floor, rubble and walls do not count. Both
+// faces count: from inside a leg the ray meets its back faces.
 bool hitsBody(vec3 origin, vec3 direction)
 {
   RayDesc ray;
@@ -109,12 +119,43 @@ bool hitsBody(vec3 origin, vec3 direction)
   ray.TMax = cb.bodyReach;
 
   RayQuery<0> rayQuery = RayQuery<0>();
-  rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES, OBJECT_MASK_OPAQUE, ray);
+  rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES, OBJECT_MASK_OPAQUE, ray);
   while (rayQuery.Proceed())
   {
+    if ((surfaceFlags(rayQuery.CandidateInstanceID(), rayQuery.CandidateGeometryIndex()) & DS1_RIPPLE_SKINNED_FLAG) != 0)
+    {
+      rayQuery.CommitNonOpaqueTriangleHit();
+    }
   }
-  return rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT &&
-         (surfaceFlags(rayQuery.CommittedInstanceID(), rayQuery.CommittedGeometryIndex()) & DS1_RIPPLE_SKINNED_FLAG) != 0;
+  return rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
+}
+
+// The ground's height above the water at a cell (characters' surfaces skipped: the foot standing there), or
+// 0 when the ground is below the waterline. Larger than kMaxGroundAboveWater when the water is buried there.
+float groundAboveWater(vec3 waterPoint)
+{
+  RayDesc ray;
+  ray.Origin = waterPoint + vec3(0.0f, kMaxGroundAboveWater + 0.01f, 0.0f);
+  ray.Direction = vec3(0.0f, -1.0f, 0.0f);
+  ray.TMin = 0.0f;
+  ray.TMax = kMaxGroundAboveWater + 0.01f;
+
+  RayQuery<0> rayQuery = RayQuery<0>();
+  rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES, OBJECT_MASK_OPAQUE, ray);
+  while (rayQuery.Proceed())
+  {
+    if ((surfaceFlags(rayQuery.CandidateInstanceID(), rayQuery.CandidateGeometryIndex()) & DS1_RIPPLE_SKINNED_FLAG) == 0)
+    {
+      rayQuery.CommitNonOpaqueTriangleHit();
+    }
+  }
+  if (rayQuery.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
+  {
+    return 0.0f;
+  }
+  // A hit at the very top means the ray started inside solid ground: deeper than the limit.
+  const float t = rayQuery.CommittedRayT();
+  return t <= 1e-4f ? kMaxGroundAboveWater + 1.0f : kMaxGroundAboveWater + 0.01f - t;
 }
 
 bool insideBody(vec3 position)
@@ -154,10 +195,19 @@ void main(uint2 thread : SV_DispatchThreadID)
   const float waterHeight = waterT >= 0.0f ? cb.rayTop - waterT : DS1_RIPPLE_NO_WATER;
   water[texel] = waterHeight;
 
-  // Just above the waterline: the water surface itself is not opaque and does not count anyway.
+  // Just above the waterline or the ground, whichever is higher: the water surface itself is not opaque and does
+  // not count anyway.
   const int2 collisionCell = int2(thread) - int2(cb.collisionMin.x, cb.collisionMin.y);
   const bool inCollision = all(collisionCell >= 0) && all(collisionCell < int(cb.collisionSize));
-  const float body = inCollision && waterT >= 0.0f && insideBody(vec3(top.x, waterHeight + 0.02f, top.z)) ? 1.0f : 0.0f;
+  float body = 0.0f;
+  if (inCollision && waterT >= 0.0f)
+  {
+    const float ground = groundAboveWater(vec3(top.x, waterHeight, top.z));
+    if (ground <= kMaxGroundAboveWater && insideBody(vec3(top.x, waterHeight + ground + 0.02f, top.z)))
+    {
+      body = 1.0f;
+    }
+  }
   occupancy[texel] = body;
   // A body already standing in a cell that just entered the window has pushed no water yet.
   if (entered)
