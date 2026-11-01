@@ -633,6 +633,13 @@ struct Surface
     get { return vec3(f16tof32(data15.x & 0xFFFFu), float(data15.x >> 16) / 65536.0f, float(data15.y & 0xFFFFu) / 65536.0f); }
   }
 
+  // The third wave layer: x = scale and yz = offset relative to layer 1's uv, w = its normal strength. data14
+  // (the clip plane's words, which a water surface never uses; RtSurface::writeGPUData).
+  property vec4 ds1WaterLayer3
+  {
+    get { return asfloat(data14); }
+  }
+
   // Layer 1 and layer 2 normal strengths, relative to the water normal map as authored.
   property vec2 ds1WaterStrength
   {

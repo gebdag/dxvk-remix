@@ -84,15 +84,28 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
   bool secondNormalLoaded = false;
   float primaryNormalLodBias = 0.0f;
   vec2 waterNormalStrength = vec2(1.0f);
+  // Fork (DS1): the third wave layer's sample and strength (0: none).
+  vec4 thirdNormalSample = vec4(0.0f);
+  float thirdNormalStrength = 0.0f;
   if (cb.translucentMaterialArgs.animatedWaterEnable && surface.isAnimatedWater && surface.isDs1Water)
   {
-    // Fork (DS1): the game's two wave layers of this water body, placed and scaled per surface.
+    // Fork (DS1): the game's three wave layers of this water body, placed and scaled per surface. They
+    // share a scale and scroll apart; summed, one layer's ridges fill the flat gaps between the others'.
     primaryNormalLodBias = cb.translucentMaterialArgs.animatedWaterPrimaryNormalLodBias;
     waterNormalStrength = surface.ds1WaterStrength;
     const vec2 layer1UV = surfaceInteraction.textureCoordinates;
     const vec3 layer2 = surface.ds1WaterLayer2;
     surfaceInteraction.textureCoordinates = frac(layer1UV * layer2.x + layer2.yz);
     secondNormalLoaded = surfaceMaterialInteractionTextureReadHelper(translucentSurfaceMaterial.normalTextureIndex, translucentSurfaceMaterial.samplerIndex, surfaceInteraction, secondNormalSample, cb.translucentMaterialArgs.animatedWaterSecondaryNormalLodBias);
+    const vec4 layer3 = surface.ds1WaterLayer3;
+    if (layer3.w > 0.0f)
+    {
+      surfaceInteraction.textureCoordinates = frac(layer1UV * layer3.x + layer3.yz);
+      if (surfaceMaterialInteractionTextureReadHelper(translucentSurfaceMaterial.normalTextureIndex, translucentSurfaceMaterial.samplerIndex, surfaceInteraction, thirdNormalSample, cb.translucentMaterialArgs.animatedWaterSecondaryNormalLodBias))
+      {
+        thirdNormalStrength = layer3.w;
+      }
+    }
     surfaceInteraction.textureCoordinates = frac(layer1UV);
   }
   else if (cb.translucentMaterialArgs.animatedWaterEnable && surface.isAnimatedWater)
@@ -146,6 +159,12 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
       const vec3 tangentNormal2 = unsignedOctahedralToHemisphereDirection(vec2(secondNormalSample.xy), cb.translucentMaterialArgs.normalIntensity * waterNormalStrength.y);
 
       tangentNormal = normalBlendRNM(tangentNormal2, tangentNormal);
+    }
+    if (thirdNormalStrength > 0.0f)
+    {
+      const vec3 tangentNormal3 = unsignedOctahedralToHemisphereDirection(vec2(thirdNormalSample.xy), cb.translucentMaterialArgs.normalIntensity * thirdNormalStrength);
+
+      tangentNormal = normalBlendRNM(tangentNormal3, tangentNormal);
     }
     normal = normalize(mul(tangentToWorld, tangentNormal));
   }

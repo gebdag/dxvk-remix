@@ -385,7 +385,13 @@ struct RtSurface {
     // Note: This element of the normal object to world matrix is encoded to minimize padding
     writeGPUHelper(data, offset, normalInstanceToWorld.data[2].z);
 
-    writeGPUHelper(data, offset, clipPlane);
+    // Fork: a DS1 water surface, which never has a clip plane, carries its third wave layer here instead
+    // (Surface::ds1WaterLayer3).
+    if (isDs1Water && !isClipPlaneEnabled) {
+      writeGPUHelper(data, offset, Vector4(ds1WaterLayer3[0], ds1WaterLayer3[1], ds1WaterLayer3[2], ds1WaterLayer3[3]));
+    } else {
+      writeGPUHelper(data, offset, clipPlane);
+    }
 
     // eye origin
     if (eyeParams) {
@@ -477,6 +483,8 @@ struct RtSurface {
   float ds1WaterLayer2[3] = {};
   uint32_t ds1WaterStrength = 0;
   float ds1WaterSmear = 0.0f;
+  // Fork: DS1 water's third wave layer (data14 in place of the clip plane), see Surface::ds1WaterLayer3.
+  float ds1WaterLayer3[4] = {};
   // Fork: DS1 environment reflection weight (data15.z), see Surface::ds1EnvReflection; 0 = none.
   uint32_t ds1SpecularTag = 0;
   // Fork: DS1 soft sprite feather in metres (data15.y), see Surface::ds1ParticleFeather; 0 = none.
@@ -2118,6 +2126,8 @@ struct LegacyMaterialData {
   float ds1WaterLayer2[3] = {};
   uint32_t ds1WaterStrength = 0;
   float ds1WaterSmear = 0.0f;
+  // Fork: the third wave layer: scale and offset relative to layer 1's uv, normal strength.
+  float ds1WaterLayer3[4] = {};
   // Fork: the DS1 environment reflection weight from the stage-1 tag as data15.z holds it (bit 31 | half;
   // 0 = none), see Surface::ds1EnvReflection. Per draw,
   // not part of the identity.

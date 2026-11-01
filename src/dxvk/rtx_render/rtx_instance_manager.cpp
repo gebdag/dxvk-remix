@@ -161,7 +161,7 @@ namespace dxvk {
   namespace {
     template<int RtInstanceSize> struct CheckRtInstanceSize {
       // The second line of the build error should contain the new size of RtInstance in the template argument, i.e. `dxvk::CheckRtInstanceSize<newSize>`
-      static_assert(RtInstanceSize == 864,"RtInstance size has changed. Fix the copy constructor above this message, then update the expected size.");
+      static_assert(RtInstanceSize == 880,"RtInstance size has changed. Fix the copy constructor above this message, then update the expected size.");
     };
     CheckRtInstanceSize<sizeof(RtInstance)> _rtInstanceSizeTest;
   }
@@ -1142,6 +1142,8 @@ namespace dxvk {
                   currentInstance.surface.ds1WaterLayer2);
         currentInstance.surface.ds1WaterStrength = drawCall.getMaterialData().ds1WaterStrength;
         currentInstance.surface.ds1WaterSmear = drawCall.getMaterialData().ds1WaterSmear;
+        std::copy(std::begin(drawCall.getMaterialData().ds1WaterLayer3), std::end(drawCall.getMaterialData().ds1WaterLayer3),
+                  currentInstance.surface.ds1WaterLayer3);
         currentInstance.surface.ds1SpecularTag = drawCall.getMaterialData().ds1SpecularTag;
         currentInstance.surface.ds1ParticleFeather = drawCall.getMaterialData().ds1ParticleFeather;
         currentInstance.surface.hasDs1AlbedoOffset = drawCall.getMaterialData().hasDs1AlbedoOffset;

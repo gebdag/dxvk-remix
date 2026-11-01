@@ -1287,6 +1287,13 @@ namespace dxvk {
           water.ds1WaterLayer2[2] = layer2.data[2].y;
           water.ds1WaterStrength = d3d9State().textureStages[1][DXVK_TSS_CONSTANT];
           water.ds1WaterSmear = layer2.data[3].x;
+          // Layer 3 in stage 2's transform the same way, its strength in _41 (0 without one).
+          const bool hasLayer3 = (d3d9State().textureStages[2][DXVK_TSS_TEXTURETRANSFORMFLAGS] & 0x3) == D3DTTFF_COUNT2;
+          const Matrix4& layer3 = d3d9State().transforms[GetTransformIndex(D3DTS_TEXTURE2)];
+          water.ds1WaterLayer3[0] = hasLayer3 ? layer3.data[0].x : 1.0f;
+          water.ds1WaterLayer3[1] = hasLayer3 ? layer3.data[2].x : 0.0f;
+          water.ds1WaterLayer3[2] = hasLayer3 ? layer3.data[2].y : 0.0f;
+          water.ds1WaterLayer3[3] = hasLayer3 ? layer3.data[3].x : 0.0f;
         }
         // Fork: on other draws stage 1's D3DTSS_CONSTANT can carry the DS1 environment reflection weight,
         // 0xD7000000 | half (the proxy's env_reflection.cpp), kept while its option is on. See
