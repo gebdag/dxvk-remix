@@ -757,7 +757,6 @@ struct RtOpaqueSurfaceMaterial {
     uint32_t subsurfaceMaterialIndex, bool isRaytracedRenderTarget, bool isHairCard,
     uint16_t samplerFeedbackStamp,
     uint32_t secondaryTextureIndex = 0,
-    bool albedoTextureIsSrgb = false, bool emissiveTextureIsSrgb = false,
     bool useLegacySpecular = false,
     uint32_t specularColorTextureIndex = kSurfaceMaterialInvalidTextureIndex,
     float specularColorScale = 1.0f
@@ -778,7 +777,6 @@ struct RtOpaqueSurfaceMaterial {
     m_dlssControlMaskStructuralStrength{ dlssControlMaskStructuralStrength },
     m_subsurfaceMaterialIndex(subsurfaceMaterialIndex), m_isRaytracedRenderTarget(isRaytracedRenderTarget),
     m_isHairCard(isHairCard), m_samplerFeedbackStamp{ samplerFeedbackStamp },
-    m_albedoTextureIsSrgb{ albedoTextureIsSrgb }, m_emissiveTextureIsSrgb{ emissiveTextureIsSrgb },
     m_useLegacySpecular{ useLegacySpecular },
     m_specularColorTextureIndex{ specularColorTextureIndex }, m_specularColorScale{ specularColorScale }
   {
@@ -815,15 +813,6 @@ struct RtOpaqueSurfaceMaterial {
 
     if (m_isHairCard) {
       flags |= OPAQUE_SURFACE_MATERIAL_FLAG_IS_HAIR_CARD;
-    }
-
-    // When the source texture is sRGB-formatted the sampler already linearizes it, so the shader must skip
-    // its own gamma correction for that channel to avoid double linearization.
-    if (m_albedoTextureIsSrgb) {
-      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_ALBEDO_TEXTURE_IS_SRGB;
-    }
-    if (m_emissiveTextureIsSrgb) {
-      flags |= OPAQUE_SURFACE_MATERIAL_FLAG_EMISSIVE_TEXTURE_IS_SRGB;
     }
 
     if (m_useLegacySpecular) {
@@ -1045,8 +1034,6 @@ private:
       uint32_t isHairCard;                // NOTE: uint32_t to avoid padding
       uint32_t samplerFeedbackStamp;      // NOTE: uint32_t to avoid padding
       uint32_t secondaryTextureIndex;
-      uint32_t albedoTextureIsSrgb;       // NOTE: uint32_t to avoid padding
-      uint32_t emissiveTextureIsSrgb;     // NOTE: uint32_t to avoid padding
       uint32_t useLegacySpecular;         // NOTE: uint32_t to avoid padding
       uint32_t specularColorTextureIndex;
       float specularColorScale;
@@ -1080,8 +1067,6 @@ private:
       m_isHairCard,
       m_samplerFeedbackStamp,
       m_secondaryTextureIndex,
-      m_albedoTextureIsSrgb,
-      m_emissiveTextureIsSrgb,
       m_useLegacySpecular,
       m_specularColorTextureIndex,
       m_specularColorScale,
@@ -1114,8 +1099,6 @@ private:
       &HashStruct::isHairCard,
       &HashStruct::samplerFeedbackStamp,
       &HashStruct::secondaryTextureIndex,
-      &HashStruct::albedoTextureIsSrgb,
-      &HashStruct::emissiveTextureIsSrgb,
       &HashStruct::useLegacySpecular,
       &HashStruct::specularColorTextureIndex,
       &HashStruct::specularColorScale>(hashData);
@@ -1175,11 +1158,6 @@ private:
 
   bool m_isRaytracedRenderTarget;
   bool m_isHairCard;
-
-  // True if the albedo/emissive source texture uses an sRGB VkFormat (sampler linearizes on read), so the
-  // shader skips its software gamma correction for that channel. Derived from the texture format on the CPU.
-  bool m_albedoTextureIsSrgb;
-  bool m_emissiveTextureIsSrgb;
 
   // Legacy specular experiment: true when nobody made a deliberate roughness decision for this
   // material - it was synthesized from the game's own fixed function state, or it is a replacement that

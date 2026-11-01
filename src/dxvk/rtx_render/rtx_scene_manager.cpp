@@ -1707,13 +1707,6 @@ namespace dxvk {
       texturePresenceMask |= opaqueMaterialData.getSubsurfaceRadiusTexture().isImageEmpty()          ? 0u : (1u << 11);
       texturePresenceMask |= opaqueMaterialData.getSpecularColorTexture().isImageEmpty()             ? 0u : (1u << 12);
       preCreationHash = XXH64(&texturePresenceMask, sizeof(texturePresenceMask), preCreationHash);
-
-      // Fold in the sRGB-linearization toggle so flipping rtx.linearizeSrgbTextures at runtime invalidates
-      // cached opaque materials, forcing them to rebuild with the new albedo/emissive sRGB flags. Without this
-      // the preCreationHash cache below would keep serving materials built under the previous setting, so the
-      // change would only reach freshly-encountered materials. Enables a live A/B without reloading.
-      const uint32_t srgbLinearizeToggle = RtxOptions::linearizeSrgbTextures() ? 1u : 0u;
-      preCreationHash = XXH64(&srgbLinearizeToggle, sizeof(srgbLinearizeToggle), preCreationHash);
     }
 
     auto iter = m_preCreationSurfaceMaterialMap.find(preCreationHash);
@@ -1858,23 +1851,6 @@ namespace dxvk {
         subsurfaceMaterialIndex = m_surfaceMaterialExtensionCache.track(subsurfaceMaterial);
       }
 
-      // Detect whether the albedo/emissive source textures use an sRGB VkFormat. If so, the sampler hardware
-      // linearizes them on read, so the shader must skip its own gammaToLinear() to avoid double linearization.
-      // Gated behind linearizeSrgbTextures() (default on) for A/B; when off the flags stay clear and the shader
-      // always applies the software conversion (legacy behavior). Uses the resolved image-view format, which is
-      // available here whenever the texture is loaded (an unloaded texture reports isImageEmpty(), which also
-      // feeds the material cache key, so the material is rebuilt with the correct flag once the texture resolves).
-      const bool srgbLinearizeEnabled = RtxOptions::linearizeSrgbTextures();
-      auto textureUsesSrgbFormat = [srgbLinearizeEnabled](const TextureRef& tex) -> bool {
-        if (!srgbLinearizeEnabled) {
-          return false;
-        }
-        const DxvkImageView* view = tex.getImageView();
-        return view != nullptr && TextureUtils::isSRGB(view->info().format);
-      };
-      const bool albedoTextureIsSrgb = textureUsesSrgbFormat(opaqueMaterialData.getAlbedoOpacityTexture());
-      const bool emissiveTextureIsSrgb = textureUsesSrgbFormat(opaqueMaterialData.getEmissiveColorTexture());
-
       const bool useLegacySpecular =
         useLegacySpecularOverrides(opaqueMaterialData, roughnessTextureIndex);
 
@@ -1895,7 +1871,6 @@ namespace dxvk {
         subsurfaceMaterialIndex, isUsingRaytracedRenderTarget, isHairCard,
         samplerFeedbackStamp,
         secondaryTextureIndex,
-        albedoTextureIsSrgb, emissiveTextureIsSrgb,
         useLegacySpecular,
         specularColorTextureIndex,
         opaqueMaterialData.getSpecularColorScale()

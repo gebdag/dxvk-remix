@@ -535,18 +535,6 @@ void overrideMaterialInteractionForEye(
 
 // Fork (DS1): FRPG_Snow surfaces, the Blighttown swamp (Surface::isDs1Swamp, fork_ds1_swamp.h).
 
-// A texture's stored value: sRGB-format textures are decoded by the sampler, so encode them back.
-vec3 ds1SwampStored(vec3 sample, bool srgb)
-{
-  if (!srgb)
-  {
-    return sample;
-  }
-  const vec3 lo = sample * 12.92f;
-  const vec3 hi = 1.055f * pow(max(sample, vec3(0.0f)), vec3(1.0f / 2.4f)) - 0.055f;
-  return max(lerp(lo, hi, step(vec3(0.0031308f), sample)), vec3(0.0f));
-}
-
 // A texture read at the surface's texture coordinates (plus an offset) times a scale, its footprint scaled to match.
 vec4 ds1SwampRead(uint16_t textureIndex, uint16_t samplerIndex, SurfaceInteraction surfaceInteraction, vec2 offset, float scale, float lodBias)
 {
@@ -585,7 +573,7 @@ float ds1SwampRingDepth(uint16_t textureIndex, uint16_t samplerIndex, SurfaceInt
 // The game's height field (FRPG_Snow_HeightMap): three layers of its height texture at mesh uv * scale +
 // scroll, faded with view depth, less the wake rings. The height texture is the colour texture's r + g + b
 // (Blighttown), or its alpha where the proxy baked a separate one in (heightInAlpha: Gaping Dragon's slime).
-float ds1SwampHeight(uint16_t textureIndex, uint16_t samplerIndex, SurfaceInteraction surfaceInteraction, bool srgb,
+float ds1SwampHeight(uint16_t textureIndex, uint16_t samplerIndex, SurfaceInteraction surfaceInteraction,
                      vec2 uvOffset, vec3 position, float fade)
 {
   float h = 0.0f;
@@ -602,7 +590,7 @@ float ds1SwampHeight(uint16_t textureIndex, uint16_t samplerIndex, SurfaceIntera
     }
     else
     {
-      const vec3 stored = ds1SwampStored(texel.rgb, srgb);
+      const vec3 stored = texel.rgb;
       h += cb.ds1Swamp.layerWeight[i] * (stored.r + stored.g + stored.b);
     }
   }
@@ -728,22 +716,10 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   {
     albedo = albedoOpacitySample.rgb;
 
-    // Fork (DS1): the skin tone the game adds to the texture as stored (Surface::ds1AlbedoOffset). An
-    // sRGB-format texture arrives linearised by the sampler, so the offset goes on its stored value.
+    // Fork (DS1): the skin tone the game adds to the texture as stored (Surface::ds1AlbedoOffset).
     if (surface.hasDs1AlbedoOffset)
     {
-      if (opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_ALBEDO_TEXTURE_IS_SRGB)
-      {
-        // The exact sRGB encode, the inverse of the sampler's decode and of gammaToLinear.
-        const vec3 lo = albedo * 12.92f;
-        const vec3 hi = 1.055f * pow(max(albedo, vec3(0.0f)), vec3(1.0f / 2.4f)) - 0.055f;
-        const vec3 stored = lerp(lo, hi, step(vec3(0.0031308f), albedo));
-        albedo = gammaToLinear(saturate(stored + surface.ds1AlbedoOffset));
-      }
-      else
-      {
-        albedo = saturate(albedo + surface.ds1AlbedoOffset);
-      }
+      albedo = saturate(albedo + surface.ds1AlbedoOffset);
     }
 
     // Note: Thin film thickness and opacity deriving their values from the alpha channel are mutually exclusive, set the appropriate
@@ -838,35 +814,22 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     opacity = 1.f;
   }
   
-  // Note: Gamma correct albedo input (be it from a constant or a texture). Textures using a UNORM format do not have their
-  // sRGB->linear conversion done by the sampler, so we do it here in software. When the albedo comes from a texture that uses
-  // an sRGB VkFormat however, the sampler hardware already linearized it on read, so applying gammaToLinear again would double
-  // linearize it (darkening the result); OPAQUE_SURFACE_MATERIAL_FLAG_ALBEDO_TEXTURE_IS_SRGB (set on the CPU) marks that case.
-  // The albedo constant is always gamma-encoded, so this only skips when the texture was actually the source.
-  const bool albedoAlreadyLinear = albedoOpacityLoaded && (opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_ALBEDO_TEXTURE_IS_SRGB);
-  if (!albedoAlreadyLinear)
-  {
-    albedo = gammaToLinear(albedo);
-  }
+  // Note: Gamma correct albedo input (be it from a constant or a texture). Currently assuming all textures are not using sRGB formats which
+  // automatically do this conversion.
+  // Todo: Disable this for when a sRGB texture is the source of the albedo.
+  albedo = gammaToLinear(albedo);
   // Fork (DS1): the albedo a self-lit surface's emission scales (Surface::ds1SelfLit), the one seen
-  // directly, so bounce rays see the same glow.
-  vec3 ds1SelfLitAlbedo = albedo;
-  // Fork (DS1 look): the game lights its textures' stored values in gamma space; that stored value
-  // to the 2.2 power keeps a gamma-space product a linear-space product exactly (x^(1/2.2) output).
+  // directly, so bounce rays see the same glow. gammaToLinear's stored^2.2 is the game's gamma-space
+  // product as a linear-space one (x^(1/2.2) output).
+  const vec3 ds1SelfLitAlbedo = albedo;
+#ifdef INTEGRATE_INDIRECT
+  // Fork (DS1 look): the surfaces indirect light bounces off, stored^rtx.ds1Look.bounceAlbedoGamma (below 2.2
+  // carries more light through enclosed spaces; surfaces seen directly keep the game's albedo).
   if (cb.opaqueMaterialArgs.ds1GammaAlbedo != 0)
   {
-    const vec3 lo = albedo * 12.92f;
-    const vec3 hi = 1.055f * pow(max(albedo, vec3(0.0f)), vec3(1.0f / 2.4f)) - 0.055f;
-    const vec3 stored = max(lerp(lo, hi, step(vec3(0.0031308f), albedo)), vec3(0.0f));
-    ds1SelfLitAlbedo = pow(stored, vec3(2.2f));
-#ifdef INTEGRATE_INDIRECT
-    // The surfaces indirect light bounces off: rtx.ds1Look.bounceAlbedoGamma (below 2.2 carries more
-    // light through enclosed spaces; surfaces seen directly keep the game's albedo).
-    albedo = pow(stored, vec3(cb.opaqueMaterialArgs.ds1BounceAlbedoGamma));
-#else
-    albedo = pow(stored, vec3(2.2f));
-#endif
+    albedo = pow(max(albedo, vec3(0.0f)), vec3(cb.opaqueMaterialArgs.ds1BounceAlbedoGamma / 2.2f));
   }
+#endif
 
   // Apply material modifiers/overrides
   albedo = saturate(albedo * cb.opaqueMaterialArgs.albedoScale + cb.opaqueMaterialArgs.albedoBias);
@@ -937,7 +900,6 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   vec3 ds1SwampReflectivity = vec3(0.0f);
   if (ds1Swamp)
   {
-    const bool srgb = (opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_ALBEDO_TEXTURE_IS_SRGB) != 0;
     const vec3 position = surfaceInteraction.position;
     const float viewDepth = length(position - cameraGetWorldPosition(cb.camera));
     const float fade = saturate(1.0f - viewDepth * cb.ds1Swamp.invFadeDistance);
@@ -948,9 +910,9 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     const float uvStep = span * cb.ds1Swamp.uvPerMetre;
     const uint16_t textureIndex = opaqueSurfaceMaterial.albedoOpacityTextureIndex;
     const uint16_t samplerIndex = opaqueSurfaceMaterial.samplerIndex;
-    const float h = ds1SwampHeight(textureIndex, samplerIndex, surfaceInteraction, srgb, vec2(0.0f), position, fade);
-    const float hu = ds1SwampHeight(textureIndex, samplerIndex, surfaceInteraction, srgb, vec2(uvStep, 0.0f), position + axisU * span, fade);
-    const float hv = ds1SwampHeight(textureIndex, samplerIndex, surfaceInteraction, srgb, vec2(0.0f, uvStep), position + axisV * span, fade);
+    const float h = ds1SwampHeight(textureIndex, samplerIndex, surfaceInteraction, vec2(0.0f), position, fade);
+    const float hu = ds1SwampHeight(textureIndex, samplerIndex, surfaceInteraction, vec2(uvStep, 0.0f), position + axisU * span, fade);
+    const float hv = ds1SwampHeight(textureIndex, samplerIndex, surfaceInteraction, vec2(0.0f, uvStep), position + axisV * span, fade);
     // The surface takes the height times its vertex alpha, 0 along the mesh's border (Gaping Dragon's slime
     // pools melt into the floor there; Blighttown's swamp is 1 throughout), and its slope times c169.x too.
     const float edge = saturate(float(surfaceInteraction.vertexColor.a));
@@ -973,7 +935,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     normal = swampNormal;
 
     // Colour: the textured crust where the field is low, the deep colour where it is high.
-    const vec3 crust = ds1SwampStored(ds1SwampRead(textureIndex, samplerIndex, surfaceInteraction, vec2(0.0f), cb.ds1Swamp.colourUvScale, materialLodBias).rgb, srgb);
+    const vec3 crust = ds1SwampRead(textureIndex, samplerIndex, surfaceInteraction, vec2(0.0f), cb.ds1Swamp.colourUvScale, materialLodBias).rgb;
     const float deep = saturate((h * edge - cb.ds1Swamp.deepOffset) * cb.ds1Swamp.deepScale);
     // Divided by the scene's c100, which Remix leaves out of every other map material (fork_ds1_swamp.h).
     const vec3 stored = saturate(lerp(crust * cb.ds1Swamp.crustColour, cb.ds1Swamp.deepColour, deep) * cb.ds1Swamp.invSceneDiffuseScale);
@@ -1119,13 +1081,10 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
       emissiveColor *= tFactor.rgb;
     }
 
-    // Note: Same handling as albedo above - skip the software gamma correction when the emissive color came from an sRGB-format
-    // texture that the sampler already linearized (OPAQUE_SURFACE_MATERIAL_FLAG_EMISSIVE_TEXTURE_IS_SRGB).
-    const bool emissiveAlreadyLinear = emissiveColorLoaded && (opaqueSurfaceMaterial.flags & OPAQUE_SURFACE_MATERIAL_FLAG_EMISSIVE_TEXTURE_IS_SRGB);
-    if (!emissiveAlreadyLinear)
-    {
-      emissiveColor = gammaToLinear(emissiveColor);
-    }
+    // Note: Gamma correct emissive color input (be it from a constant or a texture). Currently assuming all textures are not using sRGB formats which
+    // automatically do this conversion.
+    // Todo: Disable this for when a sRGB texture is the source of the emissive color.
+    emissiveColor = gammaToLinear(emissiveColor);
 
     // Fork: the game scales an unlit additive layer by its alpha in gamma space (it blends into a
     // gamma-encoded target), which is darker than scaling its linear colour for faint layers.
