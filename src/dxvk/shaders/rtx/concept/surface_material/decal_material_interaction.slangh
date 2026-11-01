@@ -26,9 +26,12 @@ DecalMaterialInteraction decalMaterialInteractionUnpack(MemoryDecalMaterialInter
   DecalMaterialInteraction decalMaterialInteraction;
 
   decalMaterialInteraction.shadingNormal = signedOctahedralToSphereDirection(snorm2x16ToFloat2x32(memory.packed.x));
+  // Fork: stored as square roots (see decalMaterialInteractionPack).
   decalMaterialInteraction.albedo = unorm3x8ToFloat3x32(memory.packed.y);
+  decalMaterialInteraction.albedo *= decalMaterialInteraction.albedo;
   decalMaterialInteraction.roughness = perceptualRoughnessToRoughness(unorm8ToF32(memory.packed.y >> 24));
   decalMaterialInteraction.baseReflectivity = unorm3x8ToFloat3x32(memory.packed.z);
+  decalMaterialInteraction.baseReflectivity *= decalMaterialInteraction.baseReflectivity;
   decalMaterialInteraction.anisotropy = unorm8ToF32(memory.packed.z >> 24);
   decalMaterialInteraction.opacity = decalMaterialInteractionExtractOpacity(memory.packed); // uses packed.w
   // packed.w[31:16] unused
@@ -46,9 +49,12 @@ MemoryDecalMaterialInteraction decalMaterialInteractionPack(DecalMaterialInterac
   MemoryDecalMaterialInteraction memory;
 
   memory.packed.x = float2x32ToSnorm2x16(sphereDirectionToSignedOctahedral(decalMaterialInteraction.shadingNormal));
-  memory.packed.y = float3x32ToUnorm3x8(decalMaterialInteraction.albedo)
+  // Fork: the square roots of albedo and base reflectivity. In 8 linear bits a dark decal is gone: every stored
+  // texel below 15/255 packed to 0, most of Oolacile's blue slime and its specular, and what was left was the
+  // ground showing through at 1 - alpha.
+  memory.packed.y = float3x32ToUnorm3x8(sqrt(max(decalMaterialInteraction.albedo, vec3(0.0f))))
            | (uint(f32ToUnorm8(roughnessToPerceptualRoughness(decalMaterialInteraction.roughness))) << 24);
-  memory.packed.z = float3x32ToUnorm3x8(decalMaterialInteraction.baseReflectivity)
+  memory.packed.z = float3x32ToUnorm3x8(sqrt(max(decalMaterialInteraction.baseReflectivity, vec3(0.0f))))
            | (uint(f32ToUnorm8(decalMaterialInteraction.anisotropy)) << 24);
   memory.packed.w = f32ToUnorm16(decalMaterialInteraction.opacity);
   memory.emissiveRadiance = f16vec3(decalMaterialInteraction.emissiveRadiance);
@@ -103,6 +109,18 @@ void decalMaterialInteractionBlend(
     decalMaterialInteraction.opacity + decalMaterialInteractionOut.opacity * (1.0 - decalMaterialInteraction.opacity);
 }
 
+// Fork (DS1): the game blends a decal over the surface in its gamma-encoded target, under one light, so that blend
+// on the colours is what it shows; in linear, what is left of the surface at alpha 0.92 reads as 32% of it, not 8%
+// (Oolacile's dark blue slime took the ground's hue). The decal's colour carries its opacity premultiplied.
+vec3 ds1DecalBlend(vec3 base, vec3 decalPremultiplied, float opacity)
+{
+  if (opacity <= 0.0f)
+  {
+    return base;
+  }
+  return pow(mix(pow(max(base, vec3(0.0f)), vec3(1.0f / 2.2f)), pow(max(decalPremultiplied / opacity, vec3(0.0f)), vec3(1.0f / 2.2f)), opacity), vec3(2.2f));
+}
+
 void decalMaterialInteractionBlend(
   DecalMaterialInteraction decalMaterialInteraction,
   inout OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteraction)
@@ -112,13 +130,11 @@ void decalMaterialInteractionBlend(
 
   // Note: Treat albedo as if it is using premultiplied alpha as opacity is multiplied into it as part of the albedo derivation
   // in the opaque material (see albedoToAdjustedAlbedo) which causes incorrect decal blending if not taken into account.
-  opaqueSurfaceMaterialInteraction.albedo =
-    decalMaterialInteraction.albedo + opaqueSurfaceMaterialInteraction.albedo * (1.0 - decalMaterialInteraction.opacity);
+  opaqueSurfaceMaterialInteraction.albedo = ds1DecalBlend(opaqueSurfaceMaterialInteraction.albedo, decalMaterialInteraction.albedo, decalMaterialInteraction.opacity);
 
   // Note: Like albedo, treat base reflectivity as if it is using premultiplied alpha as opacity is also multiplied into it as part of
   // the base reflectivity derivation in the opaque material (see calcBaseReflectivity) which causes incorrect decal blending if not taken into account.
-  opaqueSurfaceMaterialInteraction.baseReflectivity =
-    decalMaterialInteraction.baseReflectivity + opaqueSurfaceMaterialInteraction.baseReflectivity * (1.0 - decalMaterialInteraction.opacity);
+  opaqueSurfaceMaterialInteraction.baseReflectivity = ds1DecalBlend(opaqueSurfaceMaterialInteraction.baseReflectivity, decalMaterialInteraction.baseReflectivity, decalMaterialInteraction.opacity);
 
   opaqueSurfaceMaterialInteraction.isotropicRoughness = mix(opaqueSurfaceMaterialInteraction.isotropicRoughness,
     decalMaterialInteraction.roughness, decalMaterialInteraction.opacity);
