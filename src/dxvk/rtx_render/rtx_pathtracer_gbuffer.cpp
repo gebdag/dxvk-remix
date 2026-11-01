@@ -138,6 +138,7 @@ namespace dxvk {
         RW_TEXTURE2D(GBUFFER_BINDING_PRIMARY_TEXCOORDS_RAW_OUTPUT)
         RW_TEXTURE2D(GBUFFER_BINDING_PRIMARY_NORMAL_F32_OUTPUT)
         RW_TEXTURE2D(GBUFFER_BINDING_PRIMARY_COVERAGE_OUTPUT)
+        RW_TEXTURE2D(GBUFFER_BINDING_DS1_ADDITIVE_RADIANCE_OUTPUT)
 
         RW_TEXTURE2D(GBUFFER_BINDING_SECONDARY_ATTENUATION_OUTPUT)
         RW_TEXTURE2D(GBUFFER_BINDING_SECONDARY_WORLD_SHADING_NORMAL_OUTPUT)
@@ -779,6 +780,7 @@ namespace dxvk {
     ctx->bindResourceView(GBUFFER_BINDING_PRIMARY_TEXCOORDS_RAW_OUTPUT,     rtOutput.m_primaryTexcoordsRaw.view,     nullptr);
     ctx->bindResourceView(GBUFFER_BINDING_PRIMARY_NORMAL_F32_OUTPUT,        rtOutput.m_primaryNormalF32.view,        nullptr);
     ctx->bindResourceView(GBUFFER_BINDING_PRIMARY_COVERAGE_OUTPUT,          rtOutput.m_primaryCoverage.view,         nullptr);
+    ctx->bindResourceView(GBUFFER_BINDING_DS1_ADDITIVE_RADIANCE_OUTPUT,     rtOutput.m_ds1AdditiveRadiance.view,     nullptr);
 
     ctx->bindResourceView(GBUFFER_BINDING_SECONDARY_ATTENUATION_OUTPUT, rtOutput.m_secondaryAttenuation.view, nullptr);
     ctx->bindResourceView(GBUFFER_BINDING_SECONDARY_WORLD_SHADING_NORMAL_OUTPUT, rtOutput.m_secondaryWorldShadingNormal.view, nullptr);

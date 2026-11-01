@@ -31,6 +31,8 @@
 #define POST_FX_DS_LOOK_SCENE_HISTORY_B_OUT  10
 // The haze region blend of each view Z texel (the region pass's output, below).
 #define POST_FX_DS_LOOK_SCENE_HAZE_REGION    11
+// The primary radiance's unlit additive sprite part (GBUFFER_BINDING_DS1_ADDITIVE_RADIANCE_OUTPUT).
+#define POST_FX_DS_LOOK_SCENE_ADDITIVE       12
 
 // Haze region blend (post_fx_dark_souls_look_region.comp.slang): per view Z texel, the two haze sets
 // of the surfaces within PostFxDarkSoulsLookRegionArgs::radius of it in the world and the second's

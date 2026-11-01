@@ -1438,6 +1438,7 @@ namespace dxvk {
 
     // DS1 port: R16 for the DS1 haze set in bits 8-11 (kPrimarySurfaceFlagDs1HazeSetShift).
     m_raytracingOutput.m_primarySurfaceFlags = createImageResource(ctx, "primary surface flags", m_downscaledExtent, VK_FORMAT_R16_UINT);
+    m_raytracingOutput.m_ds1AdditiveRadiance = createImageResource(ctx, "DS1 additive radiance", m_downscaledExtent, VK_FORMAT_R16G16B16A16_SFLOAT);
     m_raytracingOutput.m_primaryDisocclusionThresholdMix = createImageResource(ctx, "primary disocclusion threshold mix", m_downscaledExtent, VK_FORMAT_R16_SFLOAT);
     // Written at Ray Reconstruction, long after the surface index it shares is last read.
     if (m_disocclusionMaskForRRAllocated) {

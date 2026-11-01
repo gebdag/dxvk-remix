@@ -52,6 +52,7 @@ namespace dxvk {
       const Resources::Resource& motionVector,
       const Resources::Resource& albedo,
       const Resources::Resource& shadingNormal,
+      const Resources::Resource& additiveRadiance,
       const DxvkDarkSoulsHaze& haze,
       const Camera& camera,
       const float jitterOffset[2],

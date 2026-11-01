@@ -53,6 +53,7 @@ namespace dxvk {
         RW_TEXTURE2D(POST_FX_DS_LOOK_SCENE_HISTORY_A_OUT)
         RW_TEXTURE2D(POST_FX_DS_LOOK_SCENE_HISTORY_B_OUT)
         TEXTURE2D(POST_FX_DS_LOOK_SCENE_HAZE_REGION)
+        SAMPLER2D(POST_FX_DS_LOOK_SCENE_ADDITIVE)
       END_PARAMETER()
     };
     PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookSceneShader);
@@ -346,6 +347,7 @@ namespace dxvk {
     const Resources::Resource& motionVector,
     const Resources::Resource& albedo,
     const Resources::Resource& shadingNormal,
+    const Resources::Resource& additiveRadiance,
     const DxvkDarkSoulsHaze& haze,
     const Camera& camera,
     const float jitterOffset[2],
@@ -427,6 +429,8 @@ namespace dxvk {
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HISTORY_A_OUT, historyOut[0].view, nullptr);
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HISTORY_B_OUT, historyOut[1].view, nullptr);
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HAZE_REGION, m_hazeRegion.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_ADDITIVE, additiveRadiance.view, nullptr);
+    ctx->bindResourceSampler(POST_FX_DS_LOOK_SCENE_ADDITIVE, m_linearSampler);
     ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookSceneShader::getShader());
     const VkExtent3D workgroups = util::computeBlockCount(extent, VkExtent3D { 16, 8, 1 });
     ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);

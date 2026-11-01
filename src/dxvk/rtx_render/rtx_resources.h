@@ -348,6 +348,9 @@ namespace dxvk
 
       Resource m_primaryCoverage;          // VK_FORMAT_R32_SFLOAT: composite matte
 
+      // Fork (DS1): the primary radiance's unlit additive sprite part, for the DS1 look's haze to leave out.
+      Resource m_ds1AdditiveRadiance;
+
       Resource m_secondaryAttenuation;
       Resource m_secondaryWorldShadingNormal;
       AliasedResource m_secondaryPerceptualRoughness;

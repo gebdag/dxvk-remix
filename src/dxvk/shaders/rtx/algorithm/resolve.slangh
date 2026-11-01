@@ -912,9 +912,11 @@ float resolveVertexUnorderedParticles<
   inout vec3 radianceAttenuation, inout vec3 emissiveRadiance,
   out uint numInteractions,
   out int surfaceIndex,
-  inout bool decalCandidateSeen)
+  inout bool decalCandidateSeen,
+  out vec3 ds1AdditiveRadiance)
 {
   surfaceIndex = -1;
+  ds1AdditiveRadiance = vec3(0.0f);
 
   float opacityTransmittance = 1.0f;
 
@@ -1295,6 +1297,8 @@ float resolveVertexUnorderedParticles<
     // Fork: the unlit additive layers' gamma-space sum and the alpha-blended composite, each back to
     // linear and scene-referred.
     emissiveRadiance += (pow(unlitAdditiveGammaSum, kSRGBGamma) + pow(unlitBlendGamma, kSRGBGamma)) * cb.opaqueMaterialArgs.unlitExposureCompensation;
+    // Fork (DS1): and the additive part on its own, which the DS1 look's haze leaves out (Ds1AdditiveRadiance).
+    ds1AdditiveRadiance = pow(unlitAdditiveGammaSum, kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation / pathSelectionProbability;
   }
 
   radianceAttenuation *= alphaTransProd;

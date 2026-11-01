@@ -2169,6 +2169,7 @@ void geometryResolverVertex(
     geometryResolverState.decalCandidateSeen ||
     geometryResolverState.accumulatedHitDistance > 0.0f;
 
+  vec3 ds1AdditiveRadiance;
   float opacityTransmittance = resolveVertexUnorderedParticles<
     GBUFFER_RAY_FLAGS>(
     resolveMode, unorderedResolveRay,
@@ -2177,7 +2178,14 @@ void geometryResolverVertex(
     geometryResolverState.pixelCoordinate,
     geometryResolverState.accumulatedRotation, geometryResolverState.accumulatedHitDistance, 1.0f,
     radianceAttenuation, emissiveRadiance,
-    numUnorderedInteractions, surfaceIndex, decalCandidateSeen);
+    numUnorderedInteractions, surfaceIndex, decalCandidateSeen, ds1AdditiveRadiance);
+
+  // Fork (DS1): the unlit additive sprites of the camera ray's segments, attenuated as in the radiance; the
+  // first segment starts the sum.
+  const vec3 ds1AdditiveBefore = geometryResolverState.accumulatedHitDistance > 0.0f
+    ? Ds1AdditiveRadiance[geometryResolverState.pixelCoordinate].rgb : vec3(0.0f);
+  Ds1AdditiveRadiance[geometryResolverState.pixelCoordinate] =
+    vec4(ds1AdditiveBefore + ds1AdditiveRadiance * geometryResolverState.attenuation, 0.0f);
 
   geometryResolverState.decalCandidateSeen = decalCandidateSeen;
 

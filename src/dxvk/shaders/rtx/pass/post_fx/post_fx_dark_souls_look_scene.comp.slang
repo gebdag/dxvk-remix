@@ -56,6 +56,9 @@ RWTexture2D<float4> HistoryBOut;
 layout(binding = POST_FX_DS_LOOK_SCENE_HAZE_REGION)
 Texture2D<uint> HazeRegion;
 
+layout(binding = POST_FX_DS_LOOK_SCENE_ADDITIVE)
+Sampler2D<float4> AdditiveRadiance;
+
 // The haze constants of a pixel: those of its surface's own set (the game hazes each draw with
 // its region's DrawParams), or the frame's single set for untagged surfaces.
 struct HazeTerms
@@ -257,6 +260,11 @@ void main(uint2 pixel : SV_DispatchThreadID)
 
   vec3 g = pow(radiance, vec3(1.0f / 2.2f)) * cb.exposure;
   g = g * resolvedA.rgb + resolvedB;
+  // The game draws its additive particles after the fog, unfogged (their vertex shader gets c159.xy = (1, 0) for
+  // them), and adds them in gamma: the haze above dimmed their share of the colour by the haze gain, so it
+  // goes back. That share is this frame's raster at its jittered sample positions, as for view Z.
+  const vec3 additive = max(AdditiveRadiance.SampleLevel(viewZUV, 0.0f).rgb, vec3(0.0f));
+  g += pow(additive, vec3(1.0f / 2.2f)) * cb.exposure * max(1.0f - resolvedA.rgb, vec3(0.0f));
 
   // The far DoF rate in its own texture: the game keeps it in its scene's alpha, but here other
   // passes run before the DoF.

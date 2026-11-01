@@ -115,6 +115,8 @@
 #define GBUFFER_BINDING_PRIMARY_TEXCOORDS_RAW_OUTPUT                            126
 #define GBUFFER_BINDING_PRIMARY_NORMAL_F32_OUTPUT                               127
 #define GBUFFER_BINDING_PRIMARY_COVERAGE_OUTPUT                                 128
+// Fork (DS1): the primary unlit additive sprites' radiance on its own (Ds1AdditiveRadiance).
+#define GBUFFER_BINDING_DS1_ADDITIVE_RADIANCE_OUTPUT                            129
 
 #define GBUFFER_BINDING_NRC_QUERY_PATH_INFO_OUTPUT                              130
 #define GBUFFER_BINDING_NRC_TRAINING_PATH_INFO_OUTPUT                           131
