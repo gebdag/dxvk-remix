@@ -1169,7 +1169,16 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     }
     else
     {
+#ifdef INTEGRATE_INDIRECT
+      // The light it casts, at most its texture's own brightness. Lava's (c100 * 5)^2.2 flooded Ceaseless Discharge's cave
+      // with red, the meter dropped, and the lava went dim. Not through the exposure, which is metered on what this light
+      // brightens and would feed back.
+      emissiveRadiance += min(selfLit, vec3(1.0f));
+#else
+      // Seen directly it stays as it is: the game hazes before it saturates, so a clamp here lets the fog dull it (olive
+      // lava in lava_closeup). The scene pass saturates after the haze.
       emissiveRadiance += selfLit;
+#endif
     }
   }
 
