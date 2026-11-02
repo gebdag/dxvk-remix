@@ -953,14 +953,23 @@ float oitDepthWeight(float hitT, float tMax)
 // Fork (DS1): the unlit alpha-blended layers in depth order. The game blends them back to front into its
 // gamma-encoded target, so the nearest ones cover what is behind them; averaged by weight (WBOIT), the many
 // overlapping layers of Bed of Chaos's glyph shells washed the glyph strokes into the faint smoke around them.
-// The nearest DS1_UNLIT_LAYERS are kept sorted by hit distance and composited front to back; the rest, behind
+// The last drawn DS1_UNLIT_LAYERS are kept in draw order and composited last to first; the rest, behind
 // them all, keep the weighted average.
-#define DS1_UNLIT_LAYERS 8
+#define DS1_UNLIT_LAYERS 16
+// The game blends its effects into the target in draw order whatever their depth (none writes depth): a layer drawn later
+// covers one drawn earlier, even a hair behind it, as Quelaag's lava's crusts cover the additive shells they nearly touch.
+// surface.objectPickingValue is the frame's draw call index. As the list's distance: the last drawn is nearest.
+float ds1LayerOrder(Surface surface)
+{
+  return -float(surface.objectPickingValue);
+}
+
 struct Ds1UnlitLayers
 {
   float dist[DS1_UNLIT_LAYERS];
-  float4 layer[DS1_UNLIT_LAYERS]; // rgb: display (gamma) colour, a: alpha
+  float4 layer[DS1_UNLIT_LAYERS]; // rgb: display (gamma) colour, a: alpha, or kAdditive
   uint count;
+  float3 farAdditive;
   float3 farGammaSum;
   float farWeightSum;
   float farTransProd;
@@ -974,6 +983,7 @@ struct Ds1UnlitLayers
       l.layer[i] = float4(0.0f);
     }
     l.count = 0;
+    l.farAdditive = float3(0.0f);
     l.farGammaSum = float3(0.0f);
     l.farWeightSum = 0.0f;
     l.farTransProd = 1.0f;
@@ -982,6 +992,11 @@ struct Ds1UnlitLayers
 
   [mutating] void addFar(float4 l)
   {
+    if (l.a < 0.0f)
+    {
+      farAdditive += l.rgb;
+      return;
+    }
     farGammaSum += l.rgb * l.a;
     farWeightSum += l.a;
     farTransProd *= 1.0f - l.a;
@@ -994,7 +1009,22 @@ struct Ds1UnlitLayers
     {
       return;
     }
-    const float4 l = float4(gamma, alpha);
+    insert(d, float4(gamma, alpha));
+  }
+
+  // An additive layer adds its colour (alpha already in it) and covers nothing. Like the alpha layers, it is covered by
+  // what the game draws over it: Quelaag's lava is additive shells under nearly opaque dark crusts, in turn.
+  [mutating] void addAdditive(float d, float3 gamma)
+  {
+    if (all(gamma < 1e-3f))
+    {
+      return;
+    }
+    insert(d, float4(gamma, -1.0f));
+  }
+
+  [mutating] void insert(float d, float4 l)
+  {
     if (count == DS1_UNLIT_LAYERS)
     {
       if (d >= dist[DS1_UNLIT_LAYERS - 1])
@@ -1017,16 +1047,25 @@ struct Ds1UnlitLayers
     count = min(count + 1u, uint(DS1_UNLIT_LAYERS));
   }
 
-  // The layers' gamma-space colour over what is behind them, and how much of that shows through.
-  float3 composite(out float transmittance)
+  // The layers' gamma-space colour over what is behind them, and how much of that shows through. The additive layers'
+  // part comes apart, for the look's haze.
+  float3 composite(out float transmittance, out float3 additive)
   {
     float3 colour = float3(0.0f);
+    additive = float3(0.0f);
     float t = 1.0f;
     for (uint i = 0; i < count; ++i)
     {
+      if (layer[i].a < 0.0f)
+      {
+        additive += t * layer[i].rgb;
+        continue;
+      }
       colour += t * layer[i].a * layer[i].rgb;
       t *= 1.0f - layer[i].a;
     }
+    // The rest are in no order among themselves: on average, half of those alpha layers lie over them.
+    additive += t * sqrt(farTransProd) * farAdditive;
     if (farWeightSum > 0.0f)
     {
       colour += t * farGammaSum / farWeightSum * (1.0f - farTransProd);
@@ -1094,7 +1133,6 @@ float resolveVertexUnorderedParticles<
   float alphaWeightSum = 0.0f;
   float alphaTransProd = 1.0f;
   // Fork: display-referred gamma-space sum of the unlit additive layers (see below).
-  float3 unlitAdditiveGammaSum = 0..xxx;
   // Fork: and of the unlit subtractive (reverse-subtract) layers, which come off it.
   float3 unlitSubtractGammaSum = 0..xxx;
   // Fork: the unlit alpha-blended layers, composited in gamma space in depth order (Ds1UnlitLayers).
@@ -1343,7 +1381,7 @@ float resolveVertexUnorderedParticles<
       // DS1 self-lit additive layers (Surface::ds1SelfLit) are encoded the same way and sum with them.
       if (surface.isUnlit || surface.hasDs1SelfLit)
       {
-        unlitAdditiveGammaSum += linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation);
+        unlitLayers.addAdditive(ds1LayerOrder(surface), linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation));
       }
       else
       {
@@ -1357,7 +1395,7 @@ float resolveVertexUnorderedParticles<
       // (a 5% smoke layer read as 25%), and the WBOIT energy-loss compensation (x4) thickened it again.
       // They are display-referred (scaled by 1 / exposure), so undo that first, as for additive layers.
       const float alphaVal = saturate(1.f - currentRadianceAttenuation);
-      unlitLayers.add(rayHitInfo.hitDistance, linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation), alphaVal);
+      unlitLayers.add(ds1LayerOrder(surface), linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation), alphaVal);
     }
     else
     {
@@ -1426,7 +1464,8 @@ float resolveVertexUnorderedParticles<
   // (Ds1UnlitLayers), and what is behind them kept by prod(1 - alpha) of its display value, i.e. to the
   // 2.2 power of it in linear.
   float unlitBlendTransmittance;
-  const float3 unlitBlendGamma = unlitLayers.composite(unlitBlendTransmittance);
+  float3 unlitAdditiveGammaSum;
+  const float3 unlitBlendGamma = unlitLayers.composite(unlitBlendTransmittance, unlitAdditiveGammaSum);
   radianceAttenuation *= pow(unlitBlendTransmittance, kSRGBGamma);
   if (any(unlitSubtractGammaSum > 0.0f))
   {
@@ -1550,7 +1589,6 @@ void resolveVertexUnordered<
   float alphaWeightSum = 0.0f;
   float alphaTransProd = 1.0f;
   // Fork: display-referred gamma-space sum of the unlit additive layers (see below).
-  float3 unlitAdditiveGammaSum = 0..xxx;
   // Fork: and of the unlit subtractive (reverse-subtract) layers, which come off it.
   float3 unlitSubtractGammaSum = 0..xxx;
   // Fork: the unlit alpha-blended layers, composited in gamma space in depth order (Ds1UnlitLayers).
@@ -1920,7 +1958,7 @@ void resolveVertexUnordered<
         // DS1 self-lit additive layers (Surface::ds1SelfLit) are encoded the same way and sum with them.
         if (surface.isUnlit || surface.hasDs1SelfLit)
         {
-          unlitAdditiveGammaSum += linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation);
+          unlitLayers.addAdditive(ds1LayerOrder(surface), linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation));
         }
         else
         {
@@ -1934,7 +1972,7 @@ void resolveVertexUnordered<
         // (a 5% smoke layer read as 25%), and the WBOIT energy-loss compensation (x4) thickened it again.
         // They are display-referred (scaled by 1 / exposure), so undo that first, as for additive layers.
         const float alphaVal = saturate(1.f - currentRadianceAttenuation);
-        unlitLayers.add(rayHitInfo.hitDistance, linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation), alphaVal);
+        unlitLayers.add(ds1LayerOrder(surface), linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation), alphaVal);
       }
       else
       {
@@ -2025,7 +2063,8 @@ void resolveVertexUnordered<
   // (Ds1UnlitLayers), and what is behind them kept by prod(1 - alpha) of its display value, i.e. to the
   // 2.2 power of it in linear.
   float unlitBlendTransmittance;
-  const float3 unlitBlendGamma = unlitLayers.composite(unlitBlendTransmittance);
+  float3 unlitAdditiveGammaSum;
+  const float3 unlitBlendGamma = unlitLayers.composite(unlitBlendTransmittance, unlitAdditiveGammaSum);
   radianceAttenuation *= pow(unlitBlendTransmittance, kSRGBGamma);
   if (any(unlitSubtractGammaSum > 0.0f))
   {
