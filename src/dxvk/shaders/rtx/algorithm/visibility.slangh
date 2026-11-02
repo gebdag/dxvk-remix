@@ -456,7 +456,8 @@ VisibilityResult traceVisibilityRay<let VisibilityMode : uint>(
       RAY_HIT_INFO_CREATE_RAY_QUERY_COMMITTED(thinWallHit, rayQuery)
       if (ds1VisibilityPassesThinWall(visibilityRay, thinWallHit, ds1OriginNormal))
       {
-        const float skip = rayQuery.CommittedRayT() + calculatePositionError(visibilityRay.origin) * 8.0f;
+        // Just past the face. calculatePositionError returns the largest coordinate, to be scaled by a float's precision.
+        const float skip = rayQuery.CommittedRayT() + calculatePositionError(visibilityRay.origin) * 1e-5f;
         visibilityRay.origin += visibilityRay.direction * skip;
         visibilityRay.tMax = max(visibilityRay.tMax - skip, 0.0f);
         ds1ThinWallSkipped += skip;
