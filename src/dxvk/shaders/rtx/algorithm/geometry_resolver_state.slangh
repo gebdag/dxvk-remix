@@ -53,6 +53,8 @@ struct GeometryResolverState : IBasePayloadState
   f16vec3 _direction;
   f16vec3 attenuation;
   uint8_t _rayMask;
+  // Fork (DS1): see ds1ExtendUnorderedRay. Takes the pad byte before _compactedCoordinate.
+  uint8_t ds1UnorderedHitsAhead;
   u16vec2 _compactedCoordinate;
 
   // Property to get pixel coordinate
@@ -197,6 +199,13 @@ struct GeometryResolverState : IBasePayloadState
   {
       get { return packedFlagGet(_encodedFlags, 1 << 12); }
       set { _encodedFlags = packedFlagAssign(_encodedFlags, 1 << 12, newValue); }
+  }
+
+  // Fork (DS1): the unordered resolve of the segments ds1UnorderedHitsAhead skips had emissive radiance.
+  property bool ds1UnorderedSpanEmissive
+  {
+      get { return packedFlagGet(_encodedFlags, 1 << 13); }
+      set { _encodedFlags = packedFlagAssign(_encodedFlags, 1 << 13, newValue); }
   }
 
   // Misc packed properties

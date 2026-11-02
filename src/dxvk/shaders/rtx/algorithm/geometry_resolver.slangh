@@ -141,6 +141,8 @@ GeometryResolverState geometryResolverStateCreateEmpty(u16vec2 pixelCoordinate, 
   geometryResolverState.segmentHitDistance = 0.0f;
   geometryResolverState.accumulatedHitDistance = 0.0f;
   geometryResolverState.rayMask = uint8_t(0x0);
+  geometryResolverState.ds1UnorderedHitsAhead = uint8_t(0);
+  geometryResolverState.ds1UnorderedSpanEmissive = false;
   geometryResolverState.portalSpace = PORTAL_SPACE_NONE;
   geometryResolverState.isViewModelSurface = false;
   geometryResolverState.accumulatedRotation = getIdentityQuaternion();
@@ -2169,16 +2171,35 @@ void geometryResolverVertex(
     geometryResolverState.decalCandidateSeen ||
     geometryResolverState.accumulatedHitDistance > 0.0f;
 
-  vec3 ds1AdditiveRadiance;
-  float opacityTransmittance = resolveVertexUnorderedParticles<
-    GBUFFER_RAY_FLAGS>(
-    resolveMode, unorderedResolveRay,
-    unorderedRayMask, geometryResolverState.portalSpace,
-    useIntersectionBillboards,
-    geometryResolverState.pixelCoordinate,
-    geometryResolverState.accumulatedRotation, geometryResolverState.accumulatedHitDistance, 1.0f,
-    radianceAttenuation, emissiveRadiance,
-    numUnorderedInteractions, surfaceIndex, decalCandidateSeen, ds1AdditiveRadiance);
+  vec3 ds1AdditiveRadiance = vec3(0.0f);
+  float opacityTransmittance = 1.0f;
+  if (geometryResolverState.ds1UnorderedHitsAhead > 0)
+  {
+    // Fork (DS1): an earlier segment's unordered resolve already went past this hit (ds1ExtendUnorderedRay).
+    geometryResolverState.ds1UnorderedHitsAhead -= uint8_t(1);
+  }
+  else
+  {
+    float softSurfaceDistance = unorderedResolveRay.tMax;
+    if (cb.enableSeparateUnorderedApproximations)
+    {
+      geometryResolverState.ds1UnorderedHitsAhead = uint8_t(ds1ExtendUnorderedRay(
+        unorderedResolveRay, rayHitInfo, geometryResolverState.rayMask, geometryResolverState.insideMedium,
+        unorderedRayMask, useIntersectionBillboards, softSurfaceDistance));
+    }
+    opacityTransmittance = resolveVertexUnorderedParticles<
+      GBUFFER_RAY_FLAGS>(
+      resolveMode, unorderedResolveRay,
+      unorderedRayMask,
+      softSurfaceDistance,
+      geometryResolverState.portalSpace,
+      useIntersectionBillboards,
+      geometryResolverState.pixelCoordinate,
+      geometryResolverState.accumulatedRotation, geometryResolverState.accumulatedHitDistance, 1.0f,
+      radianceAttenuation, emissiveRadiance,
+      numUnorderedInteractions, surfaceIndex, decalCandidateSeen, ds1AdditiveRadiance);
+    geometryResolverState.ds1UnorderedSpanEmissive = geometryResolverState.ds1UnorderedHitsAhead > 0 && any(emissiveRadiance > 0.0f);
+  }
 
   // Fork (DS1): the unlit additive sprites of the camera ray's segments, attenuated as in the radiance; the
   // first segment starts the sum.
@@ -2262,7 +2283,7 @@ void geometryResolverVertex(
 
   }
 
-  bool isUnorderedEmissive = any(emissiveRadiance > 0.0f);
+  bool isUnorderedEmissive = any(emissiveRadiance > 0.0f) || geometryResolverState.ds1UnorderedSpanEmissive;
 
   // Accumulate Segment Hit Distance
   // Note: Only accumulate hit distance if the current ray interaction was not a miss.
@@ -2895,7 +2916,7 @@ void geometryPSRResolverVertex(
   int surfaceIndex;
   resolveVertexUnordered<RAY_FLAG_CULL_OPAQUE, true, true>(
     resolveMode, unorderedResolveRay,
-    unorderedRayMask, geometryPSRResolverState.portalSpace,
+    unorderedRayMask, rayHitInfo, geometryPSRResolverState.rayMask, geometryPSRResolverState.insideMedium, geometryPSRResolverState.portalSpace,
     /* useIntersectionBillboards = */ cb.enableBillboardOrientationCorrection,
     u16vec2(65535, 65535),
     geometryPSRResolverState.accumulatedRotation, geometryPSRResolverState.accumulatedHitDistance, 1.0f,
@@ -3636,6 +3657,7 @@ bool resolveDecalAtSurface(
       resolveModeSeparateUnorderedApproximations | resolveModeDecalMaterialBlending,
       unorderedResolveRay,
       convertPrimaryRayMaskToUnordered(rayMask, OBJECT_MASK_ALL_UNORDERED),
+      (RayHitInfo) 0, 0, false, // decals only: no particle asks for these
       portalSpace,
       false,
       u16vec2(pixelCoordinate),

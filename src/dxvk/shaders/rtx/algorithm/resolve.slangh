@@ -795,6 +795,138 @@ uint8_t convertPrimaryRayMaskToUnordered(uint8_t primaryRayMask, uint8_t unorder
   return (primaryRayMask & OBJECT_MASK_ALL_DYNAMIC) | unorderedRayMask;
 }
 
+// Fork (DS1): how far a ray goes through the hits the ordered resolve passes (resolveVertex: clipped, or opacity
+// at or below its threshold) to the first it stops at. The ordered resolve only finds out at the hit that it passes
+// one, and goes on in a new segment, so a see-through texel of a cutout ends a segment like a surface does. Sprites
+// measured against such a hit fade over the card's whole quad, and sprites either side of it composite as separate
+// stacks, where the game has one stack and a depth buffer the texel never wrote.
+// Returns the distance a soft sprite fades against. Blended texels the primary ray's stochastic blend passes
+// (stochasticPasses, see handleStochasticAlphaBlend) count as absent for that alone: the game's blended draws write
+// no depth, but they do composite in order. So the hits before the first of those are the ones nothing happens at:
+// passedHits (at most 7) of them, up to passedSpan, the distance to the hit after them.
+float ds1SeeThroughSpan(Ray ray, RayHitInfo orderedHit, uint orderedRayMask, bool insideMedium, bool stochasticPasses,
+                        out uint passedHits, out float passedSpan)
+{
+  static const uint kMaxWalkedHits = 7;
+  const uint rayFlags = (insideMedium ? 0 : RAY_FLAG_CULL_BACK_FACING_TRIANGLES) | RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES;
+  passedHits = 0;
+  passedSpan = ray.tMax;
+  uint walkedHits = 0;
+  bool nothingHappened = true;
+  float distance = 0.0f;
+  while (walkedHits < kMaxWalkedHits && orderedHit.hasHit)
+  {
+    const RayInteraction rayInteraction = rayInteractionCreate(ray, orderedHit);
+    const Surface surface = surfaces[uint(rayInteraction.surfaceIndex)];
+    if ((surface.isFullyOpaque && !surface.isClipPlaneEnabled) || rayInteraction.materialType != surfaceMaterialTypeOpaque)
+    {
+      break;
+    }
+    SurfaceInteraction surfaceInteraction = surfaceInteractionCreate<SurfaceGenerateTangents>(surface, rayInteraction, ray);
+    if (!isSurfaceClipped(surface, surfaceInteraction))
+    {
+      if (surface.isFullyOpaque)
+      {
+        break;
+      }
+      const OpaqueSurfaceMaterial material = opaqueSurfaceMaterialCreate(surfaceMaterials[surface.surfaceMaterialIndex]);
+      if (cb.enableRaytracedRenderTarget && (material.flags & OPAQUE_SURFACE_MATERIAL_FLAG_IS_RAYTRACED_RENDER_TARGET))
+      {
+        break;
+      }
+      const OpaqueSurfaceMaterialInteraction materialInteraction =
+        opaqueSurfaceMaterialInteractionCreate(material, surface, surfaceInteraction, rayInteraction);
+      const bool stochastic = stochasticPasses && cb.enableStochasticAlphaBlend && !surface.isDs1Glass;
+      if (materialInteraction.opacity > (stochastic ? cb.resolveStochasticAlphaBlendThreshold : cb.resolveTransparencyThreshold))
+      {
+        break;
+      }
+      if (nothingHappened && materialInteraction.opacity > cb.resolveTransparencyThreshold)
+      {
+        nothingHappened = false;
+        passedSpan = distance + orderedHit.hitDistance;
+      }
+    }
+
+    ++walkedHits;
+    if (nothingHappened)
+    {
+      passedHits = walkedHits;
+    }
+    distance += orderedHit.hitDistance;
+    ray.origin = rayOffsetSurfaceOriginHelper(surfaceInteraction, true);
+    // As the resolver's state keeps it, so the next hit's texture level (and its alpha test) comes out the same.
+    ray.coneRadius = float(float16_t(rayInteraction.coneRadius));
+    ray.tMax = floatMax;
+    RayQuery<0> rayQuery = RayQuery<0>();
+    rayQuery.TraceRayInline(topLevelAS, rayFlags, orderedRayMask, rayToRayDesc(ray));
+    while (rayQuery.Proceed())
+    {
+    }
+    RAY_HIT_INFO_CREATE_RAY_QUERY_COMMITTED(nextHit, rayQuery);
+    orderedHit = nextHit;
+    if (!orderedHit.hasHit)
+    {
+      if (nothingHappened)
+      {
+        passedSpan = floatMax;
+      }
+      return floatMax;
+    }
+  }
+  if (walkedHits == 0)
+  {
+    return ray.tMax;
+  }
+  const float end = distance + orderedHit.hitDistance;
+  if (nothingHappened)
+  {
+    passedSpan = end;
+  }
+  return end;
+}
+
+// Fork (DS1): the primary ray's particles and blended layers in front of a hit it passes are resolved once, over
+// the whole span the hit does not interrupt, so a see-through texel changes nothing about them. Returns the hits
+// the ray now reaches past: the resolver's next segments up to there have no unordered resolve of their own.
+// softSurfaceDistance is what its soft sprites fade against. Only a non-opaque hit with something unordered in
+// front of it pays for the look-ahead.
+uint ds1ExtendUnorderedRay(inout Ray ray, RayHitInfo orderedHit, uint orderedRayMask, bool insideMedium,
+                           uint unorderedRayMask, bool useIntersectionBillboards, out float softSurfaceDistance)
+{
+  softSurfaceDistance = ray.tMax;
+  if (!orderedHit.hasHit)
+  {
+    return 0;
+  }
+  const RayInteraction rayInteraction = rayInteractionCreate(ray, orderedHit);
+  const Surface surface = surfaces[uint(rayInteraction.surfaceIndex)];
+  if ((surface.isFullyOpaque && !surface.isClipPlaneEnabled) || rayInteraction.materialType != surfaceMaterialTypeOpaque)
+  {
+    return 0;
+  }
+
+  unorderedRayMask &= (useIntersectionBillboards ? OBJECT_MASK_UNORDERED_ALL_INTERSECTION_PRIMITIVE : OBJECT_MASK_UNORDERED_ALL_GEOMETRY) | OBJECT_MASK_ALL_DYNAMIC;
+  RayQuery<0> rayQuery = RayQuery<0>();
+  rayQuery.TraceRayInline(unorderedTLAS, RAY_FLAG_CULL_OPAQUE, unorderedRayMask, rayToRayDesc(ray));
+  const bool unorderedInFront = rayQuery.Proceed();
+  rayQuery.Abort();
+  if (!unorderedInFront)
+  {
+    return 0;
+  }
+
+  uint passedHits;
+  float passedSpan;
+  const float fadeDistance = ds1SeeThroughSpan(ray, orderedHit, orderedRayMask, insideMedium, true, passedHits, passedSpan);
+  if (passedHits > 0)
+  {
+    ray.tMax = passedSpan < floatMax ? passedSpan * kUnorderedResolveRayLengthening : floatMax;
+  }
+  softSurfaceDistance = fadeDistance > passedSpan ? fadeDistance : ray.tMax;
+  return passedHits;
+}
+
 // How much of a particle's blend survives where it nears the surface behind it: a DS1 soft sprite's own fade
 // (Surface::ds1ParticleFeather), else Remix's over a share of the view distance (rtx.particleSoftnessFactor).
 // The game fades a soft sprite by saturate(gap / feather) from its depth pushed half a feather towards the
@@ -908,6 +1040,7 @@ struct Ds1UnlitLayers
 float resolveVertexUnorderedParticles<
   let RAY_FLAGS : uint>(
   uint8_t resolveMode, Ray ray, uint rayMask,
+  float softSurfaceDistance, // ds1ExtendUnorderedRay
   PortalSpace2BitsType portalSpace,
   bool useIntersectionBillboards,
 #ifdef RAY_TRACING_PRIMARY_RAY
@@ -1157,10 +1290,16 @@ float resolveVertexUnorderedParticles<
       continue;
     }
 
-    const float softBlendFactor = ds1ParticleSoftBlend(surface, ray.tMax - rayHitInfo.hitDistance, ray.tMax);
     // Fork (DS1): only sprites fade out softly near geometry. An unlit glow mesh carrying the self-lit tag
     // (Bed of Chaos's glyph shells, wrapped tight around the boss's core) has no such fade in the game.
-    const float blendFactor = surface.isParticle && !surface.hasDs1SelfLit ? softBlendFactor : 1.0f;
+    const bool softParticle = surface.isParticle && !surface.hasDs1SelfLit;
+    // Past a blended hit its sprites fade through (the ray is a little longer than the hit): the next segment's.
+    if (softParticle && softSurfaceDistance > ray.tMax && rayHitInfo.hitDistance > ray.tMax / kUnorderedResolveRayLengthening)
+    {
+      continue;
+    }
+    const float blendFactor = softParticle
+      ? ds1ParticleSoftBlend(surface, softSurfaceDistance - rayHitInfo.hitDistance, softSurfaceDistance) : 1.0f;
 
     currentRadianceAttenuation = mix(1.0f, currentRadianceAttenuation, blendFactor);
     opacityTransmittance *= currentRadianceAttenuation;
@@ -1356,6 +1495,7 @@ void resolveVertexUnordered<
   let ENABLE_DECALS : bool,
   let ENABLE_PARTICLES : bool>(
   uint8_t resolveMode, Ray ray, uint rayMask,
+  RayHitInfo orderedHit, uint orderedRayMask, bool orderedInsideMedium,
   PortalSpace2BitsType portalSpace,
   bool useIntersectionBillboards,
 #ifdef RAY_TRACING_PRIMARY_RAY
@@ -1403,6 +1543,7 @@ void resolveVertexUnordered<
 
   // Note: The number of actual relevant hits along the unordered traversal.
   numInteractions = 0;
+  float softSurfaceDistance = -1.0f; // ds1SeeThroughSpan, once a particle needs it
 
 #ifdef UNORDERED_RESOLVE_WBOIT
   float3 alphaColorSum = 0..xxx;
@@ -1713,10 +1854,29 @@ void resolveVertexUnordered<
       // Note: This is done to avoid raster particles handled by this seprated logic from clipping in ugly ways against geometry by
       // fading out portions of particles closer to walls. Only done for Surfaces labeled as particles.
 
-      const float softBlendFactor = ds1ParticleSoftBlend(surface, ray.tMax - rayHitInfo.hitDistance, ray.tMax);
       // Fork (DS1): only sprites fade out softly near geometry. An unlit glow mesh carrying the self-lit tag
-    // (Bed of Chaos's glyph shells, wrapped tight around the boss's core) has no such fade in the game.
-    const float blendFactor = surface.isParticle && !surface.hasDs1SelfLit ? softBlendFactor : 1.0f;
+      // (Bed of Chaos's glyph shells, wrapped tight around the boss's core) has no such fade in the game.
+      float blendFactor = 1.0f;
+      if (surface.isParticle && !surface.hasDs1SelfLit)
+      {
+        blendFactor = ds1ParticleSoftBlend(surface, ray.tMax - rayHitInfo.hitDistance, ray.tMax);
+        // A farther surface cannot fade it more, so a full blend needs no look-ahead.
+        if (blendFactor < 1.0f)
+        {
+          if (softSurfaceDistance < 0.0f)
+          {
+            uint passedHits;
+            float passedSpan;
+            softSurfaceDistance = ds1SeeThroughSpan(ray, orderedHit, orderedRayMask, orderedInsideMedium, false, passedHits, passedSpan);
+          }
+          // Past a hit that is passed (the ray is a little longer than the hit): the next segment's.
+          if (softSurfaceDistance > ray.tMax && rayHitInfo.hitDistance > orderedHit.hitDistance)
+          {
+            continue;
+          }
+          blendFactor = ds1ParticleSoftBlend(surface, softSurfaceDistance - rayHitInfo.hitDistance, softSurfaceDistance);
+        }
+      }
 
       currentRadianceAttenuation = mix(1.0f, currentRadianceAttenuation, blendFactor);
       currentEmissiveRadiance = mix(vec3(0.0f), currentEmissiveRadiance, blendFactor);

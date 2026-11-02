@@ -256,7 +256,7 @@ void integratePathVertex(
     
     resolveVertexUnordered<RAY_FLAG_CULL_OPAQUE, true, true>(
       resolveMode, unorderedResolveRay,
-      unorderedRayMask, pathState.portalSpace,
+      unorderedRayMask, rayHitInfo, pathState.rayMask, pathState.insideMedium, pathState.portalSpace,
       /* useIntersectionBillboards = */ cb.enableBillboardOrientationCorrection,
       pathState.accumulatedHitDistance, pathState.getUnorderedApproximationSelectionProbability(),
       radianceAttenuation, emissiveRadiance,
