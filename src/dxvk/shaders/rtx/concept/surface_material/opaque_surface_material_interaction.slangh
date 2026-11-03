@@ -1100,7 +1100,9 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     const float reflectScale = envReflection >= 0.0f ? min(envReflection, materialScale) : materialScale;
     const vec3 specularColor = gammaToLinear(saturate(specularColorSample.rgb * materialScale));
     opaqueSurfaceMaterialInteraction.baseReflectivity = specularColor * opacity;
-    opaqueSurfaceMaterialInteraction.albedo = min(albedo, vec3(1.0f) - specularColor) * opacity;
+    // A scale of about 2 or more is a material whose highlights reach the game's gains (c101 * c87): its map saturates
+    // the base reflectivity, which would take the albedo with it. The game only adds, so the albedo stays.
+    opaqueSurfaceMaterialInteraction.albedo = (materialScale >= 1.9f ? albedo : min(albedo, vec3(1.0f) - specularColor)) * opacity;
     if (reflectScale != materialScale)
     {
       const vec3 envColor = gammaToLinear(saturate(specularColorSample.rgb * reflectScale));
