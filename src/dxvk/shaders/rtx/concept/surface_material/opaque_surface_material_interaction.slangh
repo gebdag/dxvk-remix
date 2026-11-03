@@ -965,7 +965,6 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   // its height field (fork_ds1_swamp.h).
   const bool ds1Swamp = surface.isDs1Swamp && cb.ds1Swamp.enable != 0 && albedoOpacityLoaded;
   vec3 ds1SwampReflectivity = vec3(0.0f);
-  vec3 ds1SwampRim = vec3(0.0f);
   if (ds1Swamp)
   {
     const vec3 position = surfaceInteraction.position;
@@ -1020,11 +1019,6 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
       albedo = gammaToLinear(stored);
     }
     opacity = 1.0f;
-    // The game's lobe on this surface alone: e^-(N.c92 * c169.y)^2 * c169.z * c95, a light in its diffuse sum. With the detail
-    // normal this is what makes the slime read lumpy. No light casts it, so it goes as the light it makes of the surface's colour.
-    const float rimFacing = dot(swampNormal, cb.ds1Swamp.rimDirection) * cb.ds1Swamp.rimSharpness;
-    const vec3 rimLight = cb.ds1Swamp.rimColour * exp(-rimFacing * rimFacing);
-    ds1SwampRim = pow(saturate(stored / max(cb.ds1Swamp.invSceneDiffuseScale, 1e-3f) * rimLight), vec3(2.2f));
     const float mask = saturate((h * edge - cb.ds1Swamp.reflectOffset) * cb.ds1Swamp.reflectScale);
     ds1SwampReflectivity = pow(saturate(cb.ds1Swamp.reflectColour * mask), vec3(2.2f));
   }
@@ -1308,7 +1302,6 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   }
 
   emissiveRadiance += ds1EffectGlow;
-  emissiveRadiance += ds1SwampRim;
   opaqueSurfaceMaterialInteraction.emissiveRadiance = emissiveRadiance;
 
   opaqueSurfaceMaterialInteraction.subsurfaceMaterialInteraction =

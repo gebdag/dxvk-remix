@@ -86,17 +86,9 @@ struct Ds1SwampArgs {
 
   // Height pass VS c246.xy, c247.xy, c248.xy: each layer's scroll.
   vec3 layerOffsetU;
-  // c169.y
-  float rimSharpness;
+  float pad3;
   vec3 layerOffsetV;
   float pad4;
-
-  // c95 * c169.z: a lobe on the surface alone, added to its diffuse light. In the game's gamma.
-  vec3 rimColour;
-  float pad5;
-  // c92
-  vec3 rimDirection;
-  float pad6;
 
   // Each ring's texture coordinates from world x, z: u = dot(rings[2i].xyz, (x, z, 1)), v = dot(rings[2i + 1].xyz, (x, z, 1));
   // rings[2i].w = its strength.
