@@ -83,7 +83,7 @@ namespace dxvk {
                  "Max number of staged unique Opacity Micromap build requests.\n"
                  "Any further requests will simply be discarded until the number of staged requests decreases below this threshold.\n"
                  "Once a staged request passes filters for building, it is removed from the staging list.");
-      RTX_OPTION("rtx.opacityMicromap.buildRequests", bool, enableParticles, true, "Enables Opacity Micromaps for particles.");
+      RTX_OPTION("rtx.opacityMicromap.buildRequests", bool, enableParticles, false, "Enables Opacity Micromaps for particles.");
       RTX_OPTION("rtx.opacityMicromap.buildRequests", bool, enableAnimatedInstances, false, "Enables Opacity Micromaps for animated instances.");
 
       RTX_OPTION_ENV("rtx.opacityMicromap.buildRequests", int, minInstanceFrameAge, 1, "DXVK_OPACITY_MICROMAP_MIN_INSTANCE_FRAME_AGE", "Min instance's frame age which to allow building Opacity Micromaps for.");

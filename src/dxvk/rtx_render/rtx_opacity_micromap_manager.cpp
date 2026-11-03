@@ -1063,7 +1063,9 @@ namespace dxvk {
     // Filter by OMM settings
     {
       useOpacityMicromap &= !instance.isAnimated() || OpacityMicromapOptions::BuildRequests::enableAnimatedInstances();
-      useOpacityMicromap &= !alphaState.isParticle || OpacityMicromapOptions::BuildRequests::enableParticles();
+      // Fork: every blended effect, not only those categorised as particles. Their opacity changes every frame, and a
+      // micromap is a cache of it baked over several frames, so a live sprite is drawn differently from one frame to the next.
+      useOpacityMicromap &= !(alphaState.isParticle || alphaState.emissiveBlend) || OpacityMicromapOptions::BuildRequests::enableParticles();
     }
 
     // Check if it needs per uTriangle opacity data
