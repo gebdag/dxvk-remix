@@ -61,6 +61,19 @@ namespace dxvk {
       RemixGui::SliderFloat("Ripple Collision Area (m)", &DxvkDarkSoulsRipples::collisionSizeObject(), 0.5f, 7.0f, "%.1f", kClamp);
       RemixGui::SliderFloat("Ripple Normal Scale", &DxvkDarkSoulsRipples::normalScaleObject(), 0.0f, 5.0f, "%.2f", kClamp);
       RemixGui::SliderFloat("Ripple Cell Size (m)", &DxvkDarkSoulsRipples::cellSizeObject(), 0.01f, 0.05f, "%.3f", kClamp);
+      ImGui::Separator();
+      RemixGui::Checkbox("Wet Player", &DxvkDarkSoulsWet::enableObject());
+      RemixGui::SliderFloat("Wet: Drying Time (s)", &DxvkDarkSoulsWet::dryTimeObject(), 1.0f, 300.0f, "%.0f", kClamp);
+      RemixGui::SliderFloat("Wet: Contact Above Water (m)", &DxvkDarkSoulsWet::contactMarginObject(), 0.0f, 0.3f, "%.2f", kClamp);
+      RemixGui::SliderFloat("Wet: Roughness", &DxvkDarkSoulsWet::roughnessObject(), 0.05f, 1.0f, "%.2f", kClamp);
+      RemixGui::SliderFloat("Wet: Specular Scale", &DxvkDarkSoulsWet::specularScaleObject(), 1.0f, 3.0f, "%.2f", kClamp);
+      RemixGui::SliderFloat("Wet: Porous Albedo Scale", &DxvkDarkSoulsWet::porousFactorObject(), 0.1f, 1.0f, "%.2f", kClamp);
+      RemixGui::Checkbox("Wet: Soak (all over)", &DxvkDarkSoulsWet::soakObject());
+      RemixGui::SliderFloat("Wet: Droplet Size (0 = none)", &DxvkDarkSoulsWet::dropletScaleObject(), 0.0f, 3.0f, "%.2f", kClamp);
+      RemixGui::Checkbox("Wet: Drips", &DxvkDarkSoulsWet::dripsObject());
+      RemixGui::SliderFloat("Wet: Drip Time (s)", &DxvkDarkSoulsWet::dripTimeObject(), 0.5f, 30.0f, "%.1f", kClamp);
+      RemixGui::SliderFloat("Wet: Drip Rate", &DxvkDarkSoulsWet::dripRateObject(), 0.0f, 1000.0f, "%.0f", kClamp);
+      RemixGui::SliderFloat("Wet: Drip Size (cm)", &DxvkDarkSoulsWet::dripSizeObject(), 0.1f, 5.0f, "%.2f", kClamp);
       ImGui::Unindent();
     }
 

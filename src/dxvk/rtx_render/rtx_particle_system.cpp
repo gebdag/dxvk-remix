@@ -28,6 +28,7 @@
 #include "dxvk_context.h"
 #include "rtx_context.h"
 #include "rtx_imgui.h"
+#include "rtx_dark_souls_ripples.h"
 
 #include "../util/util_global_time.h"
 
@@ -350,6 +351,7 @@ namespace dxvk {
   void RtxParticleSystemManager::setupConstants(RtxContext* ctx, ParticleSystemConstants& constants) {
     ScopedCpuProfileZone();
     const RtCamera& camera = ctx->getSceneManager().getCamera();
+    DxvkDarkSoulsRipples::fillParticleArgs(constants);
     constants.viewToWorld = camera.getViewToWorld();
     constants.prevWorldToProjection = camera.getPreviousViewToProjection() * camera.getPreviousWorldToView();
 

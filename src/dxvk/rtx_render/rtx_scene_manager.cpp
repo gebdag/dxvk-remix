@@ -1597,6 +1597,10 @@ namespace dxvk {
       globalParticleDesc = RtxParticleSystemManager::createGlobalParticleSystemDesc();
       pParticleSystemDesc = &globalParticleDesc;
     }
+    // Fork (DS1): drips off the wet player (rtx_dark_souls_ripples.h).
+    if (instance && drawCallState.getMaterialData().isDs1WetBody) {
+      DxvkDarkSoulsRipples::emitDrips(ctx.ptr(), instance->getVectorIdx());
+    }
     if (instance && pParticleSystemDesc) {
       RtxParticleSystemManager& particleSystem = device()->getCommon()->metaParticleSystem();
       particleSystem.spawnParticles(ctx.ptr(), *pParticleSystemDesc, instance->getVectorIdx(), drawCallState, renderMaterialData);

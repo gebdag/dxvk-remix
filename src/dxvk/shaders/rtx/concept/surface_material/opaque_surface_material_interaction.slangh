@@ -545,6 +545,71 @@ vec4 ds1SwampRead(uint16_t textureIndex, uint16_t samplerIndex, SurfaceInteracti
   return textureRead(textureIndex, samplerIndex, scaled, lodBias);
 }
 
+// Fork (DS1): the wet player's grid.
+#include "rtx/pass/ds1_wet_grid.slangh"
+
+// Value noise, 0 to 1, in the body's space: no seams between its uv islands.
+float ds1WetNoiseCorner(vec3 cell)
+{
+  const float s = sin(dot(cell, vec3(127.1f, 311.7f, 74.7f))) * 43758.5453f;
+  return s - floor(s);
+}
+
+float ds1WetNoise(vec3 p)
+{
+  const vec3 cell = floor(p);
+  vec3 f = p - cell;
+  f = f * f * (3.0f - 2.0f * f);
+  return lerp(
+    lerp(lerp(ds1WetNoiseCorner(cell), ds1WetNoiseCorner(cell + vec3(1, 0, 0)), f.x),
+         lerp(ds1WetNoiseCorner(cell + vec3(0, 1, 0)), ds1WetNoiseCorner(cell + vec3(1, 1, 0)), f.x), f.y),
+    lerp(lerp(ds1WetNoiseCorner(cell + vec3(0, 0, 1)), ds1WetNoiseCorner(cell + vec3(1, 0, 1)), f.x),
+         lerp(ds1WetNoiseCorner(cell + vec3(0, 1, 1)), ds1WetNoiseCorner(cell + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+
+// Beads of water sitting on a wet surface: a dome in a hash grid in texture space, so they stay on the mesh (the idea is
+// xoxor4d's surface raindrops in gta4-rtx). Each has its own moment to go as the grid dries, shrinking towards it. Porous
+// surfaces soak most of them up. Returns the bead's coverage, and in slope its normal's tilt along the texture axes.
+float ds1WetDroplets(vec2 uv, float grid, float porosity, float scale, out vec2 slope)
+{
+  slope = vec2(0.0f);
+  float coverage = 0.0f;
+  const float density = lerp(0.5f, 0.15f, porosity);
+  for (uint layer = 0; layer < 2; ++layer)
+  {
+    const float cells = (layer == 0 ? 30.0f : 55.0f) / scale;
+    const vec2 position = uv * cells;
+    const vec2 cell = floor(position);
+    const vec3 key = vec3(cell, float(layer) * 17.0f + 3.0f);
+    if (ds1WetNoiseCorner(key) > density)
+    {
+      continue;
+    }
+    const float size = saturate((grid - lerp(0.1f, 0.8f, ds1WetNoiseCorner(key + vec3(11.0f, 0.0f, 0.0f)))) / 0.25f);
+    if (size <= 0.0f)
+    {
+      continue;
+    }
+    // Kept inside its cell, so one cell is all a point has to look at.
+    const float largest = 0.42f;
+    const float radius = lerp(0.2f, largest, ds1WetNoiseCorner(key + vec3(0.0f, 7.0f, 0.0f))) * sqrt(size);
+    const vec2 centre = largest + (1.0f - 2.0f * largest) * vec2(ds1WetNoiseCorner(key + vec3(3.0f, 5.0f, 0.0f)), ds1WetNoiseCorner(key + vec3(9.0f, 2.0f, 0.0f)));
+    const vec2 offset = (position - cell - centre) / radius;
+    const float distance = length(offset);
+    if (distance >= 1.0f)
+    {
+      continue;
+    }
+    const float bead = 1.0f - smoothstep(0.75f, 1.0f, distance);
+    if (bead > coverage)
+    {
+      coverage = bead;
+      slope = offset;
+    }
+  }
+  return coverage;
+}
+
 // The wake rings' depth at a world position (x, z): the ring texture (the colour texture's alpha) on each ring.
 float ds1SwampRingDepth(uint16_t textureIndex, uint16_t samplerIndex, SurfaceInteraction surfaceInteraction, vec3 position)
 {
@@ -757,6 +822,8 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
 #endif
 
   vec4 tFactor = unorm4x8ToFloat4x32(surface.tFactor).bgra;
+  // Fork (DS1): the wet player's place on the body, before the baked lighting normalisation below scales the colour.
+  const vec4 ds1WetPlace = surfaceInteraction.vertexColor;
 
   // WAR for REMIX-1573: texture ops for opacity should happen during baking and be skipped here for baked terrain,
   // but right now the opacity is not 1 in the baked texture where it is expected to be and thus texture ops
@@ -1080,6 +1147,55 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     opaqueSurfaceMaterialInteraction.albedo = effectAlbedo;
     opaqueSurfaceMaterialInteraction.baseReflectivity = effectF0 * keep;
     ds1EffectGlow = pow(max(add, vec3(0.0f)), vec3(kSRGBGamma));
+  }
+
+  // Fork (DS1): the wet player (fork_ds1_ripples.h). The film smooths the lobe to the game's own wet material (MTD
+  // P_Wet: specular scale 2 over leather's 1.5, Phong exponent 60); the game's wet never darkens, but porous surfaces
+  // do when water fills them (Lagarde, "Water drop 3b", 2013). Drying opens patches on the open surfaces, which grow
+  // until only the creases are left, where water stays: each point has its own moment in the grid's run from 1 to 0,
+  // from low-frequency noise, later in baked dark creases and at the normal map's folds. Pores hold water after the
+  // film has gone. Only the player's body draws carry a colour in full alpha with a place in the grid.
+  if (cb.ds1Wet.enable != 0 && surface.isDs1Skinned && !noReflectance &&
+      ds1WetPlace.a > 0.999f && all(ds1WetPlace.rgb < 0.999f))
+  {
+    const vec2 side = surfaceInteraction.position.xz - cb.ds1Wet.playerXZ;
+    if (dot(side, side) <= cb.ds1Wet.radiusSquared)
+    {
+      const vec3 place = ds1WetPlace.rgb;
+      const float grid = cb.ds1Wet.forceWetness >= 0.0f ? cb.ds1Wet.forceWetness : ds1WetGridRead(cb.ds1Wet.textureIndex, cb.ds1Wet.samplerIndex, place);
+      if (grid > 0.0f)
+      {
+        const vec3 body = place * vec3(2.0f, 2.4f, 1.2f);
+        // Patches a hand across, with finer edges. Averaged noise bunches around 0.5, which would dry everything at once:
+        // the contrast spreads it over the whole run.
+        const float noise = saturate((0.7f * ds1WetNoise(body / 0.11f) + 0.3f * ds1WetNoise(body / 0.035f) - 0.5f) * 3.2f + 0.5f);
+        const float baked = 1.0f - saturate(calcBt709Luminance(vec3(opaqueSurfaceMaterialInteraction.albedo)) / 0.25f);
+        const float folded = saturate((1.0f - abs(dot(normalize(vec3(opaqueSurfaceMaterialInteraction.shadingNormal)), normalize(vec3(surfaceInteraction.triangleNormal))))) * 6.0f);
+        const float dryAt = lerp(0.08f, 0.93f, noise) * (1.0f - 0.8f * max(baked, folded));
+        const float film = saturate((grid - dryAt) / 0.06f);
+        const float pores = saturate((grid * 1.5f - dryAt) / 0.06f);
+
+        const float porosity = saturate((roughness - 0.5f) / 0.3f) * (1.0f - metallic);
+        const vec3 wetF0 = saturate(gammaToLinear(linearToGamma(max(vec3(opaqueSurfaceMaterialInteraction.baseReflectivity), vec3(0.02f))) * cb.ds1Wet.specularScale));
+        opaqueSurfaceMaterialInteraction.baseReflectivity = lerp(vec3(opaqueSurfaceMaterialInteraction.baseReflectivity), wetF0, film);
+        opaqueSurfaceMaterialInteraction.albedo = vec3(opaqueSurfaceMaterialInteraction.albedo) * lerp(1.0f, cb.ds1Wet.porousFactor, porosity * pores);
+        roughness = lerp(roughness, min(roughness, cb.ds1Wet.roughness), film);
+
+        if (cb.ds1Wet.dropletScale > 0.0f)
+        {
+          vec2 slope;
+          const float bead = ds1WetDroplets(surfaceInteraction.textureCoordinates, grid, porosity, cb.ds1Wet.dropletScale, slope);
+          if (bead > 0.0f)
+          {
+            const vec3 tilted = normalize(normal + (normalize(surfaceInteraction.rawTangent) * slope.x + normalize(surfaceInteraction.rawBitangent) * slope.y) * bead);
+            opaqueSurfaceMaterialInteraction.shadingNormal = getBentNormal(surfaceInteraction.geometryNormal, tilted, -minimalRayInteraction.viewDirection);
+            roughness = lerp(roughness, 0.05f, bead);
+            opaqueSurfaceMaterialInteraction.baseReflectivity = lerp(vec3(opaqueSurfaceMaterialInteraction.baseReflectivity), max(vec3(opaqueSurfaceMaterialInteraction.baseReflectivity), vec3(0.04f)), bead);
+            opaqueSurfaceMaterialInteraction.albedo = vec3(opaqueSurfaceMaterialInteraction.albedo) * lerp(1.0f, 0.85f, bead);
+          }
+        }
+      }
+    }
   }
 
   // Note: Roughness loaded from texture is a perceptual roughness value (for optimal encoding), so this works as intended.

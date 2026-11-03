@@ -185,6 +185,8 @@ struct RaytraceArgs {
   Ds1SwampArgs ds1Swamp;
   // Fork: the ripple field around the wading player, for DS1 water (fork_ds1_ripples.h).
   Ds1RippleArgs ds1Ripple;
+  // Fork: how wet the player is (fork_ds1_ripples.h).
+  Ds1WetArgs ds1Wet;
   NrcArgs nrcArgs;
   SharcArgs sharcArgs;
   SssArgs sssArgs;

@@ -608,6 +608,12 @@ struct Surface
     get { return packedFlagGet(data13.z, 1 << 28) ? data15.x : packedFlagGet(data13.z, 1 << 29) ? 0xD2000000u : 0u; }
   }
 
+  // Fork: a skinned DS1 draw: a character (textureFlags bit 29).
+  property bool isDs1Skinned
+  {
+    get { return packedFlagGet(data13.z, 1 << 29); }
+  }
+
   // Fork: a DS1 water surface. Its animated water normals follow the game's wave layers instead of
   // the global motion: layer 1 at the texture coordinate (stage 0's transform places it), layer 2 at
   // uv * ds1WaterLayer2.x + ds1WaterLayer2.yz, each with its own normal strength (ds1WaterStrength).

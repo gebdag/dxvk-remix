@@ -484,6 +484,8 @@ struct RtSurface {
   bool isDs1ThinWall = false;
   // Fork: a DS1 lamp, passed by all lighting rays (Surface::isDs1NoShadow).
   bool isDs1NoShadow = false;
+  // Fork: a draw of the DS1 player's body: its vertices wet the body against the water (rtx_dark_souls_ripples.h).
+  bool isDs1WetBody = false;
   // Fork: DS1 haze set slot (1-15, 0 = none), see post_fx_dark_souls_haze.h.
   uint8_t ds1HazeSet = 0;
   // Fork: exposure power of a DS1 unlit sprite (0-2), see Surface::ds1UnlitExposurePower.
@@ -2126,6 +2128,8 @@ struct LegacyMaterialData {
   bool isDs1Swamp = false; // fork: DS1 swamp marker, see fork_ds1_swamp.h
   // Fork: drawn with the DS1 proxy's skirt decal marker (Surface::isDs1SkirtDecal). Per draw, not part of the identity.
   bool isDs1SkirtDecal = false;
+  // Fork: drawn with the DS1 proxy's player body marker. Per draw, not part of the identity.
+  bool isDs1WetBody = false;
   // Fork: drawn with the DS1 proxy's lamp marker (Surface::isDs1NoShadow). Per draw, not part of the identity.
   bool isDs1NoShadow = false;
   // Fork: drawn with the DS1 proxy's thin wall marker (Surface::isDs1ThinWall). Per draw, not part of the identity.

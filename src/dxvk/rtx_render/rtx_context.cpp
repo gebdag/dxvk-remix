@@ -1562,6 +1562,7 @@ namespace dxvk {
     DxvkDarkSoulsAmbient::fillShaderArgs(constants.ds1Ambient);
     DxvkDarkSoulsSwamp::fillShaderArgs(constants.ds1Swamp);
     DxvkDarkSoulsRipples::fillShaderArgs(constants.ds1Ripple);
+    DxvkDarkSoulsRipples::fillWetArgs(constants.ds1Wet);
     // DS1 look: the sky raster comes from the game's own sky shader, exposure included.
     constants.ds1Ambient.skyGamma = 0;
     constants.ds1Ambient.skyUnexpose = 1.0f;

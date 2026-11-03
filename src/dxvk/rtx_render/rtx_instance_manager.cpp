@@ -161,7 +161,7 @@ namespace dxvk {
   namespace {
     template<int RtInstanceSize> struct CheckRtInstanceSize {
       // The second line of the build error should contain the new size of RtInstance in the template argument, i.e. `dxvk::CheckRtInstanceSize<newSize>`
-      static_assert(RtInstanceSize == 912,"RtInstance size has changed. Fix the copy constructor above this message, then update the expected size.");
+      static_assert(RtInstanceSize == 920,"RtInstance size has changed. Fix the copy constructor above this message, then update the expected size.");
     };
     CheckRtInstanceSize<sizeof(RtInstance)> _rtInstanceSizeTest;
   }
@@ -1136,6 +1136,7 @@ namespace dxvk {
         currentInstance.surface.isDs1SkirtDecal = drawCall.getMaterialData().isDs1SkirtDecal;
         currentInstance.surface.isDs1ThinWall = drawCall.getMaterialData().isDs1ThinWall;
         currentInstance.surface.isDs1NoShadow = drawCall.getMaterialData().isDs1NoShadow;
+        currentInstance.surface.isDs1WetBody = drawCall.getMaterialData().isDs1WetBody;
         currentInstance.surface.ds1HazeSet = drawCall.getMaterialData().ds1HazeSet;
         currentInstance.surface.ds1UnlitExposurePower = drawCall.getMaterialData().ds1UnlitExposurePower;
         currentInstance.surface.ds1SunLightmap = drawCall.getMaterialData().ds1SunLightmap;

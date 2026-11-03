@@ -1251,7 +1251,9 @@ namespace dxvk {
         // 0xD2000001: a skinned draw the game alpha-blends and alpha-tests, DS1's hair (and fur) cards,
         // rendered as Remix hair cards.
         const uint32_t lightmapTag = d3d9State().textureStages[6][DXVK_TSS_CONSTANT];
-        const bool skinnedTag = lightmapTag == 0xD2000000u || lightmapTag == 0xD2000001u;
+        // 0xD2000002: a draw of the player's body, which gets wet (rtx_dark_souls_ripples.h).
+        const bool skinnedTag = lightmapTag == 0xD2000000u || lightmapTag == 0xD2000001u || lightmapTag == 0xD2000002u;
+        m_activeDrawCallState.materialData.isDs1WetBody = lightmapTag == 0xD2000002u;
         m_activeDrawCallState.materialData.ds1SunLightmap =
           (lightmapTag >> 24) == 0xD1u ? lightmapTag : skinnedTag ? 0xD2000000u : 0;
         if (lightmapTag == 0xD2000001u) {

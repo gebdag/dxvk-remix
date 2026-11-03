@@ -105,6 +105,8 @@ struct GpuParticleSystemDesc {
   uint8_t restrictVelocityX : 1;
   uint8_t restrictVelocityY : 1;
   uint8_t restrictVelocityZ : 1;
+  // Fork (DS1): drips off the wet player: spawns only where the wet grid says so (rtx_dark_souls_ripples.h).
+  uint8_t ds1Drip : 1;
 
 // Note: Spatial fields (collisionThickness, attractorRadius, gravityForce,
   // initialVelocityFromNormal, attractorForce, turbulenceForce, turbulenceFrequency)
@@ -164,6 +166,7 @@ struct RtxParticleSystemDesc : GpuParticleSystemDesc {
     restrictVelocityX = 0;
     restrictVelocityY = 0;
     restrictVelocityZ = 0;
+    ds1Drip = 0;
   }
 
   XXH64_hash_t calcHash() const {
@@ -239,5 +242,12 @@ struct ParticleSystemConstants {
   float resolveTransparencyThreshold;
   float minParticleSize;
   float sceneScale;
+  // Fork (DS1): the wet player's grid and water level, for drips; a threshold above 1: no drips.
+  uint ds1WetGridIndex;
+
+  uint ds1WetLevelIndex;
+  uint ds1WetSamplerIndex;
+  // Drips come from grid values above this: the first part of its run from 1 to 0.
+  float ds1DripThreshold;
   uint pad1;
 };

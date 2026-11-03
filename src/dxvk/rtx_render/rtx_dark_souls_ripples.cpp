@@ -3,11 +3,15 @@
 #include "rtx_scene_manager.h"
 #include "rtx_shader_manager.h"
 #include "rtx_texture.h"
+#include "rtx_particle_system.h"
 #include "dxvk_scoped_annotation.h"
 
 #include <rtx_shaders/ds1_ripple_map.h>
 #include <rtx_shaders/ds1_ripple_step.h>
 #include <rtx_shaders/ds1_ripple_slope.h>
+#include <rtx_shaders/ds1_wet_level.h>
+#include <rtx_shaders/ds1_wet_decay.h>
+#include <rtx_shaders/ds1_wet_splat.h>
 
 #include <algorithm>
 #include <chrono>
@@ -65,6 +69,47 @@ namespace dxvk {
     PREWARM_SHADER_PIPELINE(Ds1RippleStepShader);
     PREWARM_SHADER_PIPELINE(Ds1RippleSlopeShader);
 
+    class Ds1WetLevelShader : public ManagedShader {
+      SHADER_SOURCE(Ds1WetLevelShader, VK_SHADER_STAGE_COMPUTE_BIT, ds1_wet_level)
+
+      PUSH_CONSTANTS(Ds1WetLevelArgs)
+
+      BEGIN_PARAMETER()
+        ACCELERATION_STRUCTURE(DS1_RIPPLE_BINDING_TLAS)
+        STRUCTURED_BUFFER(DS1_RIPPLE_BINDING_SURFACES)
+        RW_TEXTURE2D(DS1_RIPPLE_BINDING_WATER)
+        RW_TEXTURE2D(DS1_WET_BINDING_LEVEL)
+      END_PARAMETER()
+    };
+
+    class Ds1WetDecayShader : public ManagedShader {
+      SHADER_SOURCE(Ds1WetDecayShader, VK_SHADER_STAGE_COMPUTE_BIT, ds1_wet_decay)
+
+      PUSH_CONSTANTS(Ds1WetDecayArgs)
+
+      BEGIN_PARAMETER()
+        RW_TEXTURE2D(DS1_WET_BINDING_GRID)
+      END_PARAMETER()
+    };
+
+    class Ds1WetSplatShader : public ManagedShader {
+      SHADER_SOURCE(Ds1WetSplatShader, VK_SHADER_STAGE_COMPUTE_BIT, ds1_wet_splat)
+
+      PUSH_CONSTANTS(Ds1WetSplatArgs)
+
+      BEGIN_PARAMETER()
+        RW_TEXTURE2D(DS1_RIPPLE_BINDING_WATER)
+        RW_TEXTURE2D(DS1_WET_BINDING_LEVEL)
+        RW_TEXTURE2D(DS1_WET_BINDING_GRID)
+        STRUCTURED_BUFFER(DS1_WET_BINDING_POSITIONS)
+        STRUCTURED_BUFFER(DS1_WET_BINDING_COLOURS)
+      END_PARAMETER()
+    };
+
+    PREWARM_SHADER_PIPELINE(Ds1WetLevelShader);
+    PREWARM_SHADER_PIPELINE(Ds1WetDecayShader);
+    PREWARM_SHADER_PIPELINE(Ds1WetSplatShader);
+
     constexpr float kGravity = 9.81f;
     // A leg or a robe's hem at the waterline is narrower than this (metres); a cell is inside a body when
     // rays this long along +-x and +-z all hit it.
@@ -72,6 +117,8 @@ namespace dxvk {
     // The water rays start this far above the player's feet and reach this far down.
     constexpr float kRayAbovePlayer = 2.5f;
     constexpr float kRayLength = 8.0f;
+    // The water depth at the player is looked for this far to each side (metres).
+    constexpr float kWetReach = 0.3f;
     // Water within this distance of a cell's water height takes its ripples.
     constexpr float kHeightTolerance = 0.3f;
     constexpr float kBorderCells = 16.0f;
@@ -88,6 +135,11 @@ namespace dxvk {
       Resources::Resource occupancy[2];
       uint32_t current = 0;
       Resources::Resource slope;
+      // The wet player: the body's grid (survives everything but a new field) and the water level at the feet.
+      Resources::Resource wetGrid;
+      Resources::Resource wetLevel;
+      Rc<DxvkBuffer> wetLevelReadback;
+      bool wetReset = true;
       bool reset = true;
       ivec2 origin { 0, 0 };
       ivec2 previousOrigin { 0, 0 };
@@ -98,7 +150,10 @@ namespace dxvk {
       bool active = false;
       uint32_t steps = 0;
       float alpha = 0.0f;
+      float dt = 0.0f;
       Vector3 player { 0.0f, 0.0f, 0.0f };
+      uint32_t wetTextureIndex = BINDING_INDEX_INVALID;
+      uint32_t wetLevelIndex = BINDING_INDEX_INVALID;
       uint32_t textureIndex = BINDING_INDEX_INVALID;
       uint32_t samplerIndex = BINDING_INDEX_INVALID;
     };
@@ -108,6 +163,12 @@ namespace dxvk {
     // Fixed-step clock: time not yet stepped.
     double s_lastTime = -1.0;
     double s_accumulator = 0.0;
+    // Drips: when the player last touched water, read back from the GPU a few frames late, and whether they run.
+    double s_lastInWater = -1e9;
+    bool s_dripsRun = false;
+    // The drip's round sprite and glossy material.
+    Rc<DxvkImage> s_dripImage;
+    Rc<DxvkImageView> s_dripView;
 
     double nowSeconds() {
       using namespace std::chrono;
@@ -128,6 +189,17 @@ namespace dxvk {
       s_field.occupancy[0] = Resources::createImageResource(dctx, "DS1 ripple occupancy A", extent, VK_FORMAT_R32_SFLOAT);
       s_field.occupancy[1] = Resources::createImageResource(dctx, "DS1 ripple occupancy B", extent, VK_FORMAT_R32_SFLOAT);
       s_field.slope = Resources::createImageResource(dctx, "DS1 ripple slope", extent, VK_FORMAT_R16G16B16A16_SFLOAT);
+      const VkExtent3D wetExtent { DS1_WET_CELLS_X * DS1_WET_SLICES_PER_ROW, DS1_WET_CELLS_Y * (DS1_WET_CELLS_Z / DS1_WET_SLICES_PER_ROW), 1 };
+      s_field.wetGrid = Resources::createImageResource(dctx, "DS1 wet grid", wetExtent, VK_FORMAT_R16G16B16A16_SFLOAT);
+      s_field.wetLevel = Resources::createImageResource(dctx, "DS1 wet level", VkExtent3D { 1, 1, 1 }, VK_FORMAT_R32_SFLOAT);
+      DxvkBufferCreateInfo readback;
+      readback.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+      readback.stages = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_HOST_BIT;
+      readback.access = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_HOST_READ_BIT;
+      readback.size = sizeof(float);
+      s_field.wetLevelReadback = ctx->getDevice()->createBuffer(readback, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+                                                                DxvkMemoryStats::Category::RTXBuffer, "DS1 wet level readback");
+      s_field.wetReset = true;
       s_field.gridSize = gridSize;
       s_field.cellSize = cellSize;
       s_field.newest = 0;
@@ -141,6 +213,7 @@ namespace dxvk {
     const Vector3 player = playerPosition();
     if (!enable() || (player.x == 0.0f && player.y == 0.0f && player.z == 0.0f)) {
       s_lastTime = -1.0;
+      s_dripsRun = false;
       return;
     }
 
@@ -161,6 +234,7 @@ namespace dxvk {
     // Fixed steps on the wall clock. A long frame (a load, a hitch) drops the time instead of catching up.
     const double stepTime = 1.0 / std::clamp(double(stepRate()), 10.0, 240.0);
     const double now = nowSeconds();
+    s_frame.dt = s_lastTime < 0.0 ? 0.0f : float(std::min(now - s_lastTime, 0.25));
     if (s_lastTime < 0.0 || s_field.reset) {
       s_accumulator = 0.0;
     } else {
@@ -188,6 +262,25 @@ namespace dxvk {
     if (s_frame.textureIndex == BINDING_INDEX_INVALID) {
       s_frame.active = false;
     }
+    scene.trackTexture(TextureRef(s_field.wetGrid.view), s_frame.wetTextureIndex, true, false);
+    scene.trackTexture(TextureRef(s_field.wetLevel.view), s_frame.wetLevelIndex, true, false);
+  }
+
+  void DxvkDarkSoulsRipples::fillWetArgs(Ds1WetArgs& args) {
+    args = {};
+    if (!s_frame.active || !DxvkDarkSoulsWet::enable() || s_frame.wetTextureIndex == BINDING_INDEX_INVALID) {
+      return;
+    }
+    args.playerXZ = vec2 { s_frame.player.x, s_frame.player.z };
+    args.radiusSquared = DxvkDarkSoulsWet::radius() * DxvkDarkSoulsWet::radius();
+    args.roughness = DxvkDarkSoulsWet::roughness();
+    args.specularScale = DxvkDarkSoulsWet::specularScale();
+    args.porousFactor = DxvkDarkSoulsWet::porousFactor();
+    args.forceWetness = DxvkDarkSoulsWet::forceWetness();
+    args.dropletScale = DxvkDarkSoulsWet::dropletScale();
+    args.textureIndex = s_frame.wetTextureIndex;
+    args.samplerIndex = s_frame.samplerIndex;
+    args.enable = 1;
   }
 
   void DxvkDarkSoulsRipples::fillShaderArgs(Ds1RippleArgs& args) {
@@ -206,6 +299,125 @@ namespace dxvk {
     args.textureIndex = s_frame.textureIndex;
     args.samplerIndex = s_frame.samplerIndex;
     args.enable = 1;
+  }
+
+  void DxvkDarkSoulsRipples::fillParticleArgs(ParticleSystemConstants& constants) {
+    constants.ds1DripThreshold = 2.0f;
+    if (!s_frame.active || !DxvkDarkSoulsWet::enable() || s_frame.wetTextureIndex == BINDING_INDEX_INVALID || s_frame.wetLevelIndex == BINDING_INDEX_INVALID) {
+      return;
+    }
+    constants.ds1WetGridIndex = s_frame.wetTextureIndex;
+    constants.ds1WetLevelIndex = s_frame.wetLevelIndex;
+    constants.ds1WetSamplerIndex = s_frame.samplerIndex;
+    constants.ds1DripThreshold = saturate(1.0f - DxvkDarkSoulsWet::dripTime() / std::max(DxvkDarkSoulsWet::dryTime(), 1e-3f));
+  }
+
+  void DxvkDarkSoulsRipples::emitDrips(DxvkContext* ctx, uint32_t instanceIdx) {
+    if (!s_dripsRun) {
+      return;
+    }
+    // The sprite: a disc in the alpha of each mip, for the alpha test.
+    static const uint32_t kSize = 32, kMips = 6;
+    static const size_t kHash = 0x4453314452495053ull;
+    if (s_dripView == nullptr) {
+      std::vector<uint8_t> pixels;
+      for (uint32_t mip = 0; mip < kMips; ++mip) {
+        const uint32_t size = kSize >> mip;
+        for (uint32_t y = 0; y < size; ++y) {
+          for (uint32_t x = 0; x < size; ++x) {
+            const float u = (float(x) + 0.5f) / float(size) * 2.0f - 1.0f;
+            const float v = (float(y) + 0.5f) / float(size) * 2.0f - 1.0f;
+            const float alpha = saturate((1.0f - std::sqrt(u * u + v * v)) * float(size) * 0.5f + 0.5f);
+            pixels.insert(pixels.end(), { 255, 255, 255, uint8_t(alpha * 255.0f + 0.5f) });
+          }
+        }
+      }
+      DxvkImageCreateInfo imageInfo = {};
+      imageInfo.type = VK_IMAGE_TYPE_2D;
+      imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+      imageInfo.sampleCount = VK_SAMPLE_COUNT_1_BIT;
+      imageInfo.extent = { kSize, kSize, 1 };
+      imageInfo.numLayers = 1;
+      imageInfo.mipLevels = kMips;
+      imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+      imageInfo.stages = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
+      imageInfo.access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+      imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+      imageInfo.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+      s_dripImage = ctx->getDevice()->createImage(imageInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, DxvkMemoryStats::Category::RTXMaterialTexture, "DS1 drip sprite");
+
+      DxvkBufferCreateInfo stagingInfo = {};
+      stagingInfo.size = pixels.size();
+      stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+      stagingInfo.stages = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_HOST_BIT;
+      stagingInfo.access = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_HOST_WRITE_BIT;
+      Rc<DxvkBuffer> staging = ctx->getDevice()->createBuffer(stagingInfo, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, DxvkMemoryStats::Category::RTXBuffer, "DS1 drip sprite staging");
+      std::memcpy(DxvkBufferSlice(staging).mapPtr(0), pixels.data(), pixels.size());
+
+      DxvkImageViewCreateInfo viewInfo = {};
+      viewInfo.type = VK_IMAGE_VIEW_TYPE_2D;
+      viewInfo.format = imageInfo.format;
+      viewInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+      viewInfo.aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+      viewInfo.numLevels = kMips;
+      viewInfo.numLayers = 1;
+      s_dripView = ctx->getDevice()->createImageView(s_dripImage, viewInfo);
+
+      ctx->changeImageLayout(s_dripImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+      VkDeviceSize offset = 0;
+      for (uint32_t mip = 0; mip < kMips; ++mip) {
+        VkImageSubresourceLayers subresource = {};
+        subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        subresource.mipLevel = mip;
+        subresource.layerCount = 1;
+        const VkExtent3D extent = util::computeMipLevelExtent(imageInfo.extent, mip);
+        ctx->copyBufferToImage(s_dripImage, subresource, VkOffset3D { 0, 0, 0 }, extent, staging, offset, 0, 0);
+        offset += util::computeImageDataSize(imageInfo.format, extent);
+      }
+      ctx->changeImageLayout(s_dripImage, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+      s_dripImage->setHash(kHash);
+    }
+
+    OpaqueMaterialData opaque;
+    opaque.setAlbedoOpacityTexture(TextureRef(s_dripView, kHash));
+    opaque.setAlbedoConstant(Vector3(0.1f, 0.11f, 0.12f));
+    opaque.setOpacityConstant(1.0f);
+    opaque.setRoughnessConstant(0.1f);
+    opaque.setMetallicConstant(0.0f);
+    opaque.setUseLegacyAlphaState(false);
+    opaque.setBlendEnabled(false);
+    opaque.setAlphaTestType(AlphaTestType::kGreater);
+    opaque.setAlphaTestReferenceValue(128);
+    const MaterialData material { opaque };
+
+    RtxParticleSystemDesc desc;
+    desc.minTimeToLive = 0.5f;
+    desc.maxTimeToLive = 0.9f;
+    desc.maxNumParticles = 2048;
+    desc.spawnRatePerSecond = std::max(DxvkDarkSoulsWet::dripRate(), 0.0f);
+    desc.gravityForce = -981.0f;
+    desc.initialVelocityFromMotion = 0.5f;
+    desc.billboardType = FaceCamera_UpAxisLocked;
+    desc.spriteSheetMode = UseMaterialSpriteSheet;
+    desc.spriteSheetRows = 1;
+    desc.spriteSheetCols = 1;
+    desc.enableMotionTrail = 1;
+    desc.motionTrailMultiplier = 0.4f;
+    desc.enableCollisionDetection = 1;
+    desc.collisionMode = Kill;
+    desc.collisionThickness = 5.0f;
+    desc.ds1Drip = 1;
+    const float size = std::max(DxvkDarkSoulsWet::dripSize(), 0.01f);
+    desc.minSize = { vec2(size * 0.7f, size * 0.7f), vec2(size * 0.5f, size * 0.5f) };
+    desc.maxSize = { vec2(size * 1.3f, size * 1.3f), vec2(size, size) };
+    desc.minColor = { vec4(1.0f, 1.0f, 1.0f, 1.0f) };
+    desc.maxColor = { vec4(1.0f, 1.0f, 1.0f, 1.0f) };
+    desc.minRotationSpeed = { 0.0f };
+    desc.maxRotationSpeed = { 0.0f };
+    desc.maxVelocity = { vec3(1500.0f, 1500.0f, 1500.0f) };
+
+    static const DrawCallState s_state {};
+    ctx->getCommonObjects()->metaParticleSystem().spawnParticles(ctx, desc, instanceIdx, s_state, material);
   }
 
   void DxvkDarkSoulsRipples::dispatch(RtxContext* ctx) {
@@ -256,6 +468,86 @@ namespace dxvk {
       ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, Ds1RippleMapShader::getShader());
       ctx->dispatch(groups, groups, 1);
       s_field.reset = false;
+    }
+
+    if (DxvkDarkSoulsWet::enable()) {
+      {
+        Ds1WetLevelArgs args = {};
+        args.origin = s_field.origin;
+        args.gridSize = n;
+        args.cellSize = s_field.cellSize;
+        args.reachCells = int(kWetReach / s_field.cellSize);
+        args.feet = s_frame.player.y;
+        args.maxDepth = DxvkDarkSoulsWet::maxDepth();
+        ctx->pushConstants(0, sizeof(args), &args);
+        ctx->bindAccelerationStructure(DS1_RIPPLE_BINDING_TLAS, tlas);
+        ctx->bindResourceBuffer(DS1_RIPPLE_BINDING_SURFACES, DxvkBufferSlice(surfaceBuffer, 0, surfaceBuffer->info().size));
+        ctx->bindResourceView(DS1_RIPPLE_BINDING_WATER, s_field.water.view, nullptr);
+        ctx->bindResourceView(DS1_WET_BINDING_LEVEL, s_field.wetLevel.view, nullptr);
+        ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, Ds1WetLevelShader::getShader());
+        ctx->dispatch(1, 1, 1);
+
+        // Whether drips run, from the level as of a few frames ago: at most a moment late.
+        const float level = *reinterpret_cast<const float*>(s_field.wetLevelReadback->mapPtr(0));
+        const double now = nowSeconds();
+        if (DxvkDarkSoulsWet::soak() || DxvkDarkSoulsWet::testWaterHeight() > -99999.0f ||
+            (level > DS1_RIPPLE_NO_WATER && level > s_frame.player.y - DxvkDarkSoulsWet::contactMargin())) {
+          s_lastInWater = now;
+        }
+        s_dripsRun = DxvkDarkSoulsWet::drips() && now - s_lastInWater < double(DxvkDarkSoulsWet::dripTime());
+        VkImageSubresourceLayers subresource = {};
+        subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        subresource.layerCount = 1;
+        ctx->copyImageToBuffer(s_field.wetLevelReadback, 0, 0, 0, s_field.wetLevel.image, subresource, VkOffset3D { 0, 0, 0 }, VkExtent3D { 1, 1, 1 });
+      }
+      {
+        Ds1WetDecayArgs args = {};
+        args.decay = s_frame.dt / std::max(DxvkDarkSoulsWet::dryTime(), 1e-3f);
+        args.reset = s_field.wetReset || DxvkDarkSoulsWet::clear() ? 1u : 0u;
+        args.soak = DxvkDarkSoulsWet::soak() ? 1u : 0u;
+        ctx->pushConstants(0, sizeof(args), &args);
+        ctx->bindResourceView(DS1_WET_BINDING_GRID, s_field.wetGrid.view, nullptr);
+        ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, Ds1WetDecayShader::getShader());
+        const VkExtent3D gridExtent = s_field.wetGrid.image->mipLevelExtent(0);
+        ctx->dispatch((gridExtent.width + DS1_WET_GROUP_SIZE - 1) / DS1_WET_GROUP_SIZE, (gridExtent.height + DS1_WET_GROUP_SIZE - 1) / DS1_WET_GROUP_SIZE, 1);
+        s_field.wetReset = false;
+      }
+      const uint32_t frameId = ctx->getDevice()->getCurrentFrameId();
+      for (const RtInstance* instance : ctx->getSceneManager().getInstanceManager().getInstanceTable()) {
+        if (!instance->surface.isDs1WetBody || instance->getFrameLastUpdated() != frameId || instance->getBlas() == nullptr) {
+          continue;
+        }
+        const RaytraceGeometry& geometry = instance->getBlas()->modifiedGeometryData;
+        if (!geometry.positionBuffer.defined() || !geometry.color0Buffer.defined() || geometry.vertexCount == 0) {
+          continue;
+        }
+        Ds1WetSplatArgs args = {};
+        const Matrix4& objectToWorld = instance->surface.objectToWorld;
+        for (uint32_t row = 0; row < 3; ++row) {
+          args.objectToWorld[row] = vec4 { objectToWorld[0][row], objectToWorld[1][row], objectToWorld[2][row], objectToWorld[3][row] };
+        }
+        args.origin = s_field.origin;
+        args.gridSize = n;
+        args.cellSize = s_field.cellSize;
+        args.positionWord = uint32_t((geometry.positionBuffer.offset() + geometry.positionBuffer.offsetFromSlice()) / 4);
+        args.positionStride = geometry.positionBuffer.stride() / 4;
+        args.colourWord = uint32_t((geometry.color0Buffer.offset() + geometry.color0Buffer.offsetFromSlice()) / 4);
+        args.colourStride = geometry.color0Buffer.stride() / 4;
+        args.vertexCount = geometry.vertexCount;
+        args.contactMargin = DxvkDarkSoulsWet::contactMargin();
+        args.radiusSquared = DxvkDarkSoulsWet::radius() * DxvkDarkSoulsWet::radius();
+        args.testLevel = DxvkDarkSoulsWet::testWaterHeight();
+        args.playerXZ = vec2 { s_frame.player.x, s_frame.player.z };
+        args.useTestLevel = args.testLevel > -99999.0f ? 1u : 0u;
+        ctx->pushConstants(0, sizeof(args), &args);
+        ctx->bindResourceView(DS1_RIPPLE_BINDING_WATER, s_field.water.view, nullptr);
+        ctx->bindResourceView(DS1_WET_BINDING_LEVEL, s_field.wetLevel.view, nullptr);
+        ctx->bindResourceView(DS1_WET_BINDING_GRID, s_field.wetGrid.view, nullptr);
+        ctx->bindResourceBuffer(DS1_WET_BINDING_POSITIONS, DxvkBufferSlice(geometry.positionBuffer.buffer(), 0, geometry.positionBuffer.buffer()->info().size));
+        ctx->bindResourceBuffer(DS1_WET_BINDING_COLOURS, DxvkBufferSlice(geometry.color0Buffer.buffer(), 0, geometry.color0Buffer.buffer()->info().size));
+        ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, Ds1WetSplatShader::getShader());
+        ctx->dispatch((geometry.vertexCount + 63) / 64, 1, 1);
+      }
     }
 
     const double stepTime = 1.0 / std::clamp(double(stepRate()), 10.0, 240.0);

@@ -28,6 +28,8 @@
 #include "rtx/utility/packing.slangh"
 #include "rtx/utility/gbuffer_helpers.slangh"
 #include "rtx/utility/debug_view_helpers.slangh"
+#include "rtx/pass/fork_ds1_ripples.h"
+#include "rtx/pass/ds1_wet_grid.slangh"
 #include "rtx/concept/camera/camera.slangh"
     
 layout(binding = PARTICLE_SYSTEM_BINDING_SPAWN_CONTEXT_PARTICLE_MAPPING_INPUT)
@@ -152,8 +154,29 @@ GpuParticle respawn(uint particleIdx, uint spawnCtxIdx, const GpuParticleSystem 
   
   float3 spawnPosition = lerp(worldPosition, prevWorldPosition, randSeed);
   
+  // Fork (DS1): drips come off the wet player's downward facing surfaces, above the water, while they are freshly wet.
+  // A vertex colour is its place on the body there (fork_ds1_ripples.h), not a colour.
+  bool ds1Spawns = true;
+  if (particleSystem.desc.ds1Drip != 0)
+  {
+    const float threshold = particleCb.ds1DripThreshold;
+    ds1Spawns = threshold <= 1.0f && worldNormal.y < -0.25f && color.a > 0.999f && all(color.rgb < 0.999f);
+    if (ds1Spawns)
+    {
+      const float level = textures[particleCb.ds1WetLevelIndex].SampleLevel(samplers[particleCb.ds1WetSamplerIndex], vec2(0.5f), 0.0f).x;
+      const float wet = ds1WetGridRead(particleCb.ds1WetGridIndex, particleCb.ds1WetSamplerIndex, color.rgb);
+      const float chance = saturate((wet - threshold) / max(1.0f - threshold, 1e-3f));
+      ds1Spawns = worldPosition.y > level && randomFloat(uint2(randomSeed++, particleCb.frameIdx)) < chance;
+    }
+    color = 1.0f;
+  }
+
   // Spawn a particle
   newParticle.reset(particleSystem, spawnPosition, initialVelocity, uvMinMax, color, randSeed);
+  if (!ds1Spawns)
+  {
+    newParticle.timeToLive = 0.0f;
+  }
   
   return newParticle;
 }
