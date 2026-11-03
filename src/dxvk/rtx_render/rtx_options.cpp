@@ -327,8 +327,8 @@ namespace dxvk {
       DxvkRtxdiRayQuery::stealBoundaryPixelSamplesWhenOutsideOfScreen.setDeferred(false);
       DxvkRtxdiRayQuery::permutationSamplingNthFrame.setDeferred(1);
       DxvkRtxdiRayQuery::enableDenoiserConfidence.setDeferred(false);
-      DxvkRtxdiRayQuery::enableBestLightSampling.setDeferred(false);
-      DxvkRtxdiRayQuery::initialSampleCount.setDeferred(3);
+      // Fork (DS1): Sample Best Lights and Initial Sample Count stay what the config says. This runs at every start, and with the Custom
+      // graphics preset it writes to the user layer, over user.conf.
       DxvkRtxdiRayQuery::spatialSamples.setDeferred(2);
       DxvkRtxdiRayQuery::disocclusionSamples.setDeferred(2);
       DxvkRtxdiRayQuery::enableSampleStealing.setDeferred(false);
@@ -360,8 +360,7 @@ namespace dxvk {
       DxvkRtxdiRayQuery::stealBoundaryPixelSamplesWhenOutsideOfScreenObject().resetToDefault();
       DxvkRtxdiRayQuery::permutationSamplingNthFrameObject().resetToDefault();
       DxvkRtxdiRayQuery::enableDenoiserConfidenceObject().resetToDefault();
-      DxvkRtxdiRayQuery::enableBestLightSamplingObject().resetToDefault();
-      DxvkRtxdiRayQuery::initialSampleCountObject().resetToDefault();
+      // Fork (DS1): not Sample Best Lights or Initial Sample Count, as above.
       DxvkRtxdiRayQuery::spatialSamplesObject().resetToDefault();
       DxvkRtxdiRayQuery::disocclusionSamplesObject().resetToDefault();
       DxvkRtxdiRayQuery::enableSampleStealingObject().resetToDefault();
