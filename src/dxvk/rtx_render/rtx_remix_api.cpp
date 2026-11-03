@@ -1299,6 +1299,13 @@ namespace {
       }
     }
 
+    // Fork: an empty value takes the option's value off this layer again (rtx_comp\\area_overrides.ini on leaving an area).
+    if (value[0] == '\0') {
+      std::lock_guard<std::mutex> optionLock(dxvk::RtxOptionImpl::getUpdateMutex());
+      option->disableLayerValue(dxvk::RtxOptionLayer::getUserLayer());
+      return REMIXAPI_ERROR_CODE_SUCCESS;
+    }
+
     dxvk::Config newSetting;
     newSetting.setOptionMove(std::move(strKey), std::string{ value });
     {
