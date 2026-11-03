@@ -315,6 +315,10 @@ bool ds1VisibilityPassesThinWall(Ray ray, RayHitInfo rayHitInfo, vec3 originNorm
 {
   const RayInteraction rayInteraction = rayInteractionCreate(ray, rayHitInfo);
   const Surface surface = surfaces[uint(rayInteraction.surfaceIndex)];
+  if (surface.isDs1NoShadow)
+  {
+    return true;
+  }
   if (!surface.isDs1ThinWall)
   {
     return false;
@@ -451,7 +455,7 @@ VisibilityResult traceVisibilityRay<let VisibilityMode : uint>(
     };
 
     if (rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT &&
-        !usePreviousTLAS && ds1ThinWallSkips < 2 && any(ds1OriginNormal != vec3(0.0f)) && rayQuery.CommittedTriangleFrontFace())
+        !usePreviousTLAS && ds1ThinWallSkips < 2 && rayQuery.CommittedTriangleFrontFace())
     {
       RAY_HIT_INFO_CREATE_RAY_QUERY_COMMITTED(thinWallHit, rayQuery)
       if (ds1VisibilityPassesThinWall(visibilityRay, thinWallHit, ds1OriginNormal))

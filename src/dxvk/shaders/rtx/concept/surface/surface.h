@@ -528,7 +528,14 @@ struct Surface
   // from outside meet a back face or a front not turned towards their origin, and stop.
   property bool isDs1ThinWall
   {
-    get { return packedFlagGet(data13.x, 1u << 31); }
+    get { return packedFlagGet(data13.x, 1u << 31) && (data13.x >> 24) != 0xFFu; }
+  }
+
+  // Fork: a DS1 lamp whose light sits inside its closed mesh (game/mesh_lights in the proxy): lighting rays pass it. The thin wall
+  // bit with a decal sort order no thin wall has.
+  property bool isDs1NoShadow
+  {
+    get { return (data13.x >> 24) == 0xFFu; }
   }
 
   // Fork: the DS1 haze set the draw was tagged with (1-15, 0 = none): the slot of its own fog and
