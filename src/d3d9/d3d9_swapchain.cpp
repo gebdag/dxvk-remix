@@ -549,9 +549,19 @@ namespace dxvk {
       // just end up crashing (like with alt-tab loss)
       
       // NV-DXVK start: DLFG integration
-      if (!GetPresenter()->hasSwapChain())
-      // NV-DXVK end
+      if (!GetPresenter()->hasSwapChain()) {
+        // NV-DXVK start: no swap chain (a minimised window) means no present, and the present is what moves
+        // the frame id. Without it every injectRTX is refused as a repeat, so scene garbage collection never
+        // runs while the app keeps drawing: new geometry piles up until the buffer table overflows
+        // (kBufferCacheLimit) and the first frame after the restore faults the GPU. The frame still ends.
+        m_parent->EmitCs([](DxvkContext* ctx) {
+          ctx->getDevice()->incrementPresentCount();
+        });
+        m_parent->Flush();
+        // NV-DXVK end
         return D3D_OK;
+      }
+      // NV-DXVK end
 
       PresentImage(presentInterval);
       return D3D_OK;
