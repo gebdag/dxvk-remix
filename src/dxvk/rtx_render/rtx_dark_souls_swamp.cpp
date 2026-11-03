@@ -75,6 +75,10 @@ namespace dxvk {
     args.layerOffsetU = vec3 { offsetU.x, offsetU.y, offsetU.z };
     args.layerOffsetV = vec3 { offsetV.x, offsetV.y, offsetV.z };
     args.heightScale = heightScale();
+    const Vector3 rim = rimColour(), rimDir = rimDirection();
+    args.rimColour = vec3 { rim.x, rim.y, rim.z };
+    args.rimDirection = vec3 { rimDir.x, rimDir.y, rimDir.z };
+    args.rimSharpness = rimSharpness();
     args.heightInAlpha = heightInAlpha() ? 1u : 0u;
     if (roughness() >= 0.0f) {
       args.roughness = std::min(roughness(), 1.0f);
@@ -85,6 +89,11 @@ namespace dxvk {
       const float c87 = std::max({ env.x, env.y, env.z, 1e-3f });
       const float alpha = std::sqrt(std::pow(c87, 2.2f) / (4.0f * 3.14159265f));
       args.roughness = std::sqrt(alpha);
+      // With a lobe of its own (the slime) c87 is too high for that, 3 made a matte reflector of 0.97: from its Phong
+      // exponent n instead, as wide as a GGX lobe of alpha^2 = 2 / (n + 2).
+      if (rimColour().x > 0.0f || rimColour().y > 0.0f || rimColour().z > 0.0f) {
+        args.roughness = std::sqrt(std::sqrt(2.0f / (std::max(phongExponent(), 0.0f) + 2.0f)));
+      }
     }
 
     if (rings() != s_ringText) {

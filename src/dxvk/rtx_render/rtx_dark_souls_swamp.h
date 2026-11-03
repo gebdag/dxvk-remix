@@ -50,6 +50,10 @@ namespace dxvk {
     RTX_OPTION_FLAG("rtx.ds1Swamp", bool, heightInAlpha, false, RtxOptionFlags::NoSave,
                     "The height pass reads a texture of its own, which the proxy bakes into the colour texture's alpha "
                     "(Gaping Dragon's slime); false: it reads the colour texture's r + g + b (Blighttown).");
+    RTX_OPTION_FLAG("rtx.ds1Swamp", Vector3, rimColour, Vector3(0.0f), RtxOptionFlags::NoSave, "PS c95 * c169.z: the lobe on the surface.");
+    RTX_OPTION_FLAG("rtx.ds1Swamp", Vector3, rimDirection, Vector3(0.0f, 0.0f, 1.0f), RtxOptionFlags::NoSave, "PS c92.");
+    RTX_OPTION_FLAG("rtx.ds1Swamp", float, rimSharpness, 0.0f, RtxOptionFlags::NoSave, "PS c169.y.");
+    RTX_OPTION_FLAG("rtx.ds1Swamp", float, phongExponent, 0.0f, RtxOptionFlags::NoSave, "PS c102.x: the highlight's exponent.");
     RTX_OPTION_FLAG("rtx.ds1Swamp", float, meshMetresPerUv, 0.0f, RtxOptionFlags::NoSave,
                     "The surface mesh's metres per texture coordinate, measured by the proxy; 0 = metresPerUv.");
     RTX_OPTION_FLAG("rtx.ds1Swamp", std::string, rings, "", RtxOptionFlags::NoSave,
