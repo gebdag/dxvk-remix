@@ -163,8 +163,15 @@ struct Surface
   // Fork: a DS1 window glass pass (the proxy's stage-4 tag 0xD4000002), see resolve.slangh.
   property bool isDs1Glass
   {
-    get { return packedFlagGet(data2.w, 1u << 31); }
+    get { return packedFlagGet(data2.w, 1u << 31) && !packedFlagGet(data2.w, 1 << 22); }
     set { data2.w = newValue ? packedFlagSet(data2.w, 1u << 31) : packedFlagUnset(data2.w, 1u << 31); }
+  }
+
+  // Fork: a decal the game draws with culling off (the glass bit, which no decal has): its back side shows as well. Stock Remix drops the back
+  // side of every decal, so a blended mesh seen from behind vanished (the rock over a pillar in Undead Burg, frame_20261104_133733).
+  property bool isDs1TwoSidedDecal
+  {
+    get { return packedFlagGet(data2.w, 1u << 31) && packedFlagGet(data2.w, 1 << 22); }
   }
 
   // Matrices

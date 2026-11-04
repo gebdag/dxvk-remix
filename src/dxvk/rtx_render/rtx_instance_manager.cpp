@@ -1160,6 +1160,7 @@ namespace dxvk {
         currentInstance.surface.isVertexColorBakedLighting = drawCall.getMaterialData().isVertexColorBakedLighting;
         currentInstance.surface.isMotionBlurMaskOut = currentInstance.testCategoryFlags(InstanceCategories::IgnoreMotionBlur);
         currentInstance.surface.isDs1Glass = drawCall.getMaterialData().isDs1SingleSided;
+        currentInstance.surface.isDs1TwoSidedDecal = drawCall.getCullMode() == VK_CULL_MODE_NONE;
         currentInstance.surface.ds1ViewFade = drawCall.getMaterialData().ds1ViewFade;
 
         // Note: Skip the spritesheet adjustment logic in the surface interaction when using Ray Portal materials as this logic

@@ -1602,7 +1602,6 @@ void resolveVertexUnordered<
   float3 unlitSubtractGammaSum = 0..xxx;
   // Fork: the unlit alpha-blended layers, composited in gamma space in depth order (Ds1UnlitLayers).
   Ds1UnlitLayers unlitLayers = Ds1UnlitLayers.create();
-  bool ds1UnhazedLayers = false;
 #else
   // Note: Initialize bins to completely transparent with no radiance to be added in at an impossibly low distance. This
   // ensures these filler items are pulled out first in sorted order, giving the incoming elements a few iterations to populate
@@ -1767,9 +1766,9 @@ void resolveVertexUnordered<
     const bool isDecal = isTriangle && surfaceIsDecal(surface);
 
 #ifndef RAY_TRACING_PRIMARY_RAY
-    // Back-facing opaque decals never contribute.
+    // Back-facing opaque decals never contribute, unless the game draws them with culling off.
     // Primary rays still create their materials, because material creation writes sampler feedback and debug views.
-    if (ENABLE_DECALS && isDecal && rayInteraction.materialType == surfaceMaterialTypeOpaque && !rayInteraction.frontHit)
+    if (ENABLE_DECALS && isDecal && rayInteraction.materialType == surfaceMaterialTypeOpaque && !rayInteraction.frontHit && !surface.isDs1TwoSidedDecal)
     {
       continue;
     }
@@ -1814,7 +1813,7 @@ void resolveVertexUnordered<
       if (ENABLE_DECALS && isDecal)
       {
         const float opacity = opaqueSurfaceMaterialInteraction.opacity;
-        if (opacity > 0.001f && rayInteraction.frontHit)
+        if (opacity > 0.001f && (rayInteraction.frontHit || surface.isDs1TwoSidedDecal))
         {
           uint decalSortKey = (uint(surface.decalSortOrder) << 24) + ((rayHitInfo.geometryIndex & 0xff) << 16) + (rayHitInfo.primitiveIndex & 0xffff);
           DecalMaterialInteraction decalMaterialInteraction = decalMaterialInteractionCreate(opaqueSurfaceMaterialInteraction);

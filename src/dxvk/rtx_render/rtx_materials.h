@@ -251,7 +251,8 @@ struct RtSurface {
     flags1 |= isMotionBlurMaskOut ?           (1 << 28) : 0;
     flags1 |= skipSurfaceInteractionSpritesheetAdjustment ? (1 << 29) : 0;
     flags1 |= isPreservePath ?                (1u << 30) : 0;
-    flags1 |= isDs1Glass ?                    (1u << 31) : 0;
+    // Fork: bit 31 is the DS1 glass flag; never a decal, so on a decal it says the decal has two sides (Surface::isDs1TwoSidedDecal).
+    flags1 |= (alphaState.isDecal ? isDs1TwoSidedDecal : isDs1Glass) ? (1u << 31) : 0;
 
     writeGPUHelper(data, offset, flags1);
 
@@ -519,6 +520,8 @@ struct RtSurface {
   bool skipSurfaceInteractionSpritesheetAdjustment = false;
   // Fork: a DS1 window glass pass (LegacyMaterialData::isDs1SingleSided): never stochastically blended.
   bool isDs1Glass = false;
+  // Fork: a decal the game draws with culling off: its back side shows as well.
+  bool isDs1TwoSidedDecal = false;
 
   RtTextureArgSource textureColorArg1Source = RtTextureArgSource::Texture;
   RtTextureArgSource textureColorArg2Source = RtTextureArgSource::None;
