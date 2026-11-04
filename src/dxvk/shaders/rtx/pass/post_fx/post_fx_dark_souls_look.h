@@ -61,8 +61,8 @@
 #define POST_FX_DS_LOOK_DOF_PREPARE_RATE     1
 #define POST_FX_DS_LOOK_DOF_PREPARE_OUTPUT   2
 
-// DoF blend: FRPG_Fil_Dof. Its three blur levels are full-resolution Gaussians with the spread
-// the game's 512x360 / 256x180 chain has on screen (rtx_dark_souls_look.cpp), not low-res copies.
+// DoF blend: FRPG_Fil_Dof. Its three blur levels are Gaussians with the spread the game's 512x360 / 256x180 chain has
+// on screen (rtx_dark_souls_look.cpp), at half resolution unless rtx.ds1Look.dofFullRes, not low-res copies.
 #define POST_FX_DS_LOOK_DOF_INOUT            0
 #define POST_FX_DS_LOOK_DOF_LEVEL1           1
 #define POST_FX_DS_LOOK_DOF_LEVEL2           2
@@ -214,6 +214,11 @@ struct PostFxDarkSoulsLookDofArgs {
 
   vec4 blendScale;      // c66: weights = sat(rate * c66 + c67)
   vec4 blendBias;       // c67
+
+  uint useNear;         // 0: no near DoF this frame, its rate image is stale
+  uint pad0;
+  uint pad1;
+  uint pad2;
 };
 
 struct PostFxDarkSoulsLookBrightArgs {

@@ -23,5 +23,35 @@ void main(uint2 pixel : SV_DispatchThreadID)
   {
     return;
   }
-  Output[pixel] = vec4(Frame[pixel].rgb, Rate[pixel]);
+  uint2 source;
+  Frame.GetDimensions(source.x, source.y);
+  if (all(source == size))
+  {
+    Output[pixel] = vec4(Frame[pixel].rgb, Rate[pixel]);
+    return;
+  }
+
+  // Half resolution. An edge pixel takes the side that blurs: its largest rate, and the colours of the samples near that rate. A sharp
+  // foreground's colour must not leak into the blur behind it, which is what the gated level blurs are there to prevent.
+  float rates[4];
+  vec3 colours[4];
+  float largest = 0.0f;
+  for (int i = 0; i < 4; ++i)
+  {
+    const uint2 at = min(pixel * 2 + uint2(i & 1, i >> 1), source - 1);
+    rates[i] = Rate[at];
+    colours[i] = Frame[at].rgb;
+    largest = max(largest, rates[i]);
+  }
+  vec3 colour = 0.0f;
+  float count = 0.0f;
+  for (int i = 0; i < 4; ++i)
+  {
+    if (rates[i] >= largest * 0.5f)
+    {
+      colour += colours[i];
+      count += 1.0f;
+    }
+  }
+  Output[pixel] = vec4(colour / count, largest);
 }

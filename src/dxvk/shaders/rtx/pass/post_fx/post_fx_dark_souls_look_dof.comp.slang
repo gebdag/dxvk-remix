@@ -41,7 +41,7 @@ void main(uint2 pixel : SV_DispatchThreadID)
 
   const vec2 uv = (vec2(pixel) + 0.5f) * cb.invImageSize;
   const vec4 scene = InOutColor[pixel];
-  const float rate = max(Rate[pixel], Near.SampleLevel(uv, 0));
+  const float rate = cb.useNear != 0 ? max(Rate[pixel], Near.SampleLevel(uv, 0)) : Rate[pixel];
   const vec4 w = saturate(rate * cb.blendScale + cb.blendBias);
   const vec3 col = scene.rgb * w.x
     + Level1.SampleLevel(uv, 0).rgb * (w.y - w.x)

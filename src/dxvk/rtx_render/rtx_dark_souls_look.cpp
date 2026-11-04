@@ -312,16 +312,24 @@ namespace dxvk {
   }
 
   void DxvkDarkSoulsLook::ensureDofResources(Rc<DxvkContext>& ctx, const VkExtent3D& extent) {
-    if (m_dofLevel[0].isValid() && extent.width == m_dofExtent.width && extent.height == m_dofExtent.height) {
+    const bool fullRes = dofFullRes();
+    const bool sameExtent = m_dofLevel[0].isValid() && extent.width == m_dofExtent.width && extent.height == m_dofExtent.height;
+    if (sameExtent && fullRes == m_dofIsFullRes) {
+      return;
+    }
+    m_dofIsFullRes = fullRes;
+    const VkExtent3D levelSize = fullRes ? VkExtent3D { extent.width, extent.height, 1 }
+                                         : VkExtent3D { std::max((extent.width + 1) / 2, 1u), std::max((extent.height + 1) / 2, 1u), 1 };
+    for (auto& level : m_dofLevel) {
+      level = Resources::createImageResource(ctx, "DS1 look DoF level", levelSize, VK_FORMAT_R16G16B16A16_SFLOAT);
+    }
+    m_dofScratch = Resources::createImageResource(ctx, "DS1 look DoF scratch", levelSize, VK_FORMAT_R16G16B16A16_SFLOAT);
+    m_dofNear = Resources::createImageResource(ctx, "DS1 look DoF near rate", levelSize, VK_FORMAT_R16_SFLOAT);
+    if (sameExtent) {
       return;
     }
     m_dofExtent = extent;
     const VkExtent3D size { extent.width, extent.height, 1 };
-    for (auto& level : m_dofLevel) {
-      level = Resources::createImageResource(ctx, "DS1 look DoF level", size, VK_FORMAT_R16G16B16A16_SFLOAT);
-    }
-    m_dofScratch = Resources::createImageResource(ctx, "DS1 look DoF scratch", size, VK_FORMAT_R16G16B16A16_SFLOAT);
-    m_dofNear = Resources::createImageResource(ctx, "DS1 look DoF near rate", size, VK_FORMAT_R16_SFLOAT);
     m_dofRate = Resources::createImageResource(ctx, "DS1 look DoF far rate", size, VK_FORMAT_R16_SFLOAT);
     for (auto& history : m_depthHistory) {
       history[0] = Resources::createImageResource(ctx, "DS1 look depth terms history A", size, VK_FORMAT_R16G16B16A16_SFLOAT);
@@ -618,10 +626,26 @@ namespace dxvk {
     const VkExtent3D extent = inOutColor.image->mipLevelExtent(0);
     ensureDofResources(ctx, extent);
 
+    // What the composite's weights can reach, at the largest rate this frame's constants allow: weights are
+    // sat(rate * scale + bias), and each level's share only grows with the rate. A level nobody takes is not computed.
+    const Vector4 blendScale = dofBlendScale();
+    const Vector4 blendBias = dofBlendBias();
+    const float maxRate = std::max(std::max(dofFarStrength(), dofNearStrength()), 0.0f);
+    const auto weightAtMost = [&](int i) { return saturate(maxRate * blendScale[i] + blendBias[i]); };
+    constexpr float kNoShare = 1e-4f;
+    const int levelsUsed = std::abs(weightAtMost(3) - weightAtMost(2)) > kNoShare ? 3
+                         : std::abs(weightAtMost(2) - weightAtMost(1)) > kNoShare ? 2
+                         : std::abs(weightAtMost(1) - weightAtMost(0)) > kNoShare ? 1 : 0;
+    if (levelsUsed == 0) {
+      return;
+    }
+
     // The game's DoF level is twice its bright pass size (512x360 for 256x180): one of its texels
-    // covers this many output pixels.
-    const float texelX = float(extent.width) / float(2 * m_baseWidth);
-    const float texelY = float(extent.height) / float(2 * m_baseHeight);
+    // covers this many of the levels' pixels.
+    const VkExtent3D levelExtent = m_dofLevel[0].image->mipLevelExtent(0);
+    const float texelX = float(levelExtent.width) / float(2 * m_baseWidth);
+    const float texelY = float(levelExtent.height) / float(2 * m_baseHeight);
+    const bool reduced = levelExtent.width != extent.width;
 
     // The level source: the frame as it is now (passes may have run since the scene pass) with the
     // far rate in alpha, staged in the last level, which is only written after the first two.
@@ -630,26 +654,30 @@ namespace dxvk {
       ctx->bindResourceView(POST_FX_DS_LOOK_DOF_PREPARE_RATE, m_dofRate.view, nullptr);
       ctx->bindResourceView(POST_FX_DS_LOOK_DOF_PREPARE_OUTPUT, m_dofLevel[2].view, nullptr);
       ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookDofPrepareShader::getShader());
-      const VkExtent3D workgroups = util::computeBlockCount(extent, VkExtent3D { 16, 8, 1 });
+      const VkExtent3D workgroups = util::computeBlockCount(levelExtent, VkExtent3D { 16, 8, 1 });
       ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
     }
 
-    // Three levels, each from the one before: the increment is the Gaussian that takes the
-    // previous spread to the next.
+    // Levels, each from the one before: the increment is the Gaussian that takes the previous spread to the next.
+    // At half resolution the 2x2 average and the composite's bilinear upsampling already spread it by a variance of
+    // 1/12 + 1/6 of a level pixel squared, which comes off the first step.
     float previous = 0.0f;
-    for (int level = 0; level < 3; ++level) {
-      const float step = std::sqrt(std::max(kDofLevelSigma[level] * kDofLevelSigma[level] - previous * previous, 0.0f));
-      dispatchDofGaussian(ctx, 2 * level, level == 0 ? m_dofLevel[2] : m_dofLevel[level - 1], m_dofLevel[level],
-                          step * texelX, step * texelY);
-      previous = kDofLevelSigma[level];
+    for (int level = 0; level < levelsUsed; ++level) {
+      const float sigma = kDofLevelSigma[level];
+      const float variance = sigma * sigma - previous * previous;
+      const float taken = reduced && level == 0 ? 0.25f : 0.0f;
+      const float stepX = std::sqrt(std::max(variance * texelX * texelX - taken, 0.0f));
+      const float stepY = std::sqrt(std::max(variance * texelY * texelY - taken, 0.0f));
+      dispatchDofGaussian(ctx, 2 * level, level == 0 ? m_dofLevel[2] : m_dofLevel[level - 1], m_dofLevel[level], stepX, stepY);
+      previous = sigma;
     }
 
-    // FRPG_Fil_Dof_NearRate + UnfocusNearRate3x3, at full resolution with the game's footprint
-    // (one texel of its half-size level).
-    {
+    // FRPG_Fil_Dof_NearRate + UnfocusNearRate3x3, with the game's footprint (one texel of its half-size level).
+    const bool nearUsed = dofNearStrength() > 0.0f;
+    if (nearUsed) {
       const VkExtent3D viewZExtent = linearViewZ.image->mipLevelExtent(0);
       PostFxDarkSoulsLookNearArgs args = {};
-      args.outputSize = { extent.width, extent.height };
+      args.outputSize = { levelExtent.width, levelExtent.height };
       args.depthJitterUv = { jitterOffset[0] / float(viewZExtent.width), jitterOffset[1] / float(viewZExtent.height) };
       args.missLinearViewZ = missLinearViewZ;
       args.nearBegin = dofNearBegin();
@@ -663,7 +691,7 @@ namespace dxvk {
       ctx->bindResourceView(POST_FX_DS_LOOK_NEAR_OUTPUT, m_dofNear.view, nullptr);
       ctx->bindResourceBuffer(POST_FX_DS_LOOK_NEAR_CONSTANTS, DxvkBufferSlice(m_nearConstants, 0, m_nearConstants->info().size));
       ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookNearShader::getShader());
-      const VkExtent3D workgroups = util::computeBlockCount(extent, VkExtent3D { 16, 8, 1 });
+      const VkExtent3D workgroups = util::computeBlockCount(levelExtent, VkExtent3D { 16, 8, 1 });
       ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
     }
 
@@ -674,6 +702,7 @@ namespace dxvk {
       args.invImageSize = { 1.0f / float(extent.width), 1.0f / float(extent.height) };
       args.blendScale = toVec4(dofBlendScale());
       args.blendBias = toVec4(dofBlendBias());
+      args.useNear = nearUsed ? 1u : 0u;
       ctx->writeToBuffer(m_dofConstants, 0, sizeof(args), &args);
       ctx->getCommandList()->trackResource<DxvkAccess::Read>(m_dofConstants);
       ctx->bindResourceView(POST_FX_DS_LOOK_DOF_INOUT, inOutColor.view, nullptr);
@@ -895,6 +924,7 @@ namespace dxvk {
     RemixGui::Checkbox("Game Fog and Scattering", &hazeEnableObject());
     RemixGui::Checkbox("Game Bloom", &bloomEnableObject());
     RemixGui::Checkbox("Game Depth of Field", &dofEnableObject());
+    RemixGui::Checkbox("Full Resolution Depth of Field", &dofFullResObject());
     RemixGui::Checkbox("Game Light Shafts", &shaftEnableObject());
     RemixGui::DragFloat("Fog / DoF Depth Stabilization (texels)", &depthStabilizationTexelsObject(), 0.05f, 0.0f, 4.0f, "%.2f",
                         ImGuiSliderFlags_AlwaysClamp);

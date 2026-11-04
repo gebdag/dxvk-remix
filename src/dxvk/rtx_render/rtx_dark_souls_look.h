@@ -90,6 +90,9 @@ namespace dxvk {
     RTX_OPTION("rtx.ds1Look", bool, hazeEnable, true, "Apply the game's fog and sky scattering in the scene pass.");
     RTX_OPTION("rtx.ds1Look", bool, bloomEnable, true, "Apply the game's bloom in the composite.");
     RTX_OPTION("rtx.ds1Look", bool, dofEnable, true, "Apply the game's depth of field (FRPG_Fil_Dof) after the scene pass.");
+    RTX_OPTION("rtx.ds1Look", bool, dofFullRes, false,
+               "Compute the DoF's blur levels and near rate at full resolution. Off: at half, which costs about a quarter of the pixels with half the "
+               "blur taps and looks nearly the same. The blend onto the frame is at full resolution either way.");
     RTX_OPTION("rtx.ds1Look", float, depthStabilizationTexels, 1.0f,
                "The fog, scattering and DoF rates read view Z, which is this frame's jittered render-resolution raster, "
                "while the colour they apply to is the upscaler's resolved frame: at silhouettes, worst against the sky, "
@@ -226,6 +229,7 @@ namespace dxvk {
     // The far DoF rate, written by the scene pass (the frame's alpha belongs to whatever runs after it).
     Resources::Resource m_dofRate;
     VkExtent3D m_dofExtent = { 0, 0, 0 };
+    bool m_dofIsFullRes = false;
     // The scene pass's depth-derived terms over time (ping-pong, [A, B] each, see dispatchScene).
     Resources::Resource m_depthHistory[2][2];
     uint32_t m_depthHistoryIndex = 0;
