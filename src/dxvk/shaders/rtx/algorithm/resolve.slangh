@@ -1764,9 +1764,10 @@ void resolveVertexUnordered<
     const Surface surface = surfaces[uint(rayInteraction.surfaceIndex)];
 
     const bool isDecal = isTriangle && surfaceIsDecal(surface);
-    // A decal's back side counts when the game draws it with culling off, and only in front of the surface: the ray runs a little past that for
-    // decals lying on it, and from under a floor the back of its top side's blood would show through.
-    const bool ds1BackDecalShows = isDecal && surface.isDs1TwoSidedDecal && rayHitInfo.hitDistance < ray.tMax / kUnorderedResolveRayLengthening;
+    // A decal's back side counts when the game draws it with culling off, and only as far as the surface, as the game's depth test has it: the ray
+    // runs a little past that for decals lying on it, and from under a floor the back of its top side's blood would show through. An overlay exactly
+    // on its mesh passes that test in the game, so the limit allows for the rounding of two hits on one plane (0.4 mm at 20 m).
+    const bool ds1BackDecalShows = isDecal && surface.isDs1TwoSidedDecal && rayHitInfo.hitDistance < (ray.tMax / kUnorderedResolveRayLengthening) * 1.00002f;
 
 #ifndef RAY_TRACING_PRIMARY_RAY
     // Back-facing opaque decals never contribute, unless the game draws them with culling off.
