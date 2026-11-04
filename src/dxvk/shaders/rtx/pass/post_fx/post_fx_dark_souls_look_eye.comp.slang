@@ -60,8 +60,7 @@ void main(uint2 texel : SV_DispatchThreadID)
       count += 1.0f;
     }
   }
-  // All sky: no surface to adapt to. It takes the view's level, so it weighs on neither side of the whole view's mean of surfaces.
-  const float level = count > 0.0f ? exp(logSum / count) : (cb.historyValid != 0 ? History[texel].g : 1.0f);
+  const float level = count > 0.0f ? exp(logSum / count) : 1.0f;
 
   float adapted = level;
   float overall = level;
@@ -79,5 +78,6 @@ void main(uint2 texel : SV_DispatchThreadID)
     }
     overall = exp(overallLog / 144.0f);
   }
-  Output[texel] = float2(adapted, overall);
+  // All sky: no surface to adapt to. It takes the view's level at once, so it weighs on neither side of the whole view's mean of surfaces.
+  Output[texel] = float2(count > 0.0f ? adapted : overall, overall);
 }

@@ -1764,11 +1764,14 @@ void resolveVertexUnordered<
     const Surface surface = surfaces[uint(rayInteraction.surfaceIndex)];
 
     const bool isDecal = isTriangle && surfaceIsDecal(surface);
+    // A decal's back side counts when the game draws it with culling off, and only in front of the surface: the ray runs a little past that for
+    // decals lying on it, and from under a floor the back of its top side's blood would show through.
+    const bool ds1BackDecalShows = isDecal && surface.isDs1TwoSidedDecal && rayHitInfo.hitDistance < ray.tMax / kUnorderedResolveRayLengthening;
 
 #ifndef RAY_TRACING_PRIMARY_RAY
     // Back-facing opaque decals never contribute, unless the game draws them with culling off.
     // Primary rays still create their materials, because material creation writes sampler feedback and debug views.
-    if (ENABLE_DECALS && isDecal && rayInteraction.materialType == surfaceMaterialTypeOpaque && !rayInteraction.frontHit && !surface.isDs1TwoSidedDecal)
+    if (ENABLE_DECALS && isDecal && rayInteraction.materialType == surfaceMaterialTypeOpaque && !rayInteraction.frontHit && !ds1BackDecalShows)
     {
       continue;
     }
@@ -1813,7 +1816,7 @@ void resolveVertexUnordered<
       if (ENABLE_DECALS && isDecal)
       {
         const float opacity = opaqueSurfaceMaterialInteraction.opacity;
-        if (opacity > 0.001f && (rayInteraction.frontHit || surface.isDs1TwoSidedDecal))
+        if (opacity > 0.001f && (rayInteraction.frontHit || ds1BackDecalShows))
         {
           uint decalSortKey = (uint(surface.decalSortOrder) << 24) + ((rayHitInfo.geometryIndex & 0xff) << 16) + (rayHitInfo.primitiveIndex & 0xffff);
           DecalMaterialInteraction decalMaterialInteraction = decalMaterialInteractionCreate(opaqueSurfaceMaterialInteraction);
