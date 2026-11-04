@@ -1137,6 +1137,7 @@ float resolveVertexUnorderedParticles<
   float3 unlitSubtractGammaSum = 0..xxx;
   // Fork: the unlit alpha-blended layers, composited in gamma space in depth order (Ds1UnlitLayers).
   Ds1UnlitLayers unlitLayers = Ds1UnlitLayers.create();
+  bool ds1UnhazedLayers = false;
 #else
   mat4 binnedRadiancesAndAttenuation = mat4(
     vec4(0.0f, 0.0f, 0.0f, 1.0f),
@@ -1396,6 +1397,7 @@ float resolveVertexUnorderedParticles<
       // They are display-referred (scaled by 1 / exposure), so undo that first, as for additive layers.
       const float alphaVal = saturate(1.f - currentRadianceAttenuation);
       unlitLayers.add(ds1LayerOrder(surface), linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation), alphaVal);
+      ds1UnhazedLayers = ds1UnhazedLayers || surface.isDs1Unhazed;
     }
     else
     {
@@ -1490,6 +1492,10 @@ float resolveVertexUnorderedParticles<
     emissiveRadiance += (pow(unlitAdditiveGammaSum, kSRGBGamma) + pow(unlitBlendGamma, kSRGBGamma)) * cb.opaqueMaterialArgs.unlitExposureCompensation;
     // Fork (DS1): and the additive part on its own, which the DS1 look's haze leaves out (Ds1AdditiveRadiance).
     ds1AdditiveRadiance = pow(unlitAdditiveGammaSum, kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation / pathSelectionProbability;
+    if (ds1UnhazedLayers)
+    {
+      ds1AdditiveRadiance += pow(unlitBlendGamma, kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation / pathSelectionProbability;
+    }
   }
 
   radianceAttenuation *= alphaTransProd;
@@ -1593,6 +1599,7 @@ void resolveVertexUnordered<
   float3 unlitSubtractGammaSum = 0..xxx;
   // Fork: the unlit alpha-blended layers, composited in gamma space in depth order (Ds1UnlitLayers).
   Ds1UnlitLayers unlitLayers = Ds1UnlitLayers.create();
+  bool ds1UnhazedLayers = false;
 #else
   // Note: Initialize bins to completely transparent with no radiance to be added in at an impossibly low distance. This
   // ensures these filler items are pulled out first in sorted order, giving the incoming elements a few iterations to populate

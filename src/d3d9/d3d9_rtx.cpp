@@ -1220,10 +1220,12 @@ namespace dxvk {
         constexpr uint32_t kFixedFunctionUnlitMarker = 0xD15D0E1D;
         const uint32_t unlitTag = d3d9State().textureStages[firstStage][DXVK_TSS_CONSTANT];
         const bool unlitExposed = unlitTag == 0xD15D0E21 || unlitTag == 0xD15D0E22;
+        // 0xD15D0E23: a sprite the DS1 look's haze leaves alone (a fog wall, Surface::isDs1Unhazed). The same field: no sprite has power 3.
+        const bool unlitUnhazed = unlitTag == 0xD15D0E23;
         if (RtxOptions::fixedFunctionUnlitMarkerEnabled() &&
-            (unlitTag == kFixedFunctionUnlitMarker || unlitExposed)) {
+            (unlitTag == kFixedFunctionUnlitMarker || unlitExposed || unlitUnhazed)) {
           m_activeDrawCallState.materialData.isUnlit = true;
-          m_activeDrawCallState.materialData.ds1UnlitExposurePower = unlitExposed ? static_cast<uint8_t>(unlitTag & 0x3) : 0;
+          m_activeDrawCallState.materialData.ds1UnlitExposurePower = unlitExposed || unlitUnhazed ? static_cast<uint8_t>(unlitTag & 0x3) : 0;
           // An unlit surface's vertex colour is its colour (particles fade and tint through it),
           // never baked lighting to normalise away.
           m_activeDrawCallState.materialData.isVertexColorBakedLighting = false;

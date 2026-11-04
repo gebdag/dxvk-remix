@@ -548,6 +548,12 @@ struct Surface
 
   // Fork: how many times the game's sprite shaders apply the exposure (c135.x / c135.y) to this
   // unlit sprite's colour (0-2): Remix applies its own exposure that many times.
+  // Power 3 is no power: the proxy's unhazed marker, a sprite the DS1 look's haze leaves alone (a fog wall).
+  property bool isDs1Unhazed
+  {
+    get { return ds1UnlitExposurePower == 3; }
+  }
+
   property uint ds1UnlitExposurePower
   {
     get { return (data13.z >> 24) & 0x3; }
