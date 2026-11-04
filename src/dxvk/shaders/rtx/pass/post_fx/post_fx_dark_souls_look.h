@@ -33,6 +33,14 @@
 #define POST_FX_DS_LOOK_SCENE_HAZE_REGION    11
 // The primary radiance's unlit additive sprite part (GBUFFER_BINDING_DS1_ADDITIVE_RADIANCE_OUTPUT).
 #define POST_FX_DS_LOOK_SCENE_ADDITIVE       12
+// The eye's local adaptation level (post_fx_dark_souls_look_eye.comp.slang).
+#define POST_FX_DS_LOOK_SCENE_EYE            13
+
+#define POST_FX_DS_LOOK_EYE_FRAME            0
+#define POST_FX_DS_LOOK_EYE_LINEAR_VIEW_Z    1
+#define POST_FX_DS_LOOK_EYE_HISTORY          2
+#define POST_FX_DS_LOOK_EYE_OUTPUT           3
+#define POST_FX_DS_LOOK_EYE_CONSTANTS        4
 
 // Haze region blend (post_fx_dark_souls_look_region.comp.slang): per view Z texel, the two haze sets
 // of the surfaces within PostFxDarkSoulsLookRegionArgs::radius of it in the world and the second's
@@ -113,6 +121,7 @@
 #define POST_FX_DS_LOOK_METER_SCENE          0
 #define POST_FX_DS_LOOK_METER_PARTIALS       1
 #define POST_FX_DS_LOOK_METER_CONSTANTS      2
+#define POST_FX_DS_LOOK_METER_LIFT           3
 #define DS_LOOK_METER_GROUP                  16
 
 struct PostFxDarkSoulsLookMeterArgs {
@@ -121,7 +130,7 @@ struct PostFxDarkSoulsLookMeterArgs {
 
   float exposure;       // the frame's exposure, c135.x / c135.y: the decode divides by it
   uint groupsX;
-  uint pad0;
+  uint useLift;         // the eye lifted this frame: take that off
   uint pad1;
 };
 
@@ -176,6 +185,24 @@ struct PostFxDarkSoulsLookSceneArgs {
   float temporalBlend;
   // 0 when there is no history to read (first frame, a resize, a frame the pass did not run).
   uint historyValid;
+
+  // The eye's adaptation (rtx.ds1Look.eye*): the view's lift, 1 = none, how much more its dark parts take, the largest lift.
+  float eyeViewGain;
+  float eyeLocal;
+  float eyeMaxGain;
+  float eyePad;
+};
+
+struct PostFxDarkSoulsLookEyeArgs {
+  uvec2 frameSize;
+  uvec2 outputSize;
+  uvec2 viewZSize;
+  float exposure;
+  float missLinearViewZ;
+  float riseBlend;      // per frame, towards a brighter level
+  float fallBlend;      // per frame, towards a darker one
+  uint historyValid;
+  uint pad;
 };
 
 struct PostFxDarkSoulsLookRegionArgs {

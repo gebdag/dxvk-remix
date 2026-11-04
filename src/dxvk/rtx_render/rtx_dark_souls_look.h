@@ -90,6 +90,16 @@ namespace dxvk {
     RTX_OPTION("rtx.ds1Look", bool, hazeEnable, true, "Apply the game's fog and sky scattering in the scene pass.");
     RTX_OPTION("rtx.ds1Look", bool, bloomEnable, true, "Apply the game's bloom in the composite.");
     RTX_OPTION("rtx.ds1Look", bool, dofEnable, true, "Apply the game's depth of field (FRPG_Fil_Dof) after the scene pass.");
+    RTX_OPTION("rtx.ds1Look", bool, eyeEnable, true,
+               "Adapt as an eye does where the game's exposure stops: below the meter's floor (its luminance clamp) the view comes up, up to what the game's "
+               "own light gives on the same surfaces, so dark interiors can be seen without lights being added and places dark in the game stay dark. "
+               "What is bright stays. The game's meter does not see the lift.");
+    RTX_OPTION("rtx.ds1Look", float, eyeMaxGain, 3.0f, "The most a dark part of the view is lifted, on gamma values. How far an eye adapts in the dark.");
+    RTX_OPTION("rtx.ds1Look", float, eyeKnee, 1.25f, "How far below the meter's floor a view may lie with no lift at all: places the game keeps dim stay as they are (measured: views up to about this already match the game).");
+    RTX_OPTION("rtx.ds1Look", float, eyeStrength, 0.85f, "How fully the view's lift follows what it is short of past the knee: 1 all the way, less stays darker, as dark rooms look to an eye.");
+    RTX_OPTION("rtx.ds1Look", float, eyeLocal, 0.5f, "How much more the view's dark parts come up than its bright ones.");
+    RTX_OPTION("rtx.ds1Look", float, eyeBrightenSeconds, 0.3f, "How fast the eye adapts to a part of the view getting brighter.");
+    RTX_OPTION("rtx.ds1Look", float, eyeDarkenSeconds, 2.0f, "How slowly the eye adapts to a part of the view getting darker.");
     RTX_OPTION("rtx.ds1Look", bool, dofFullRes, false,
                "Compute the DoF's blur levels and near rate at full resolution. Off: at half, which costs about a quarter of the pixels with half the "
                "blur taps and looks nearly the same. The blend onto the frame is at full resolution either way.");
@@ -205,6 +215,16 @@ namespace dxvk {
     Rc<DxvkBuffer> m_regionConstants;
     // The haze region blend per view Z texel (dispatchScene's region pass).
     Resources::Resource m_hazeRegion;
+    // The eye's local adaptation level, this frame's and last frame's.
+    Resources::Resource m_eyeLevel[2];
+    int m_eyeIndex = 0;
+    uint32_t m_eyeFrame = 0xFFFFFFFFu;
+    double m_eyeTime = 0.0;
+    float m_eyeViewGain = 1.0f;
+    bool m_eyeLifted = false;
+    double m_eyeGainTime = 0.0;
+    void updateEye(float lum, float gameLightShare, bool haveShare);
+    Rc<DxvkBuffer> m_eyeConstants;
     Rc<DxvkBuffer> m_brightConstants;
     Rc<DxvkBuffer> m_filterConstants[6];
     Rc<DxvkBuffer> m_compositeConstants;

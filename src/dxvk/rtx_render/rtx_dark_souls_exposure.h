@@ -41,6 +41,9 @@ namespace dxvk {
       return gameActive() ? gameExposure() : 1.0f;
     }
 
+    // The game's luminance clamp minimum: below it, its exposure stops following the frame.
+    static float meterFloor() { return adaptMinLum() * std::max(minLumScale(), 0.01f) * s_ambientScale; }
+
     // The exposure the game's own shaders applied to what they drew (its c135.x / c135.y), which the
     // sky raster holds and must be un-exposed by. Not gameExposureValue: when Remix meters its frame
     // the two differ, and in the real game they differ a lot, since with SkipPostFX the game's own

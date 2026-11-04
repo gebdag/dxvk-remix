@@ -29,7 +29,8 @@ layout(binding = POST_FX_DS_LOOK_SCENE_CONSTANTS)
 ConstantBuffer<PostFxDarkSoulsLookSceneArgs> cb;
 
 layout(binding = POST_FX_DS_LOOK_SCENE_DOF_RATE)
-RWTexture2D<float> DofRate;
+// r: the far DoF rate. g: what the eye's lift added to this pixel's luminance, which the game's meter must not see.
+RWTexture2D<float2> DofRate;
 
 // The G-buffer's primary surface flags: bits 8-11 hold the surface's haze set (Surface::ds1HazeSet,
 // kPrimarySurfaceFlagDs1HazeSetShift).
@@ -58,6 +59,9 @@ Texture2D<uint> HazeRegion;
 
 layout(binding = POST_FX_DS_LOOK_SCENE_ADDITIVE)
 Sampler2D<float4> AdditiveRadiance;
+
+layout(binding = POST_FX_DS_LOOK_SCENE_EYE)
+Sampler2D<float2> EyeLevel;
 
 // The haze constants of a pixel: those of its surface's own set (the game hazes each draw with
 // its region's DrawParams), or the frame's single set for untagged surfaces.
@@ -211,6 +215,8 @@ void main(uint2 pixel : SV_DispatchThreadID)
   vec4 minA = vec4(1e30f), maxA = vec4(-1e30f);
   vec3 minB = vec3(1e30f), maxB = vec3(-1e30f);
   float weightSum = 0.0f;
+  float skyWeight = 0.0f;
+  float minSky = 1.0f, maxSky = 0.0f;
   // The history follows the front-most surface among the taps (TAA's dilated motion vector): the
   // centre texel's owner flips at a silhouette, and with it, in motion, where the history is read.
   uint2 motionTexel = min(uint2(clamp(viewZUV, 0.0f, 1.0f) * vec2(viewZSize)), viewZSize - 1);
@@ -230,6 +236,10 @@ void main(uint2 pixel : SV_DispatchThreadID)
       const HazeMap tap = hazeAt(viewZTexel, directions);
       const vec4 tapA = vec4(tap.a, dofRateAt(viewZTexel));
       const float weight = float((2 - abs(x)) * (2 - abs(y)));
+      const float tapSky = tapViewZ == haze.missLinearViewZ ? 1.0f : 0.0f;
+      skyWeight += tapSky * weight;
+      minSky = min(minSky, tapSky);
+      maxSky = max(maxSky, tapSky);
       currentA += tapA * weight;
       currentB += tap.b * weight;
       weightSum += weight;
@@ -244,6 +254,8 @@ void main(uint2 pixel : SV_DispatchThreadID)
 
   vec4 resolvedA = currentA;
   vec3 resolvedB = currentB;
+  // What of the pixel is sky, for the eye's lift: resolved like the rest, or the lift would crawl along silhouettes.
+  float resolvedSky = skyWeight / weightSum;
   const vec2 historyUV = screenUV + PrimaryScreenSpaceMotionVector[motionTexel] / vec2(viewZSize);
   if (cb.historyValid != 0 && cb.temporalBlend < 1.0f && all(historyUV >= 0.0f) && all(historyUV <= 1.0f))
   {
@@ -251,9 +263,10 @@ void main(uint2 pixel : SV_DispatchThreadID)
     const vec3 historyB = clamp(HistoryBIn.SampleLevel(historyUV, 0.0f).rgb, minB, maxB);
     resolvedA = lerp(historyA, currentA, cb.temporalBlend);
     resolvedB = lerp(historyB, currentB, cb.temporalBlend);
+    resolvedSky = lerp(clamp(HistoryBIn.SampleLevel(historyUV, 0.0f).a, minSky, maxSky), resolvedSky, cb.temporalBlend);
   }
   HistoryAOut[pixel] = resolvedA;
-  HistoryBOut[pixel] = vec4(resolvedB, 0.0f);
+  HistoryBOut[pixel] = vec4(resolvedB, resolvedSky);
 
   const vec4 frame = InOutColor[pixel];
   const vec3 radiance = max(frame.rgb, vec3(0.0f));
@@ -266,6 +279,20 @@ void main(uint2 pixel : SV_DispatchThreadID)
 
   // The resolve scaled what is behind a subtractive layer by 1 - subtract: back to what it was.
   vec3 g = pow(radiance, vec3(1.0f / 2.2f)) * cb.exposure / (vec3(1.0f) - subtract);
+  // The eye opens up where the game's meter stops (see DxvkDarkSoulsLook::updateEye): the view's lift, more in the view's dark parts and less in
+  // its bright ones. The curve leaves a value of 1 at 1, so nothing clips (a torch in a dark room stays what it was), and it keeps hue. No light
+  // is added: the path traced image only gets looked at differently. The sky through a window keeps its value.
+  const vec3 unlifted = g;
+  if (cb.eyeViewGain > 1.0f)
+  {
+    const vec2 level = EyeLevel.SampleLevel(screenUV, 0.0f);
+    const float share = min(pow(level.y / max(level.x, 1e-3f), cb.eyeLocal), 2.0f);
+    const float gain = lerp(min(pow(cb.eyeViewGain, share), cb.eyeMaxGain), 1.0f, resolvedSky);
+    const float peak = max(g.r, max(g.g, g.b));
+    g *= gain / (1.0f + min(peak, 1.0f) * (gain - 1.0f));
+  }
+  // Whatever the eye makes of it, the frame's light is the same: the meter reads the frame without the lift.
+  const float liftedLuminance = dot(saturate((g - unlifted) * resolvedA.rgb), vec3(0.2125f, 0.7154f, 0.0721f));
   g = g * resolvedA.rgb + resolvedB;
   // The game draws its additive particles after the fog, unfogged (their vertex shader gets c159.xy = (1, 0) for
   // them), and adds them in gamma: the haze above dimmed their share of the colour by the haze gain, so it
@@ -275,7 +302,7 @@ void main(uint2 pixel : SV_DispatchThreadID)
 
   // The far DoF rate in its own texture: the game keeps it in its scene's alpha, but here other
   // passes run before the DoF.
-  DofRate[pixel] = resolvedA.a;
+  DofRate[pixel] = float2(resolvedA.a, liftedLuminance);
 
   InOutColor[pixel] = vec4(saturate(g), frame.a);
 }

@@ -18,8 +18,10 @@
 #include <rtx_shaders/post_fx_dark_souls_look_filter.h>
 #include <rtx_shaders/post_fx_dark_souls_look_composite.h>
 #include <rtx_shaders/post_fx_dark_souls_look_near.h>
+#include <chrono>
 #include <rtx_shaders/post_fx_dark_souls_look_dof.h>
 #include <rtx_shaders/post_fx_dark_souls_look_dof_prepare.h>
+#include <rtx_shaders/post_fx_dark_souls_look_eye.h>
 #include <rtx_shaders/post_fx_dark_souls_look_meter.h>
 #include <rtx_shaders/post_fx_dark_souls_look_ambient_meter.h>
 #include <rtx_shaders/post_fx_dark_souls_look_shafts.h>
@@ -54,9 +56,23 @@ namespace dxvk {
         RW_TEXTURE2D(POST_FX_DS_LOOK_SCENE_HISTORY_B_OUT)
         TEXTURE2D(POST_FX_DS_LOOK_SCENE_HAZE_REGION)
         SAMPLER2D(POST_FX_DS_LOOK_SCENE_ADDITIVE)
+        SAMPLER2D(POST_FX_DS_LOOK_SCENE_EYE)
       END_PARAMETER()
     };
     PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookSceneShader);
+
+    class PostFxDarkSoulsLookEyeShader : public ManagedShader {
+      SHADER_SOURCE(PostFxDarkSoulsLookEyeShader, VK_SHADER_STAGE_COMPUTE_BIT, post_fx_dark_souls_look_eye)
+
+      BEGIN_PARAMETER()
+        TEXTURE2D(POST_FX_DS_LOOK_EYE_FRAME)
+        TEXTURE2D(POST_FX_DS_LOOK_EYE_LINEAR_VIEW_Z)
+        TEXTURE2D(POST_FX_DS_LOOK_EYE_HISTORY)
+        RW_TEXTURE2D(POST_FX_DS_LOOK_EYE_OUTPUT)
+        CONSTANT_BUFFER(POST_FX_DS_LOOK_EYE_CONSTANTS)
+      END_PARAMETER()
+    };
+    PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookEyeShader);
 
     class PostFxDarkSoulsLookRegionShader : public ManagedShader {
       SHADER_SOURCE(PostFxDarkSoulsLookRegionShader, VK_SHADER_STAGE_COMPUTE_BIT, post_fx_dark_souls_look_region)
@@ -164,6 +180,7 @@ namespace dxvk {
 
       BEGIN_PARAMETER()
         TEXTURE2D(POST_FX_DS_LOOK_METER_SCENE)
+        TEXTURE2D(POST_FX_DS_LOOK_METER_LIFT)
         RW_STRUCTURED_BUFFER(POST_FX_DS_LOOK_METER_PARTIALS)
         CONSTANT_BUFFER(POST_FX_DS_LOOK_METER_CONSTANTS)
       END_PARAMETER()
@@ -283,6 +300,9 @@ namespace dxvk {
       m_sceneConstants = makeConstants(sizeof(PostFxDarkSoulsLookSceneArgs), "DS1 Look Scene Constants");
       m_hazeConstants = makeConstants(sizeof(PostFxDarkSoulsHazeArgs), "DS1 Look Haze Constants");
       m_regionConstants = makeConstants(sizeof(PostFxDarkSoulsLookRegionArgs), "DS1 Look Haze Region Constants");
+      m_eyeConstants = makeConstants(sizeof(PostFxDarkSoulsLookEyeArgs), "DS1 Look Eye Constants");
+      m_eyeLevel[0] = Resources::createImageResource(ctx, "DS1 look eye level", VkExtent3D { 64, 36, 1 }, VK_FORMAT_R16G16_SFLOAT);
+      m_eyeLevel[1] = Resources::createImageResource(ctx, "DS1 look eye level", VkExtent3D { 64, 36, 1 }, VK_FORMAT_R16G16_SFLOAT);
       m_brightConstants = makeConstants(sizeof(PostFxDarkSoulsLookBrightArgs), "DS1 Look Bright Constants");
       for (auto& c : m_filterConstants) {
         c = makeConstants(sizeof(PostFxDarkSoulsLookFilterArgs), "DS1 Look Filter Constants");
@@ -330,7 +350,7 @@ namespace dxvk {
     }
     m_dofExtent = extent;
     const VkExtent3D size { extent.width, extent.height, 1 };
-    m_dofRate = Resources::createImageResource(ctx, "DS1 look DoF far rate", size, VK_FORMAT_R16_SFLOAT);
+    m_dofRate = Resources::createImageResource(ctx, "DS1 look DoF far rate", size, VK_FORMAT_R16G16_SFLOAT);
     for (auto& history : m_depthHistory) {
       history[0] = Resources::createImageResource(ctx, "DS1 look depth terms history A", size, VK_FORMAT_R16G16B16A16_SFLOAT);
       history[1] = Resources::createImageResource(ctx, "DS1 look depth terms history B", size, VK_FORMAT_R16G16B16A16_SFLOAT);
@@ -376,6 +396,14 @@ namespace dxvk {
 
     PostFxDarkSoulsLookSceneArgs args = {};
     args.exposure = sceneExposure();
+    // With no meter (a menu's character view, or metering off) there is nothing to go by: the eye returns to no lift, not to stay where it was.
+    if (!DxvkDarkSoulsExposure::wantsMeter()) {
+      updateEye(0.0f, 1.0f, false);
+    }
+    args.eyeViewGain = eyeEnable() ? m_eyeViewGain : 1.0f;
+    m_eyeLifted = args.eyeViewGain > 1.0f;
+    args.eyeLocal = std::clamp(eyeLocal(), 0.0f, 2.0f);
+    args.eyeMaxGain = std::max(eyeMaxGain(), 1.0f);
     args.hazeEnable = hazeEnable() && hazeValid ? 1u : 0u;
     const bool dof = dofEnable() && gameActive();
     args.dofFarBegin = dofFarBegin();
@@ -423,7 +451,37 @@ namespace dxvk {
       ctx->dispatch(regionGroups.width, regionGroups.height, regionGroups.depth);
     }
 
+    // The eye's level of each part of the view, from the radiance the scene pass is about to overwrite. Nothing to do while the view takes no lift.
+    if (args.eyeViewGain > 1.0f) {
+      ScopedGpuProfileZone(ctx, "Dark Souls 1 Look: Eye");
+      const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+      const float dt = float(std::clamp(now - m_eyeTime, 0.0, 0.5));
+      m_eyeTime = now;
+      PostFxDarkSoulsLookEyeArgs eyeArgs = {};
+      eyeArgs.frameSize = { extent.width, extent.height };
+      eyeArgs.outputSize = { 64, 36 };
+      eyeArgs.viewZSize = { viewZExtent.width, viewZExtent.height };
+      eyeArgs.exposure = args.exposure;
+      eyeArgs.missLinearViewZ = missLinearViewZ;
+      eyeArgs.riseBlend = 1.0f - std::exp(-dt / std::max(eyeBrightenSeconds(), 0.01f));
+      eyeArgs.fallBlend = 1.0f - std::exp(-dt / std::max(eyeDarkenSeconds(), 0.01f));
+      eyeArgs.historyValid = m_eyeFrame != 0xFFFFFFFFu && m_eyeFrame + 1 == frameId && !resetHistory ? 1u : 0u;
+      m_eyeFrame = frameId;
+      m_eyeIndex ^= 1;
+      ctx->writeToBuffer(m_eyeConstants, 0, sizeof(eyeArgs), &eyeArgs);
+      ctx->getCommandList()->trackResource<DxvkAccess::Read>(m_eyeConstants);
+      ctx->bindResourceView(POST_FX_DS_LOOK_EYE_FRAME, inOutColor.view, nullptr);
+      ctx->bindResourceView(POST_FX_DS_LOOK_EYE_LINEAR_VIEW_Z, linearViewZ.view, nullptr);
+      ctx->bindResourceView(POST_FX_DS_LOOK_EYE_HISTORY, m_eyeLevel[m_eyeIndex ^ 1].view, nullptr);
+      ctx->bindResourceView(POST_FX_DS_LOOK_EYE_OUTPUT, m_eyeLevel[m_eyeIndex].view, nullptr);
+      ctx->bindResourceBuffer(POST_FX_DS_LOOK_EYE_CONSTANTS, DxvkBufferSlice(m_eyeConstants, 0, m_eyeConstants->info().size));
+      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookEyeShader::getShader());
+      ctx->dispatch(8, 5, 1);
+    }
+
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_INOUT, inOutColor.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_EYE, m_eyeLevel[m_eyeIndex].view, nullptr);
+    ctx->bindResourceSampler(POST_FX_DS_LOOK_SCENE_EYE, m_linearSampler);
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_LINEAR_VIEW_Z, linearViewZ.view, nullptr);
     ctx->bindResourceBuffer(POST_FX_DS_LOOK_SCENE_HAZE, DxvkBufferSlice(m_hazeConstants, 0, m_hazeConstants->info().size));
     ctx->bindResourceBuffer(POST_FX_DS_LOOK_SCENE_CONSTANTS, DxvkBufferSlice(m_sceneConstants, 0, m_sceneConstants->info().size));
@@ -487,11 +545,31 @@ namespace dxvk {
     }
   }
 
+  void DxvkDarkSoulsLook::updateEye(float lum, float gameLightShare, bool haveShare) {
+    // How much the view is short of, as a lift. The game's meter keeps a view at its key down to the floor of its luminance clamp, and an eye goes on
+    // where it stops: floor / lum is what following it all the way would take. But never past the game's own light on these surfaces (the frame
+    // against the game's unoccluded ambient on them): where path tracing keeps that light, a dark place is dark in the game too (Tomb of the Giants).
+    float shortOf = 1.0f;
+    if (haveShare && eyeEnable() && std::isfinite(lum) && lum > 0.0f && std::isfinite(gameLightShare) && gameLightShare > 0.0f) {
+      shortOf = std::max(std::min(DxvkDarkSoulsExposure::meterFloor() / lum, 1.0f / gameLightShare), 1.0f);
+    }
+    const float target = std::min(std::pow(std::max(shortOf / std::max(eyeKnee(), 1.0f), 1.0f), std::clamp(eyeStrength(), 0.0f, 2.0f)), std::max(eyeMaxGain(), 1.0f));
+    // As an eye: slowly opening up in the dark, quickly closing in the light.
+    const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    const float dt = float(std::clamp(now - m_eyeGainTime, 0.0, 0.5));
+    m_eyeGainTime = now;
+    const float seconds = std::max(target > m_eyeViewGain ? eyeDarkenSeconds() : eyeBrightenSeconds(), 0.01f);
+    m_eyeViewGain += (target - m_eyeViewGain) * (1.0f - std::exp(-dt / seconds));
+    if (m_eyeViewGain < 1.002f) {
+      m_eyeViewGain = 1.0f;
+    }
+  }
+
   void DxvkDarkSoulsLook::dispatchAmbientMeter(Rc<DxvkContext>& ctx, const Resources::Resource& radiance,
                                                const Resources::Resource& albedo, const Resources::Resource& shadingNormal,
                                                const Resources::Resource& linearViewZ, float missLinearViewZ) {
     m_ambientMetered = false;
-    if (!DxvkDarkSoulsExposure::ambientClamp() || !albedo.isValid() || !shadingNormal.isValid()) {
+    if ((!DxvkDarkSoulsExposure::ambientClamp() && !eyeEnable()) || !albedo.isValid() || !shadingNormal.isValid()) {
       return;
     }
     PostFxDarkSoulsLookAmbientMeterArgs args = {};
@@ -563,6 +641,7 @@ namespace dxvk {
         }
       }
       DxvkDarkSoulsExposure::adapt(float(std::exp(total / double(cells))), ambientScale);
+      updateEye(float(std::exp(total / double(cells))), ambientScale, m_meterAmbient[slot]);
     }
 
     const VkExtent3D extent = scene.image->mipLevelExtent(0);
@@ -571,10 +650,12 @@ namespace dxvk {
     args.sceneSize = { extent.width, extent.height };
     args.exposure = std::max(exposure, 1e-4f);
     args.groupsX = grid.groupsX;
+    args.useLift = m_eyeLifted ? 1u : 0u;
     ctx->writeToBuffer(m_meterConstants, 0, sizeof(args), &args);
     ctx->getCommandList()->trackResource<DxvkAccess::Read>(m_meterConstants);
 
     ctx->bindResourceView(POST_FX_DS_LOOK_METER_SCENE, scene.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_LOOK_METER_LIFT, m_dofRate.view, nullptr);
     ctx->bindResourceBuffer(POST_FX_DS_LOOK_METER_PARTIALS, DxvkBufferSlice(m_meterPartials, 0, groups * sizeof(float)));
     ctx->bindResourceBuffer(POST_FX_DS_LOOK_METER_CONSTANTS, DxvkBufferSlice(m_meterConstants, 0, m_meterConstants->info().size));
     ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookMeterShader::getShader());
@@ -926,6 +1007,16 @@ namespace dxvk {
     RemixGui::Checkbox("Game Depth of Field", &dofEnableObject());
     RemixGui::Checkbox("Full Resolution Depth of Field", &dofFullResObject());
     RemixGui::Checkbox("Game Light Shafts", &shaftEnableObject());
+    RemixGui::Checkbox("Eye Adaptation (dark parts of the view come up)", &eyeEnableObject());
+    ImGui::BeginDisabled(!eyeEnable());
+    ImGui::Text("Eye: view's lift %.2f", m_eyeViewGain);
+    RemixGui::DragFloat("Eye: Largest Lift", &eyeMaxGainObject(), 0.05f, 1.0f, 8.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+    RemixGui::DragFloat("Eye: Knee (no lift until this far short)", &eyeKneeObject(), 0.01f, 1.0f, 4.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+    RemixGui::DragFloat("Eye: Strength", &eyeStrengthObject(), 0.01f, 0.0f, 2.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+    RemixGui::DragFloat("Eye: Dark Parts Take More", &eyeLocalObject(), 0.01f, 0.0f, 2.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+    RemixGui::DragFloat("Eye: Seconds to a Brighter View", &eyeBrightenSecondsObject(), 0.01f, 0.01f, 5.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+    RemixGui::DragFloat("Eye: Seconds to a Darker View", &eyeDarkenSecondsObject(), 0.05f, 0.01f, 20.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::EndDisabled();
     RemixGui::DragFloat("Fog / DoF Depth Stabilization (texels)", &depthStabilizationTexelsObject(), 0.05f, 0.0f, 4.0f, "%.2f",
                         ImGuiSliderFlags_AlwaysClamp);
     RemixGui::DragFloat("Fog / DoF Temporal Blend (1 = no history)", &depthTemporalBlendObject(), 0.01f, 0.01f, 1.0f, "%.2f",
