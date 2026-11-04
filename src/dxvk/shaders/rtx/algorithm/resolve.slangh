@@ -1342,6 +1342,9 @@ float resolveVertexUnorderedParticles<
 
     currentRadianceAttenuation = mix(1.0f, currentRadianceAttenuation, blendFactor);
     opacityTransmittance *= currentRadianceAttenuation;
+    // Fork (DS1): near a surface the game's soft sprite fades in its alpha alone. An alpha layer's colour stays (below); faded as well, each
+    // one went darker than its neighbours where it met anything, and a stack of them showed dark patches (fog walls).
+    const vec3 ds1UnfadedEmissive = currentEmissiveRadiance;
     currentEmissiveRadiance = mix(vec3(0.0f), currentEmissiveRadiance, blendFactor);
 #ifndef UNORDERED_RESOLVE_WBOIT
     // Fork: the binned resolve has no sum to take a subtractive layer off, so it is left out.
@@ -1396,7 +1399,7 @@ float resolveVertexUnorderedParticles<
       // (a 5% smoke layer read as 25%), and the WBOIT energy-loss compensation (x4) thickened it again.
       // They are display-referred (scaled by 1 / exposure), so undo that first, as for additive layers.
       const float alphaVal = saturate(1.f - currentRadianceAttenuation);
-      unlitLayers.add(ds1LayerOrder(surface), linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation), alphaVal);
+      unlitLayers.add(ds1LayerOrder(surface), linearToGamma(ds1UnfadedEmissive * float3(radianceAttenuation) * volumeAttenuation / cb.opaqueMaterialArgs.unlitExposureCompensation), alphaVal);
       ds1UnhazedLayers = ds1UnhazedLayers || surface.isDs1Unhazed;
     }
     else
@@ -1924,6 +1927,8 @@ void resolveVertexUnordered<
       }
 
       currentRadianceAttenuation = mix(1.0f, currentRadianceAttenuation, blendFactor);
+      // Fork (DS1): an alpha layer's colour is not faded, its alpha alone (the same in the other resolve).
+      const vec3 ds1UnfadedEmissive = currentEmissiveRadiance;
       currentEmissiveRadiance = mix(vec3(0.0f), currentEmissiveRadiance, blendFactor);
 #ifndef UNORDERED_RESOLVE_WBOIT
       // Fork: the binned resolve has no sum to take a subtractive layer off, so it is left out.
@@ -1979,7 +1984,7 @@ void resolveVertexUnordered<
         // (a 5% smoke layer read as 25%), and the WBOIT energy-loss compensation (x4) thickened it again.
         // They are display-referred (scaled by 1 / exposure), so undo that first, as for additive layers.
         const float alphaVal = saturate(1.f - currentRadianceAttenuation);
-        unlitLayers.add(ds1LayerOrder(surface), linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation), alphaVal);
+        unlitLayers.add(ds1LayerOrder(surface), linearToGamma(ds1UnfadedEmissive * float3(radianceAttenuation) * volumeAttenuation / cb.opaqueMaterialArgs.unlitExposureCompensation), alphaVal);
       }
       else
       {
