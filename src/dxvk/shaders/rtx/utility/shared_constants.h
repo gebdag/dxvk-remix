@@ -51,6 +51,10 @@ static const uint8_t surfaceMaterialTypeMask = uint8_t(0x3u);
 // constant nor a roughness map. Gates the rtx.legacyMaterial.specularLevel / fresnelF90 controls, so a
 // replacement that does specify its roughness keeps the untouched PBR response.
 #define OPAQUE_SURFACE_MATERIAL_FLAG_USE_LEGACY_SPECULAR (1 << COMMON_MATERIAL_FLAG_TYPE_OFFSET(8))
+// NV-DXVK start: Raytraced camera material emission.
+#define OPAQUE_SURFACE_MATERIAL_FLAG_ENABLE_RENDER_TARGET_EMISSION (1 << COMMON_MATERIAL_FLAG_TYPE_OFFSET(6))
+#define OPAQUE_SURFACE_MATERIAL_FLAG_ALBEDO_IS_RENDER_TARGET (1 << COMMON_MATERIAL_FLAG_TYPE_OFFSET(7))
+// NV-DXVK end
 
 
 #define OPAQUE_SURFACE_MATERIAL_INTERACTION_FLAG_HAS_HEIGHT_TEXTURE (1 << 0)

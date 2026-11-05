@@ -790,7 +790,8 @@ struct RtOpaqueSurfaceMaterial {
     uint32_t secondaryTextureIndex = 0,
     bool useLegacySpecular = false,
     uint32_t specularColorTextureIndex = kSurfaceMaterialInvalidTextureIndex,
-    float specularColorScale = 1.0f
+    float specularColorScale = 1.0f,
+    bool albedoOpacityIsRenderTarget = false
   ) :
     m_albedoOpacityTextureIndex{ albedoOpacityTextureIndex }, m_secondaryTextureIndex{secondaryTextureIndex}, m_normalTextureIndex{ normalTextureIndex },
     m_tangentTextureIndex { tangentTextureIndex }, m_heightTextureIndex { heightTextureIndex }, m_roughnessTextureIndex{ roughnessTextureIndex },
@@ -802,7 +803,7 @@ struct RtOpaqueSurfaceMaterial {
     m_ignoreAlphaChannel { ignoreAlphaChannel }, m_enableThinFilm { enableThinFilm }, m_alphaIsThinFilmThickness { alphaIsThinFilmThickness },
     m_thinFilmThicknessConstant { thinFilmThicknessConstant }, m_samplerIndex{ samplerIndex }, m_displaceIn{ displaceIn },
     m_displaceOut{ displaceOut },
-    m_enableDlssControlMask{ enableDlssControlMask },
+    m_enableDlssControlMask{ enableDlssControlMask }, m_albedoOpacityIsRenderTarget(albedoOpacityIsRenderTarget),
     m_dlssControlMaskIntensity{ dlssControlMaskIntensity },
     m_dlssControlMaskToneStrength{ dlssControlMaskToneStrength },
     m_dlssControlMaskStructuralStrength{ dlssControlMaskStructuralStrength },
@@ -840,6 +841,12 @@ struct RtOpaqueSurfaceMaterial {
 
     if (m_isRaytracedRenderTarget) {
       flags |= OPAQUE_SURFACE_MATERIAL_FLAG_IS_RAYTRACED_RENDER_TARGET;
+      if (m_albedoOpacityIsRenderTarget) {
+        flags |= OPAQUE_SURFACE_MATERIAL_FLAG_ALBEDO_IS_RENDER_TARGET;
+      }
+      if (m_enableEmission) {
+        flags |= OPAQUE_SURFACE_MATERIAL_FLAG_ENABLE_RENDER_TARGET_EMISSION;
+      }
     }
 
     if (m_isHairCard) {
@@ -1068,6 +1075,7 @@ private:
       uint32_t useLegacySpecular;         // NOTE: uint32_t to avoid padding
       uint32_t specularColorTextureIndex;
       float specularColorScale;
+      uint32_t albedoOpacityIsRenderTarget;
       // NOTE: There must be NO padding between members, as the struct is used for hashing
     };
     HashStruct hashData = HashStruct{
@@ -1101,6 +1109,7 @@ private:
       m_useLegacySpecular,
       m_specularColorTextureIndex,
       m_specularColorScale,
+      m_albedoOpacityIsRenderTarget,
     };
     m_cachedHash = hashStructByMemory<HashStruct,
       &HashStruct::albedoOpacityTextureIndex,
@@ -1132,7 +1141,8 @@ private:
       &HashStruct::secondaryTextureIndex,
       &HashStruct::useLegacySpecular,
       &HashStruct::specularColorTextureIndex,
-      &HashStruct::specularColorScale>(hashData);
+      &HashStruct::specularColorScale,
+      &HashStruct::albedoOpacityIsRenderTarget>(hashData);
   }
 
   void updateCachedData() {
@@ -1181,6 +1191,7 @@ private:
   // How far outwards a height_texture value of 1 maps to.
   float m_displaceOut;
   bool m_enableDlssControlMask;
+  bool m_albedoOpacityIsRenderTarget;
   float m_dlssControlMaskIntensity;
   float m_dlssControlMaskToneStrength;
   float m_dlssControlMaskStructuralStrength;

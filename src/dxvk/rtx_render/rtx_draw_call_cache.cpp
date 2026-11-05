@@ -20,6 +20,7 @@
 * DEALINGS IN THE SOFTWARE.
 */
 #include "rtx_draw_call_cache.h"
+#include "rtx_options.h"
 #include "../d3d9/d3d9_state.h"
 
 namespace dxvk 

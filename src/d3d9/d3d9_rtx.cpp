@@ -16,6 +16,7 @@
 #include "../dxvk/rtx_render/rtx_terrain_baker.h"
 #include "../dxvk/rtx_render/rtx_dark_souls_specular.h"
 
+#include <atomic>
 #include <cassert>
 #include <cstring>
 
@@ -418,7 +419,9 @@ namespace dxvk {
     // Track the drawcall index so we can use it in rtx_context
     m_activeDrawCallState.drawCallID = m_drawCallID++;
     m_activeDrawCallState.isDrawingToRaytracedRenderTarget = false;
-    m_activeDrawCallState.isUsingRaytracedRenderTarget = false;
+    // NV-DXVK start: Reset the categorized camera resource for each draw.
+    m_activeDrawCallState.setRaytracedRenderTarget(nullptr);
+    // NV-DXVK end
 
     if (m_drawCallID < (uint32_t)RtxOptions::drawCallRange().x ||
         m_drawCallID > (uint32_t)RtxOptions::drawCallRange().y) {
@@ -431,7 +434,10 @@ namespace dxvk {
       for (uint32_t i : bit::BitMask(m_parent->GetActiveRTTextures())) {
         D3D9CommonTexture* texture = GetCommonTexture(d3d9State().textures[i]);
         if (lookupHash(RtxOptions::raytracedRenderTargetTextures(), texture->GetImage()->getDescriptorHash())) {
-          m_activeDrawCallState.isUsingRaytracedRenderTarget = true;
+          // NV-DXVK start: Preserve the first categorized camera independently of material slots.
+          m_activeDrawCallState.setRaytracedRenderTarget(texture->GetImage());
+          break;
+          // NV-DXVK end
         }
       }
     }
@@ -715,14 +721,19 @@ namespace dxvk {
       // If this draw call has an RT texture bound
       if (m_activeDrawCallState.isUsingRaytracedRenderTarget) {
         // We validate this state below
-        m_activeDrawCallState.isUsingRaytracedRenderTarget = false;
+        // NV-DXVK start: Reset camera identity together with classification during revalidation.
+        m_activeDrawCallState.setRaytracedRenderTarget(nullptr);
+        // NV-DXVK end
         // Try and find the has of the positions
         for (uint32_t i : bit::BitMask(m_parent->GetActiveRTTextures())) {
           D3D9CommonTexture* texture = GetCommonTexture(d3d9State().textures[i]);
           auto hash = texture->GetImage()->getDescriptorHash();
           if (lookupHash(RtxOptions::raytracedRenderTargetTextures(), hash)) {
             // Mark this as a valid Raytraced Render Target draw call
-            m_activeDrawCallState.isUsingRaytracedRenderTarget = true;
+            // NV-DXVK start: Retain the resource that actually matched the camera category.
+            m_activeDrawCallState.setRaytracedRenderTarget(texture->GetImage());
+            break;
+            // NV-DXVK end
           }
         }
       }
@@ -924,16 +935,23 @@ namespace dxvk {
       blendIndices.ref = nullptr;
     }
 
-    // Copy bones up to the max bone we have registered so far.
-    const uint32_t maxBone = m_maxBone > 0 ? m_maxBone : 255;
+    // The snapshot covers the full D3D9 WORLDMATRIX range rather than the
+    // highest index seen through SetTransform. A draw's blendIndices may
+    // reference a bone above that mark, and the worker would then read
+    // neighbouring draws' bones or uninitialised memory from the staging
+    // buffer. The fixed 256 slots cost at most 16KB per draw, well within
+    // the staging buffer's capacity.
+    static constexpr uint32_t kMaxSupportedBones = 255; // D3D9 WORLDMATRIX(0..255)
+    const uint32_t maxBone = kMaxSupportedBones;
     const uint32_t startBoneTransform = GetTransformIndex(D3DTS_WORLDMATRIX(0));
+    const uint32_t observedMaxBone = m_maxBone; // captured for worker diagnostic
 
     const uint32_t nMat = maxBone + 1;
     const Matrix4* const boneMatrices = m_stagedBones.stageBones(
         d3d9State().transforms.data() + startBoneTransform, nMat);
 
     auto& geometryWorkers = getGeometryWorkers();
-    return geometryWorkers.Schedule([boneMatrices, blendIndices, numBonesPerVertex, vertexCount]()->SkinningData {
+    return geometryWorkers.Schedule([boneMatrices, blendIndices, numBonesPerVertex, vertexCount, observedMaxBone]()->SkinningData {
       ScopedCpuProfileZone();
       uint32_t numBones = numBonesPerVertex;
 
@@ -946,6 +964,22 @@ namespace dxvk {
         if (!getMinMaxBoneIndices(pBlendIndices, blendIndices.stride, vertexCount, numBonesPerVertex, minBoneIndex, maxBoneIndex)) {
           minBoneIndex = 0;
           maxBoneIndex = 0;
+        }
+        // Surfaces unusual bone upload orderings. The snapshot covers the
+        // full range, so the read itself is in bounds.
+        if (static_cast<uint32_t>(maxBoneIndex) > observedMaxBone && observedMaxBone > 0) {
+          // Several geometry workers can reach this concurrently, so the flag
+          // is an atomic exchange rather than ONCE, which is not thread safe.
+          static std::atomic<bool> s_warned = false;
+          if (!s_warned.exchange(true)) {
+            Logger::warn(str::format(
+              "[RTX-Compatibility-Warn] Skinned mesh references bone index ",
+              maxBoneIndex,
+              " but only ",
+              observedMaxBone,
+              " bone slots have been seen via SetTransform tracking. ",
+              "Vertex data is authoritative. Matrices are read from the full D3DTS_WORLDMATRIX(0..255) range."));
+          }
         }
         numBones = maxBoneIndex + 1;
 

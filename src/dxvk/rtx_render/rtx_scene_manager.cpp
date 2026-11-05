@@ -261,6 +261,7 @@ namespace dxvk {
     verifyAndReleaseBufferCache();
 
     // We still need to clear caches even if the scene wasn't rendered
+    m_bindlessResourceManager.releaseBufferDescriptors(ctx, needWfi);
     m_bufferCache.clear();
     m_preCreationSurfaceMaterialMap.clear();
     m_volumeMaterialCache.clear();
@@ -342,9 +343,22 @@ namespace dxvk {
         pInstance->clear();
         continue;
       }
-      if (!changes.dirtyMatHashes.empty() &&
-          changes.dirtyMatHashes.count(pInstance->materialHash) != 0) {
-        pInstance->clear();
+      if (!changes.dirtyMatHashes.empty()) {
+        bool materialChanged = changes.dirtyMatHashes.count(pInstance->materialHash) != 0;
+        for (const auto& prim : pInstance->prims) {
+          if (materialChanged) {
+            break;
+          }
+          const auto* pRtInstance = prim.getInstance();
+          if (pRtInstance == nullptr || pRtInstance->getBlas() == nullptr) {
+            continue;
+          }
+          const auto& drawCall = pRtInstance->getBlas()->input;
+          materialChanged = drawCall.isCameraMaterialDirty(changes.dirtyMatHashes);
+        }
+        if (materialChanged) {
+          pInstance->clear();
+        }
       }
     }
   }
@@ -867,8 +881,8 @@ namespace dxvk {
     } 
 
     // test if any direct material replacements exist
-    const XXH64_hash_t legacyMaterialHash = input.getMaterialData().getHash();
-    std::shared_ptr<MaterialData> pReplacementMaterial = m_pReplacer->getReplacementMaterial(legacyMaterialHash);
+    const auto pReplacementMaterial = input.findMaterialReplacement(
+      [this](XXH64_hash_t hash) { return m_pReplacer->getReplacementMaterial(hash); });
     if (pReplacementMaterial != nullptr) {
       // Make a copy - dont modify the replacement data.
       MaterialData renderMaterialData = *pReplacementMaterial;
@@ -1327,6 +1341,13 @@ namespace dxvk {
   SceneManager::ObjectCacheState SceneManager::onSceneObjectUpdated(Rc<DxvkContext> ctx, const DrawCallState& drawCallState, BlasEntry* pBlas) {
     if (pBlas->frameLastTouched == m_device->getCurrentFrameId()) {
       pBlas->cacheMaterial(drawCallState.getMaterialData());
+      // Refresh the cached bone matrices for a mesh drawn repeatedly in one frame.
+      // An entry is only reused here when boneHash matches, and that hash covers just
+      // [minBoneIndex, numBones), so this updates the matrices below that range.
+      if (pBlas->input.getSkinningStateMutable().numBones > 0 &&
+          drawCallState.getSkinningState().numBones == pBlas->input.getSkinningState().numBones) {
+        pBlas->input.getSkinningStateMutable().pBoneMatrices = drawCallState.getSkinningState().pBoneMatrices;
+      }
       return SceneManager::ObjectCacheState::kUpdateInstance;
     }
 
@@ -1561,7 +1582,10 @@ namespace dxvk {
       m_instanceManager.notifySceneChanged();
     }
 
+    // A non-zero bone count does not imply the weight buffer is defined. A fixed-function indexed-blend
+    // draw may legally leave the weight stream unbound while still reporting a bone count.
     if (isSkinned &&
+        drawCallState.getGeometryData().blendWeightBuffer.defined() &&
         (result == ObjectCacheState::KBuildBVH || result == ObjectCacheState::kUpdateBVH)) {
       m_device->getCommon()->metaGeometryUtils().dispatchSkinning(drawCallState, pBlas->modifiedGeometryData);
       if (drawCallState.getCategoryFlags().test(InstanceCategories::SmoothNormals)) {
@@ -1685,6 +1709,9 @@ namespace dxvk {
     preCreationHash = XXH64(&samplerIndex2, sizeof(samplerIndex2), preCreationHash);
     preCreationHash = XXH64(&hasTexcoords, sizeof(hasTexcoords), preCreationHash);
     preCreationHash = XXH64(&drawCallState.isUsingRaytracedRenderTarget, sizeof(drawCallState.isUsingRaytracedRenderTarget), preCreationHash);
+    const bool albedoOpacityIsRenderTarget = renderMaterialDataType == MaterialDataType::Opaque &&
+      drawCallState.isRaytracedRenderTargetTexture(renderMaterialData.getOpaqueMaterialData().getAlbedoOpacityTexture());
+    preCreationHash = XXH64(&albedoOpacityIsRenderTarget, sizeof(albedoOpacityIsRenderTarget), preCreationHash);
     const bool isHairCard = drawCallState.testCategoryFlags(InstanceCategories::HairCards);
     preCreationHash = XXH64(&isHairCard, sizeof(isHairCard), preCreationHash);
 
@@ -1877,7 +1904,8 @@ namespace dxvk {
         secondaryTextureIndex,
         useLegacySpecular,
         specularColorTextureIndex,
-        opaqueMaterialData.getSpecularColorScale()
+        opaqueMaterialData.getSpecularColorScale(),
+        albedoOpacityIsRenderTarget
       };
 
       surfaceMaterial.emplace(opaqueSurfaceMaterial);
@@ -2257,7 +2285,11 @@ namespace dxvk {
     DxvkDarkSoulsRipples::prepare(ctx.ptr());
 
     auto& textureManager = m_device->getCommon()->getTextureManager();
-    m_bindlessResourceManager.prepareSceneData(ctx, textureManager.getTextureTable(), getBufferTable(), getSamplerTable());
+    if (m_bindlessResourceManager.prepareSceneData(
+          ctx, textureManager.getTextureTable(), getBufferTable(),
+          m_bufferCache.getUpdatedSlots(), getSamplerTable())) {
+      m_bufferCache.clearUpdatedSlots();
+    }
 
     // If there are no instances, we should do nothing!
     if (m_instanceManager.getActiveCount() == 0) {
@@ -2562,6 +2594,7 @@ namespace dxvk {
     Rc<DxvkSampler> externalSampler = getOrCreateExternalSampler();
 
     auto& state = *pstate;
+    state.drawCall.isExternalDraw = true;
 
     {
       state.drawCall.modifyMaterialData().samplers[0] = externalSampler;

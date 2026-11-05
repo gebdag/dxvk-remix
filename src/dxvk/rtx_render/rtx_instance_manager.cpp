@@ -1077,6 +1077,8 @@ namespace dxvk {
        !currentInstance.isCameraRegistered(CameraType::Main));
 
     const RtSurface::AlphaState alphaState = calculateAlphaState(drawCall, *materialData);
+    // The patched material must remain alive until preserveInstance invokes material binding callbacks.
+    std::optional<MaterialData> patchedMaterialData;
     bool hasTransformChanged = false;
     bool hasPreviousPositions = false;
 
@@ -1178,48 +1180,46 @@ namespace dxvk {
           drawCall.getTransformData().textureTransform != Matrix4() || currentInstance.surface.ds1ViewFade != 0;
         currentInstance.surface.objectPickingValue = drawCall.drawCallID;
 
-        // Temp storage for the case we need to patch the material data
-        MaterialData tmpMaterialData;
-
         if (materialData->getType() == MaterialDataType::Opaque)
         {
           const bool useLegacyAlphaState = materialData->getOpaqueMaterialData().getUseLegacyAlphaState();
 
-          if (currentInstance.m_isWorldSpaceUI) {
+          // Camera materials retain authored emission independently of legacy alpha blending.
+          if (!drawCall.isUsingRaytracedRenderTarget && currentInstance.m_isWorldSpaceUI) {
             // Here we need to do deep copy and patch the material
-            tmpMaterialData = *materialData;
-            materialData = &tmpMaterialData;
+            patchedMaterialData.emplace(*materialData);
+            materialData = &*patchedMaterialData;
             // For worldspace UI, we want to show the UI (unlit) in the world.  So configure the blend mode if blending is used accordingly.
-            tmpMaterialData.getOpaqueMaterialData().setEnableEmission(true);
-            tmpMaterialData.getOpaqueMaterialData().setEmissiveIntensity(2.0f);
-            tmpMaterialData.getOpaqueMaterialData().setEmissiveColorTexture(tmpMaterialData.getOpaqueMaterialData().getAlbedoOpacityTexture());
-          } else if (drawCall.getMaterialData().isUnlit && useLegacyAlphaState) {
+            patchedMaterialData->getOpaqueMaterialData().setEnableEmission(true);
+            patchedMaterialData->getOpaqueMaterialData().setEmissiveIntensity(2.0f);
+            patchedMaterialData->getOpaqueMaterialData().setEmissiveColorTexture(patchedMaterialData->getOpaqueMaterialData().getAlbedoOpacityTexture());
+          } else if (!drawCall.isUsingRaytracedRenderTarget && drawCall.getMaterialData().isUnlit && useLegacyAlphaState) {
             // Fork: unlit marker. Like the emissive blend override below, whatever the blend mode:
             // the surface's texture is its emission; the shader drops its albedo and premultiplies
             // the emission by its alpha for non-emissive blends. Additive surfaces reach their
             // brightness by stacking layers, ordinary blends do not, so each has its own intensity.
-            tmpMaterialData = *materialData;
-            materialData = &tmpMaterialData;
-            tmpMaterialData.getOpaqueMaterialData().setEnableEmission(true);
+            patchedMaterialData.emplace(*materialData);
+            materialData = &*patchedMaterialData;
+            patchedMaterialData->getOpaqueMaterialData().setEnableEmission(true);
             // An additive or subtractive layer adds or takes off exactly the game's colour: the proxy folds the game's
             // own factors into it (ffp_state::draw_sprite_up). A further intensity of 2 showed a crystal lizard's halo
             // +17 where the game adds +10 (frame_20261101_135906).
-            tmpMaterialData.getOpaqueMaterialData().setEmissiveIntensity(currentInstance.surface.alphaState.emissiveBlend
+            patchedMaterialData->getOpaqueMaterialData().setEmissiveIntensity(currentInstance.surface.alphaState.emissiveBlend
               || currentInstance.surface.alphaState.blendType == BlendType::kSubtractive ? 1.0f : RtxOptions::unlitBlendedEmissiveIntensity());
-            tmpMaterialData.getOpaqueMaterialData().setEmissiveColorTexture(tmpMaterialData.getOpaqueMaterialData().getAlbedoOpacityTexture());
-          } else if (currentInstance.surface.alphaState.emissiveBlend && RtxOptions::enableEmissiveBlendEmissiveOverride() && useLegacyAlphaState) {
+            patchedMaterialData->getOpaqueMaterialData().setEmissiveColorTexture(patchedMaterialData->getOpaqueMaterialData().getAlbedoOpacityTexture());
+          } else if (!drawCall.isUsingRaytracedRenderTarget && currentInstance.surface.alphaState.emissiveBlend && RtxOptions::enableEmissiveBlendEmissiveOverride() && useLegacyAlphaState) {
             // Here we need to do deep copy and patch the material
-            tmpMaterialData = *materialData;
-            materialData = &tmpMaterialData;
+            patchedMaterialData.emplace(*materialData);
+            materialData = &*patchedMaterialData;
             // If the user has decided to override the legacy alpha state, assume they know what they are doing and allow for explicit emission controls.
-            tmpMaterialData.getOpaqueMaterialData().setEnableEmission(true);
+            patchedMaterialData->getOpaqueMaterialData().setEnableEmission(true);
             // Fork (DS1): an additive surface the proxy tagged with the game's light for it (New Londo's
             // ghosts, atmosphere.cpp additive_lit_colour) emits albedo * that light through
             // Surface::ds1SelfLit, as the game adds it, instead of the fixed override.
             const bool ds1Lit = currentInstance.surface.ds1SelfLit[0] + currentInstance.surface.ds1SelfLit[1] +
               currentInstance.surface.ds1SelfLit[2] > 0.0f;
-            tmpMaterialData.getOpaqueMaterialData().setEmissiveIntensity(ds1Lit ? 0.0f : RtxOptions::emissiveBlendOverrideEmissiveIntensity());
-            tmpMaterialData.getOpaqueMaterialData().setEmissiveColorTexture(tmpMaterialData.getOpaqueMaterialData().getAlbedoOpacityTexture());
+            patchedMaterialData->getOpaqueMaterialData().setEmissiveIntensity(ds1Lit ? 0.0f : RtxOptions::emissiveBlendOverrideEmissiveIntensity());
+            patchedMaterialData->getOpaqueMaterialData().setEmissiveColorTexture(patchedMaterialData->getOpaqueMaterialData().getAlbedoOpacityTexture());
           }
 
           currentInstance.m_isSubsurface = materialData->getOpaqueMaterialData().getSubsurfaceDiffusionProfile();

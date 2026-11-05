@@ -99,6 +99,10 @@ See [the full rule](documentation/CONTRIBUTING-style-guide.md#changes-to-upstrea
 - Always use REMIXAPI_CALL macro for calling convention for exported function.
 - Always add new export function shims to d3d9_rtx_shim.cpp for correct shimming on WoA.
 
+### Changing the Remix API
+
+- Follow the rules in the Extensibility section of `documentation/RemixSDK.md` for every change to `public/include/remix/remix_c.h`: bump `REMIXAPI_VERSION_PATCH`, only append interface pointers and struct fields, ensure a zero-initialized new field leaves behavior unchanged, and add a changelog entry.
+
 ## RTX Options
 
 - Add new options in the relevant feature class, not in `rtx_options.h`.
@@ -162,7 +166,7 @@ When modifying shared headers, ensure both C++ and Slang code paths remain consi
 
 - Squash into a single commit before submitting.
 - Limit changes to those required for the PR goal — no drive-by style fixes.
-- Add your name to `src/dxvk/imgui/dxvk_imgui_about.cpp` under "GitHub Contributors" (A-Z by last name).
+- Credit contributors in `src/dxvk/imgui/dxvk_imgui_about.cpp` (A-Z by last name). NVIDIA employees belong in the appropriate Engineering, Art, or Production section, not "Github Contributors". Reserve "Github Contributors" for external community contributors. Check existing entries before adding a name, and move any incorrectly categorized NVIDIA employee rather than duplicating that entry.
 
 
 ## Key Directories

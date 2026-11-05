@@ -53,8 +53,8 @@ struct GeometryResolverState : IBasePayloadState
   f16vec3 _direction;
   f16vec3 attenuation;
   uint8_t _rayMask;
-  // Fork (DS1): see ds1ExtendUnorderedRay. Takes the pad byte before _compactedCoordinate.
-  uint8_t ds1UnorderedHitsAhead;
+  // Fork (DS1): see ds1ExtendUnorderedRay. Takes the pad byte before _compactedCoordinate. Low 7 bits: the hits ahead; top bit: ds1UnorderedSpanEmissive.
+  uint8_t _ds1Unordered;
   u16vec2 _compactedCoordinate;
 
   // Property to get pixel coordinate
@@ -64,6 +64,19 @@ struct GeometryResolverState : IBasePayloadState
     {
       return u16vec2(getDispatchRaysIndex().xy);
     }
+  }
+
+  property uint8_t ds1UnorderedHitsAhead
+  {
+    get { return uint8_t(_ds1Unordered & uint8_t(0x7F)); }
+    set { _ds1Unordered = uint8_t((_ds1Unordered & uint8_t(0x80)) | (newValue & uint8_t(0x7F))); }
+  }
+
+  // Fork (DS1): the unordered resolve of the segments ds1UnorderedHitsAhead skips had emissive radiance.
+  property bool ds1UnorderedSpanEmissive
+  {
+    get { return (_ds1Unordered & uint8_t(0x80)) != uint8_t(0); }
+    set { _ds1Unordered = uint8_t((_ds1Unordered & uint8_t(0x7F)) | (newValue ? uint8_t(0x80) : uint8_t(0))); }
   }
 
   // Holds the compacted GBuffer slot that this pixel stores to. See loadGBufferStoreCoordinate.
@@ -201,8 +214,8 @@ struct GeometryResolverState : IBasePayloadState
       set { _encodedFlags = packedFlagAssign(_encodedFlags, 1 << 12, newValue); }
   }
 
-  // Fork (DS1): the unordered resolve of the segments ds1UnorderedHitsAhead skips had emissive radiance.
-  property bool ds1UnorderedSpanEmissive
+  // Is set after the primary pass gathers first-hit decals before sampling PSR.
+  property bool firstHitDecalsResolved
   {
       get { return packedFlagGet(_encodedFlags, 1 << 13); }
       set { _encodedFlags = packedFlagAssign(_encodedFlags, 1 << 13, newValue); }
@@ -468,7 +481,9 @@ GbufferPSRData packPSRData(Ray sampledRay, uint mediumMaterialIndex, f16vec3 att
     (mediumMaterialIndex & SURFACE_INDEX_MAX_VALUE) |
     (portalSpaceBits << SURFACE_INDEX_BIT_COUNT) |
     (objectMaskDynBits << (SURFACE_INDEX_BIT_COUNT + 2));
-  psrData.attenuation = colorToR11G11B10(attenuation);
+  // NV-DXVK start: Preserve emissive camera gain in PSR storage.
+  psrData.attenuation = packAttenuation(attenuation);
+  // NV-DXVK end
   psrData.encodedAccumulatedRotation = packFloat4x16(accumulatedRotation);
   return psrData;
 }
@@ -478,7 +493,9 @@ void unpackPSRData(GbufferPSRData psrData, inout GeometryPSRResolverState geomet
 {
   geometryPSRResolverState.origin = uintBitsToFloat(psrData.origin);
   geometryPSRResolverState.direction = snorm2x16ToSphereDirection(psrData.encodedDirection);
-  geometryPSRResolverState.attenuation = r11g11b10ToColor(psrData.attenuation);
+  // NV-DXVK start: Decode HDR attenuation consistently with PSR storage.
+  geometryPSRResolverState.attenuation = unpackAttenuation(psrData.attenuation);
+  // NV-DXVK end
   geometryPSRResolverState.accumulatedRotation = unpackFloat4x16(psrData.encodedAccumulatedRotation);
   geometryPSRResolverState.mediumMaterialIndex = psrData.mediumMaterialIndexAndGeometryFlags & SURFACE_INDEX_MAX_VALUE;
   geometryPSRResolverState.insideMedium = geometryPSRResolverState.mediumMaterialIndex != SURFACE_INDEX_INVALID;
