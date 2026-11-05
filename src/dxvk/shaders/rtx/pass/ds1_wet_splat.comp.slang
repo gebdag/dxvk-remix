@@ -30,7 +30,7 @@ layout(binding = DS1_RIPPLE_BINDING_WATER)
 RWTexture2D<float> water;
 
 layout(binding = DS1_WET_BINDING_LEVEL)
-RWTexture2D<float> level;
+RWTexture2D<float2> level;
 
 layout(binding = DS1_WET_BINDING_GRID)
 RWTexture2D<float4> grid;
@@ -51,7 +51,7 @@ float waterAt(vec3 world)
   {
     return cb.testLevel;
   }
-  const float atPlayer = level[uint2(0, 0)];
+  const float atPlayer = level[uint2(0, 0)].x;
   if (atPlayer <= DS1_RIPPLE_NO_WATER)
   {
     return DS1_RIPPLE_NO_WATER;
@@ -84,12 +84,17 @@ void main(uint id : SV_DispatchThreadID)
   {
     return;
   }
-  const float surface = waterAt(world);
-  if (surface <= DS1_RIPPLE_NO_WATER || world.y >= surface + cb.contactMargin)
+  const float kind = cb.useTestLevel != 0 ? float(cb.testMud) : level[uint2(0, 0)].y;
+  const bool lava = kind > 1.5f;
+  // Lava is what the body stands on, at the height found under it; it has no place in the water map.
+  const float surface = lava ? (cb.useTestLevel != 0 ? cb.testLevel : level[uint2(0, 0)].x) : waterAt(world);
+  if (surface <= DS1_RIPPLE_NO_WATER || world.y >= surface + (lava ? cb.lavaContact : cb.contactMargin))
   {
     return;
   }
 
+  // Mud in the second channel, lava in the third; water washes both off, and lava burns the mud away.
+  const float mud = lava ? 0.0f : kind;
   const uint colour = colours[cb.colourWord + id * cb.colourStride];
   const vec3 place = vec3(float((colour >> 16) & 0xFF), float((colour >> 8) & 0xFF), float(colour & 0xFF)) / 255.0f;
   const int3 cells = int3(DS1_WET_CELLS_X, DS1_WET_CELLS_Y, DS1_WET_CELLS_Z);
@@ -103,7 +108,18 @@ void main(uint id : SV_DispatchThreadID)
       {
         const int3 c = clamp(first + int3(x, y, z), int3(0), cells - 1);
         const int2 slice = int2(c.z % DS1_WET_SLICES_PER_ROW, c.z / DS1_WET_SLICES_PER_ROW);
-        grid[slice * int2(DS1_WET_CELLS_X, DS1_WET_CELLS_Y) + c.xy] = float4(1.0f, 0.0f, 0.0f, 0.0f);
+        const int2 texel = slice * int2(DS1_WET_CELLS_X, DS1_WET_CELLS_Y) + c.xy;
+        if (lava)
+        {
+          // How deep: 0 at the top of the contact, 1 a hand under it. The deepest a place has been while the coat lasts.
+          const float depth = saturate((surface + cb.lavaContact - world.y) / max(cb.lavaContact + 0.1f, 0.05f));
+          const vec4 old = grid[texel];
+          grid[texel] = float4(old.x, 0.0f, 1.0f, old.z > 0.0f ? max(old.w, depth) : depth);
+        }
+        else
+        {
+          grid[texel] = float4(1.0f, mud, 0.0f, 0.0f);
+        }
       }
     }
   }

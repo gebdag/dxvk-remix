@@ -50,6 +50,8 @@ namespace dxvk {
     RTX_OPTION_FLAG("rtx.ds1Swamp", bool, heightInAlpha, false, RtxOptionFlags::NoSave,
                     "The height pass reads a texture of its own, which the proxy bakes into the colour texture's alpha "
                     "(Gaping Dragon's slime); false: it reads the colour texture's r + g + b (Blighttown).");
+    RTX_OPTION("rtx.ds1Swamp", bool, wade, false,
+               "This surface is a liquid: bodies push it around and it soaks them in mud. Set per area: Painted World's snow is the same shader.");
     RTX_OPTION("rtx.ds1Swamp", float, envScale, -1.0f,
                "Reflection weight in place of the game's c87, set per area (the Depths' slime, where 3 saturates it). -1 = c87.");
     RTX_OPTION_FLAG("rtx.ds1Swamp", float, meshMetresPerUv, 0.0f, RtxOptionFlags::NoSave,

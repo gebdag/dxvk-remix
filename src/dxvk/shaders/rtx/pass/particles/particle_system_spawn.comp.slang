@@ -154,19 +154,52 @@ GpuParticle respawn(uint particleIdx, uint spawnCtxIdx, const GpuParticleSystem 
   
   float3 spawnPosition = lerp(worldPosition, prevWorldPosition, randSeed);
   
+  // Fork (DS1): the game's fronts wind counter-clockwise (its body draws cull D3DCULL_CW), so worldNormal points into its meshes. Picked by it, "the top of the
+  // body" was every underside and the inside of the helmet, and the kick sent droplets through the head and out of the face.
+  const float3 ds1Outward = -worldNormal;
+
   // Fork (DS1): drips come off the wet player's downward facing surfaces, above the water, while they are freshly wet.
   // A vertex colour is its place on the body there (fork_ds1_ripples.h), not a colour.
   bool ds1Spawns = true;
   if (particleSystem.desc.ds1Drip != 0)
   {
     const float threshold = particleCb.ds1DripThreshold;
-    ds1Spawns = threshold <= 1.0f && worldNormal.y < -0.25f && color.a > 0.999f && all(color.rgb < 0.999f);
+    ds1Spawns = threshold <= 1.0f && ds1Outward.y < -0.25f && color.a > 0.999f && all(color.rgb < 0.999f);
     if (ds1Spawns)
     {
       const float level = textures[particleCb.ds1WetLevelIndex].SampleLevel(samplers[particleCb.ds1WetSamplerIndex], vec2(0.5f), 0.0f).x;
       const float wet = ds1WetGridRead(particleCb.ds1WetGridIndex, particleCb.ds1WetSamplerIndex, color.rgb);
       const float chance = saturate((wet - threshold) / max(1.0f - threshold, 1e-3f));
       ds1Spawns = worldPosition.y > level && randomFloat(uint2(randomSeed++, particleCb.frameIdx)) < chance;
+    }
+    color = 1.0f;
+  }
+
+  // Fork (DS1): falling water breaks on the first surface it meets, seen from above, and only there: nothing comes out from under the outer surface. It runs off along that
+  // surface, down its slope and every way on a flat top, with a small kick off it, and falls.
+  // Metres per second in the game's scale, times 100 for the centimetres these systems run in.
+  if (particleSystem.desc.ds1Splash != 0)
+  {
+    const vec2 side = worldPosition.xz - particleCb.ds1FallContact.xz;
+    ds1Spawns = particleCb.ds1FallContact.w > 0.0f && ds1Outward.y > 0.2f && color.a > 0.999f && all(color.rgb < 0.999f) &&
+                dot(side, side) < particleCb.ds1SplashRadius * particleCb.ds1SplashRadius;
+    if (ds1Spawns && particleCb.ds1BodyTopIndex != BINDING_INDEX_INVALID)
+    {
+      const vec2 topUv = saturate((worldPosition.xz - particleCb.ds1BodyTopCentre) / (2.0f * particleCb.ds1SplashRadius) + 0.5f);
+      const int2 topCell = min(int2(topUv * float(DS1_SPLASH_TOP_SIZE)), int2(DS1_SPLASH_TOP_SIZE - 1, DS1_SPLASH_TOP_SIZE - 1));
+      ds1Spawns = worldPosition.y > textures[particleCb.ds1BodyTopIndex].Load(int3(topCell, 0)).x - 0.05f;
+    }
+    if (ds1Spawns)
+    {
+      const float3 falling = float3(0.0f, -1.0f, 0.0f);
+      const float3 downSlope = falling - dot(falling, ds1Outward) * ds1Outward;
+      const float3 anyWay = sampleDirectionInCone(ds1Outward, 0.0f, float2(randomFloat(uint2(randomSeed++, particleCb.frameIdx)), randomFloat(uint2(randomSeed++, particleCb.frameIdx))));
+      const float3 along = safeNormalize(downSlope * 1.5f + (anyWay - dot(anyWay, ds1Outward) * ds1Outward) * 0.8f, anyWay);
+      const float offSpeed = lerp(30.0f, 150.0f, randomFloat(uint2(randomSeed++, particleCb.frameIdx)));
+      const float alongSpeed = lerp(60.0f, 200.0f, randomFloat(uint2(randomSeed++, particleCb.frameIdx)));
+      initialVelocity = (along * alongSpeed + ds1Outward * offSpeed) * particleCb.sceneScale + worldSpawnVelocity * 0.5f;
+      // Just off the surface.
+      spawnPosition += ds1Outward * 1.5f * particleCb.sceneScale;
     }
     color = 1.0f;
   }

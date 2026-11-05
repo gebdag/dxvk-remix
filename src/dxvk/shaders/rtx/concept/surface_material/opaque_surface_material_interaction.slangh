@@ -567,6 +567,132 @@ float ds1WetNoise(vec3 p)
          lerp(ds1WetNoiseCorner(cell + vec3(0, 1, 1)), ds1WetNoiseCorner(cell + vec3(1, 1, 1)), f.x), f.y), f.z);
 }
 
+// Fork (DS1): a cooling crust's cracks: cells in 3D (Voronoi), the distance to the nearest edge between two cells (F2 - F1),
+// 0 on an edge. On a surface they make the polygonal plates of a crust.
+float ds1LavaCells(vec3 p)
+{
+  const vec3 cell = floor(p);
+  const vec3 f = p - cell;
+  float d1 = 8.0f, d2 = 8.0f;
+  for (int z = -1; z <= 1; ++z)
+  {
+    for (int y = -1; y <= 1; ++y)
+    {
+      for (int x = -1; x <= 1; ++x)
+      {
+        const vec3 o = vec3(float(x), float(y), float(z));
+        const vec3 c = cell + o;
+        const vec3 h = vec3(ds1WetNoiseCorner(c), ds1WetNoiseCorner(c + vec3(17.3f, 0.0f, 0.0f)), ds1WetNoiseCorner(c + vec3(0.0f, 31.7f, 0.0f)));
+        const vec3 r = o + h - f;
+        const float d = dot(r, r);
+        if (d < d1)
+        {
+          d2 = d1;
+          d1 = d;
+        }
+        else if (d < d2)
+        {
+          d2 = d;
+        }
+      }
+    }
+  }
+  return sqrt(d2) - sqrt(d1);
+}
+
+// A drop that runs down the body as it dries, and the trail it leaves. The tracks are meridians around each body part in its own
+// space: the legs and the trunk with the head around a vertical axis, the arms, which the bind pose holds out, around theirs, as they
+// hang. A track at one angle stays on the surface however it curves, over a helmet's dome or a pauldron, heading down it. How far a
+// drop has got comes from the grid's run from 1 to 0, in fits and starts. Returns the drop's coverage, in slope its tilt across and
+// along the track, in trail how much of its trail lies here.
+float ds1WetRunners(vec3 body, float grid, float density, float scale, float thick, out vec2 slope, out float trail)
+{
+  slope = vec2(0.0f);
+  trail = 0.0f;
+  const vec3 place = body - vec3(1.0f, 0.2f, 0.6f);
+  const float side = abs(place.x);
+  vec2 radial;
+  float along;
+  float sectors;
+  float partKey;
+  if (side > 0.3f)
+  {
+    radial = vec2(place.y - 1.4f, place.z);
+    along = side;
+    sectors = 10.0f;
+    partKey = place.x > 0.0f ? 31.0f : 37.0f;
+  }
+  else if (place.y < 0.85f)
+  {
+    radial = vec2(side - 0.11f, place.z);
+    along = -place.y;
+    sectors = 14.0f;
+    partKey = place.x > 0.0f ? 41.0f : 43.0f;
+  }
+  else
+  {
+    radial = place.xz;
+    along = -place.y;
+    sectors = 24.0f;
+    partKey = 47.0f;
+  }
+  sectors = max(floor(sectors / scale), 3.0f);
+  const float around = max(length(radial), 0.02f);
+  const float position = (atan2(radial.y, radial.x) / 6.2831853f + 0.5f) * sectors;
+  const float sector = floor(position);
+  if (ds1WetNoiseCorner(vec3(sector, partKey, 5.0f)) > density)
+  {
+    return 0.0f;
+  }
+  const float stretch = 0.3f;
+  const float shift = ds1WetNoiseCorner(vec3(sector, partKey, 6.0f)) * stretch;
+  const float run = floor((along + shift) / stretch);
+  const vec3 key = vec3(sector, partKey, run * 3.0f + 7.0f);
+  if (ds1WetNoiseCorner(key) > 0.7f)
+  {
+    return 0.0f;
+  }
+  const float s = along + shift - run * stretch;
+  // A track wanders a little.
+  const float wander = 0.3f * (ds1WetNoise(vec3(sector * 7.3f, partKey, along / 0.06f)) - 0.5f);
+  const float offset = position - sector - 0.5f - 0.3f * (ds1WetNoiseCorner(key + vec3(1.0f, 0.0f, 0.0f)) - 0.5f) - wander;
+  const float distance = abs(offset) * 6.2831853f * around / sectors;
+
+  const float startAt = lerp(0.45f, 0.97f, ds1WetNoiseCorner(key + vec3(3.0f, 0.0f, 0.0f)));
+  const float span = lerp(0.12f, 0.3f, ds1WetNoiseCorner(key + vec3(4.0f, 0.0f, 0.0f)));
+  const float q = saturate((startAt - grid) / span);
+  // Mud (thick) creeps a short way and stops.
+  const float moved = (q + 0.09f * sin(q * 18.85f)) * lerp(1.0f, 0.4f, thick);
+  const float start = 0.25f * stretch * ds1WetNoiseCorner(key + vec3(5.0f, 0.0f, 0.0f));
+  const float reach = lerp(0.25f, 0.72f, ds1WetNoiseCorner(key + vec3(6.0f, 0.0f, 0.0f))) * stretch;
+  const float head = start + reach * moved;
+  const float full = lerp(0.006f, 0.01f, ds1WetNoiseCorner(key + vec3(7.0f, 0.0f, 0.0f))) * scale * lerp(1.0f, 1.35f, thick);
+  const float gone = saturate((grid - (startAt - span - 0.12f)) / 0.12f);
+  const float radius = full * (1.0f - 0.55f * q) * sqrt(gone);
+
+  // A trail of thin water behind it, broken into threads and beads, which goes as the surface dries.
+  if (s >= start && s < head)
+  {
+    const float age = moved - (s - start) / reach;
+    const float broken = lerp(smoothstep(0.25f, 0.45f, ds1WetNoise(vec3(sector * 5.7f, partKey, along / 0.012f))), 1.0f, thick);
+    trail = (1.0f - smoothstep(0.5f, 1.0f, distance / (full * lerp(0.45f, 0.7f, thick)))) * saturate(1.0f - age / lerp(0.55f, 2.0f, thick)) * broken * saturate(grid / 0.08f);
+  }
+  if (radius <= 0.0f)
+  {
+    return 0.0f;
+  }
+  // The drop, its tail behind it.
+  const float ahead = s - head;
+  const vec2 shape = vec2(distance / radius, ahead / (ahead > 0.0f ? radius : radius * 2.4f));
+  const float reachOf = length(shape);
+  if (reachOf >= 1.0f)
+  {
+    return 0.0f;
+  }
+  slope = vec2(offset >= 0.0f ? shape.x : -shape.x, shape.y);
+  return 1.0f - smoothstep(0.7f, 1.0f, reachOf);
+}
+
 // Beads of water sitting on a wet surface: a dome in a hash grid in texture space, so they stay on the mesh (the idea is
 // xoxor4d's surface raindrops in gta4-rtx). Each has its own moment to go as the grid dries, shrinking towards it. Porous
 // surfaces soak most of them up. Returns the bead's coverage, and in slope its normal's tilt along the texture axes.
@@ -574,10 +700,11 @@ float ds1WetDroplets(vec2 uv, float grid, float porosity, float scale, out vec2 
 {
   slope = vec2(0.0f);
   float coverage = 0.0f;
-  const float density = lerp(0.5f, 0.15f, porosity);
-  for (uint layer = 0; layer < 2; ++layer)
+  const float density = lerp(0.12f, 0.03f, porosity);
+  // The small ones; the larger drops run down (ds1WetRunners).
+  for (uint layer = 1; layer < 2; ++layer)
   {
-    const float cells = (layer == 0 ? 30.0f : 55.0f) / scale;
+    const float cells = 55.0f / scale;
     const vec2 position = uv * cells;
     const vec2 cell = floor(position);
     const vec3 key = vec3(cell, float(layer) * 17.0f + 3.0f);
@@ -608,6 +735,28 @@ float ds1WetDroplets(vec2 uv, float grid, float porosity, float scale, out vec2 
     }
   }
   return coverage;
+}
+
+// The ripple field at a point of a liquid swamp's surface: xy its slope, z its height, 0 outside the window or on another level.
+vec3 ds1SwampRipple(vec3 position)
+{
+  if (cb.ds1Swamp.wade == 0 || cb.ds1Ripple.enable == 0)
+  {
+    return vec3(0.0f);
+  }
+  const vec2 local = position.xz - cb.ds1Ripple.windowMin;
+  const float edge = min(min(local.x, local.y), min(cb.ds1Ripple.windowSize - local.x, cb.ds1Ripple.windowSize - local.y));
+  if (!(edge > 0.0f))
+  {
+    return vec3(0.0f);
+  }
+  const vec4 field = textures[cb.ds1Ripple.textureIndex].SampleLevel(
+    samplers[cb.ds1Ripple.samplerIndex], position.xz * cb.ds1Ripple.invWindowSize, 0.0f);
+  if (!(abs(position.y - (cb.ds1Ripple.referenceHeight + field.z)) < cb.ds1Ripple.heightTolerance))
+  {
+    return vec3(0.0f);
+  }
+  return vec3(field.x, field.y, field.w) * saturate(edge / cb.ds1Ripple.borderFade);
 }
 
 // The wake rings' depth at a world position (x, z): the ring texture (the colour texture's alpha) on each ring.
@@ -659,7 +808,8 @@ float ds1SwampHeight(uint16_t textureIndex, uint16_t samplerIndex, SurfaceIntera
       h += cb.ds1Swamp.layerWeight[i] * (stored.r + stored.g + stored.b);
     }
   }
-  return h * fade - ds1SwampRingDepth(textureIndex, samplerIndex, surfaceInteraction, position);
+  // Liquid mud has its own disturbance instead of the game's rings (ds1SwampRipple).
+  return cb.ds1Swamp.wade != 0 ? h * fade : h * fade - ds1SwampRingDepth(textureIndex, samplerIndex, surfaceInteraction, position);
 }
 
 // Note: EnablePom can be set to false by callers that do not need the parallax-displaced texture coordinates, such as visibility rays.
@@ -1027,6 +1177,11 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     const float uvStep = span * cb.ds1Swamp.uvPerMetre;
     const uint16_t textureIndex = opaqueSurfaceMaterial.albedoOpacityTextureIndex;
     const uint16_t samplerIndex = opaqueSurfaceMaterial.samplerIndex;
+    // Liquid mud lies still until a body moves it (the ripple field): its slope in the normal, and where it has been moved it is churned
+    // up, dark and wet like the deep colour.
+    const vec3 disturbed = ds1SwampRipple(position);
+    const vec2 waveSlope = disturbed.xy * cb.ds1Ripple.normalScale;
+    const float churned = saturate(abs(disturbed.z) / 0.015f);
     const float h = ds1SwampHeight(textureIndex, samplerIndex, surfaceInteraction, vec2(0.0f), position, fade);
     const float hu = ds1SwampHeight(textureIndex, samplerIndex, surfaceInteraction, vec2(uvStep, 0.0f), position + axisU * span, fade);
     const float hv = ds1SwampHeight(textureIndex, samplerIndex, surfaceInteraction, vec2(0.0f, uvStep), position + axisV * span, fade);
@@ -1037,7 +1192,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     const float slopeWeight = cb.ds1Swamp.heightScale * edge;
     const float slopeU = clamp((hu - h) * slopeWeight, -cb.ds1Swamp.slopeClamp, cb.ds1Swamp.slopeClamp) / (2.0f * span);
     const float slopeV = clamp((hv - h) * slopeWeight, -cb.ds1Swamp.slopeClamp, cb.ds1Swamp.slopeClamp) / (2.0f * span);
-    vec3 swampNormal = normalize(vec3(surfaceInteraction.geometryNormal) - slopeU * axisU - slopeV * axisV);
+    vec3 swampNormal = normalize(vec3(surfaceInteraction.geometryNormal) - slopeU * axisU - slopeV * axisV - vec3(waveSlope.x, 0.0f, waveSlope.y));
     // The tar detail normal (the material's normal map) on top: its x, y as tangent offsets.
     normalDetail = 0.0f;
     if (opaqueSurfaceMaterial.normalTextureIndex != BINDING_INDEX_INVALID)
@@ -1053,7 +1208,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
 
     // Colour: the textured crust where the field is low, the deep colour where it is high.
     const vec3 crust = ds1SwampRead(textureIndex, samplerIndex, surfaceInteraction, vec2(0.0f), cb.ds1Swamp.colourUvScale, materialLodBias).rgb;
-    const float deep = saturate((h * edge - cb.ds1Swamp.deepOffset) * cb.ds1Swamp.deepScale);
+    const float deep = max(saturate((h * edge - cb.ds1Swamp.deepOffset) * cb.ds1Swamp.deepScale), churned * 0.8f);
     // Divided by the scene's c100, which Remix leaves out of every other map material (fork_ds1_swamp.h).
     const vec3 stored = saturate(lerp(crust * cb.ds1Swamp.crustColour, cb.ds1Swamp.deepColour, deep) * cb.ds1Swamp.invSceneDiffuseScale);
     if (cb.opaqueMaterialArgs.ds1GammaAlbedo != 0)
@@ -1069,7 +1224,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
       albedo = gammaToLinear(stored);
     }
     opacity = 1.0f;
-    const float mask = saturate((h * edge - cb.ds1Swamp.reflectOffset) * cb.ds1Swamp.reflectScale);
+    const float mask = max(saturate((h * edge - cb.ds1Swamp.reflectOffset) * cb.ds1Swamp.reflectScale), churned);
     ds1SwampReflectivity = pow(saturate(cb.ds1Swamp.reflectColour * mask), vec3(2.2f));
   }
 
@@ -1215,8 +1370,11 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     if (dot(side, side) <= cb.ds1Wet.radiusSquared)
     {
       const vec3 place = ds1WetPlace.rgb;
-      const float grid = cb.ds1Wet.forceWetness >= 0.0f ? cb.ds1Wet.forceWetness : ds1WetGridRead(cb.ds1Wet.textureIndex, cb.ds1Wet.samplerIndex, place);
-      if (grid > 0.0f)
+      const vec4 soaked = ds1WetGridReadAll(cb.ds1Wet.textureIndex, cb.ds1Wet.samplerIndex, place);
+      const float grid = cb.ds1Wet.forceWetness >= 0.0f ? cb.ds1Wet.forceWetness : soaked.x;
+      const float mud = cb.ds1Wet.forceMud >= 0.0f ? cb.ds1Wet.forceMud : soaked.y;
+      const float lava = cb.ds1Wet.forceLava >= 0.0f ? cb.ds1Wet.forceLava : soaked.z;
+      if (grid > 0.0f || mud > 0.0f || lava > 0.0f)
       {
         const vec3 body = place * vec3(2.0f, 2.4f, 1.2f);
         // Patches a hand across, with finer edges. Averaged noise bunches around 0.5, which would dry everything at once:
@@ -1233,6 +1391,83 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
         opaqueSurfaceMaterialInteraction.baseReflectivity = lerp(vec3(opaqueSurfaceMaterialInteraction.baseReflectivity), wetF0, film);
         opaqueSurfaceMaterialInteraction.albedo = vec3(opaqueSurfaceMaterialInteraction.albedo) * lerp(1.0f, cb.ds1Wet.porousFactor, porosity * pores);
         roughness = lerp(roughness, min(roughness, cb.ds1Wet.roughness), film);
+
+        // Mud first hardens where it lies, the raised parts ahead of the creases, from glossy brown to a pale cracked crust. The
+        // crust holds until the last of the mud's run, then fades away in patches, the creases last. Only liquid mud runs.
+        const vec3 mudLinear = gammaToLinear(cb.ds1Wet.mudColour);
+        const float mudAge = 1.0f - mud;
+        const float mudLayer = mud > 0.0f ? saturate((mud / cb.ds1Wet.mudFade - dryAt) / 0.1f) : 0.0f;
+        const float mudHard = saturate((mudAge / cb.ds1Wet.mudHarden - dryAt * 0.6f) / 0.4f);
+        const float mudLiquid = mud * (1.0f - saturate(mudAge / cb.ds1Wet.mudHarden));
+        if (mudLayer > 0.0f)
+        {
+          const float crack = 1.0f - saturate(abs(ds1WetNoise(body / 0.022f) - 0.5f) * 16.0f);
+          // Dried mud is paler and greyer than wet mud, not a brighter brown.
+          const vec3 crust = gammaToLinear(saturate(lerp(cb.ds1Wet.mudColour, vec3(calcBt709Luminance(cb.ds1Wet.mudColour)), 0.45f) * 1.7f + vec3(0.03f))) * (1.0f - 0.6f * crack);
+          opaqueSurfaceMaterialInteraction.albedo = lerp(vec3(opaqueSurfaceMaterialInteraction.albedo), lerp(mudLinear, crust, mudHard), mudLayer * lerp(0.8f, 0.95f, mudHard));
+          opaqueSurfaceMaterialInteraction.baseReflectivity = lerp(vec3(opaqueSurfaceMaterialInteraction.baseReflectivity), vec3(lerp(0.03f, 0.02f, mudHard)), mudLayer);
+          roughness = lerp(roughness, lerp(lerp(0.85f, 0.35f, saturate(grid * 2.0f)), 0.95f, mudHard), mudLayer);
+        }
+        const float dropMud = saturate(mudLiquid * 3.0f);
+
+        // Where lava has touched the body it leaves a crust that cools: dark plates parted by glowing cracks over an ember glow
+        // that runs under the whole coat. The parts that were deepest are the hottest and stay molten longest. The coat's top
+        // is feathered by noise and by facing (upward faces take less of it). Then it is char, which breaks up in patches.
+        if (lava > 0.0f)
+        {
+          // How deep this place was, 0 at the contact's top to 1 a hand under it (grid w). Forced: the lower legs.
+          const float depth = cb.ds1Wet.forceLava >= 0.0f ? saturate((0.42f - place.y) / 0.3f) : soaked.w;
+          const float lavaAge = 1.0f - lava;
+          const vec3 up = normalize(vec3(opaqueSurfaceMaterialInteraction.shadingNormal));
+          const float edgeNoise = 0.6f * ds1WetNoise(body / 0.045f) + 0.4f * ds1WetNoise(body / 0.012f);
+          const float coat = saturate((depth - 0.35f * edgeNoise - 0.12f * max(up.y, 0.0f) + 0.12f) / 0.3f);
+          const float wear = saturate((lava / cb.ds1Wet.lavaFade - 0.9f * ds1WetNoise(body / 0.09f)) / 0.1f);
+          const float lavaLayer = coat * wear;
+          const float heat = saturate(1.0f - lavaAge / (cb.ds1Wet.lavaMolten * (0.4f + 1.2f * depth)));
+          // Cracks between plates a few centimetres across and finer ones inside them, wide while hot, closing as it cools.
+          const float width = lerp(0.03f, 0.18f, heat);
+          const float crack = saturate(1.0f - ds1LavaCells(body / 0.045f) / width);
+          const float fineCrack = saturate(1.0f - ds1LavaCells(body / 0.016f + vec3(7.3f)) / (width * 0.6f));
+          const float ember = heat * (0.05f + 0.12f * depth);
+          const float molten = saturate(ember + heat * (0.9f * crack + 0.35f * fineCrack * heat) * (0.5f + 0.5f * depth));
+          // The crust itself: dark, a little lighter where it is still soft.
+          const vec3 crust = lerp(vec3(0.012f, 0.0105f, 0.009f), vec3(0.03f, 0.016f, 0.01f), heat);
+          opaqueSurfaceMaterialInteraction.albedo = lerp(vec3(opaqueSurfaceMaterialInteraction.albedo), crust, lavaLayer);
+          opaqueSurfaceMaterialInteraction.baseReflectivity = lerp(vec3(opaqueSurfaceMaterialInteraction.baseReflectivity), vec3(0.025f), lavaLayer);
+          roughness = lerp(roughness, lerp(0.92f, 0.5f, heat * crack), lavaLayer);
+          // Dull red at its coolest, through orange to yellow at its hottest.
+          const vec3 glowColour = lerp(lerp(vec3(1.0f, 0.05f, 0.004f), vec3(1.0f, 0.28f, 0.03f), saturate(molten * 2.0f)), vec3(1.0f, 0.65f, 0.18f), saturate(molten * 2.0f - 1.0f));
+          ds1EffectGlow += glowColour * pow(molten, 1.5f) * cb.ds1Wet.lavaGlow * lavaLayer;
+        }
+
+        if (cb.ds1Wet.runnerScale > 0.0f)
+        {
+          const vec3 shadingNormal = normalize(normal);
+          const vec3 alongSurface = vec3(0.0f, -1.0f, 0.0f) - shadingNormal * -shadingNormal.y;
+          const float steep = length(alongSurface);
+          vec2 slope;
+          float trail;
+          // On a level surface a track would only blink through: the beads below stay there.
+          const float drop = ds1WetRunners(place * vec3(2.0f, 2.4f, 1.2f), max(grid, mudLiquid * 0.6f), lerp(0.75f, 0.35f, porosity), cb.ds1Wet.runnerScale, dropMud, slope, trail) * saturate(steep / 0.15f);
+          trail *= saturate(steep / 0.15f);
+          if (trail > 0.0f)
+          {
+            // Water is a thin gloss; mud a dull smear.
+            roughness = lerp(roughness, lerp(0.12f, 0.6f, dropMud), trail);
+            opaqueSurfaceMaterialInteraction.albedo = lerp(vec3(opaqueSurfaceMaterialInteraction.albedo) * 0.75f, mudLinear, dropMud * 0.8f) * trail + vec3(opaqueSurfaceMaterialInteraction.albedo) * (1.0f - trail);
+            opaqueSurfaceMaterialInteraction.baseReflectivity = lerp(vec3(opaqueSurfaceMaterialInteraction.baseReflectivity), max(vec3(opaqueSurfaceMaterialInteraction.baseReflectivity), vec3(0.04f)), trail);
+          }
+          if (drop > 0.0f)
+          {
+            const vec3 down = alongSurface / max(steep, 1e-3f);
+            const vec3 sideways = cross(shadingNormal, down);
+            const vec3 tilted = normalize(normal + (sideways * slope.x + down * slope.y) * drop * lerp(0.9f, 0.4f, dropMud));
+            opaqueSurfaceMaterialInteraction.shadingNormal = getBentNormal(surfaceInteraction.geometryNormal, tilted, -minimalRayInteraction.viewDirection);
+            roughness = lerp(roughness, lerp(0.05f, 0.45f, dropMud), drop);
+            opaqueSurfaceMaterialInteraction.baseReflectivity = lerp(vec3(opaqueSurfaceMaterialInteraction.baseReflectivity), max(vec3(opaqueSurfaceMaterialInteraction.baseReflectivity), vec3(0.04f)), drop);
+            opaqueSurfaceMaterialInteraction.albedo = lerp(vec3(opaqueSurfaceMaterialInteraction.albedo), lerp(vec3(opaqueSurfaceMaterialInteraction.albedo) * 0.85f, mudLinear, dropMud), drop);
+          }
+        }
 
         if (cb.ds1Wet.dropletScale > 0.0f)
         {

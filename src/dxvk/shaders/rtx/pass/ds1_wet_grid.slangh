@@ -24,20 +24,27 @@
 // slices. Needs the bindless textures and samplers.
 #pragma once
 
-float ds1WetGridSlice(uint textureIndex, uint samplerIndex, float z, vec2 xy)
+vec4 ds1WetGridSlice(uint textureIndex, uint samplerIndex, float z, vec2 xy)
 {
   const vec2 cells = vec2(DS1_WET_CELLS_X, DS1_WET_CELLS_Y);
   const vec2 inside = clamp(xy, 0.5f / cells, 1.0f - 0.5f / cells);
   const float row = floor(z / DS1_WET_SLICES_PER_ROW);
   const vec2 slice = vec2(z - row * DS1_WET_SLICES_PER_ROW, row);
   const vec2 uv = (slice + inside) / float(DS1_WET_SLICES_PER_ROW);
-  return textures[textureIndex].SampleLevel(samplers[samplerIndex], uv, 0.0f).x;
+  return textures[textureIndex].SampleLevel(samplers[samplerIndex], uv, 0.0f);
 }
 
-float ds1WetGridRead(uint textureIndex, uint samplerIndex, vec3 place)
+// x: how wet, y: how much mud, z: how much lava, w: how deep in the lava that place was. Mud and lava run from 1 at the last
+// contact to 0.
+vec4 ds1WetGridReadAll(uint textureIndex, uint samplerIndex, vec3 place)
 {
   const float z = place.z * DS1_WET_CELLS_Z - 0.5f;
   const float z0 = clamp(floor(z), 0.0f, DS1_WET_CELLS_Z - 1.0f);
   const float z1 = min(z0 + 1.0f, DS1_WET_CELLS_Z - 1.0f);
   return lerp(ds1WetGridSlice(textureIndex, samplerIndex, z0, place.xy), ds1WetGridSlice(textureIndex, samplerIndex, z1, place.xy), saturate(z - z0));
+}
+
+float ds1WetGridRead(uint textureIndex, uint samplerIndex, vec3 place)
+{
+  return ds1WetGridReadAll(textureIndex, samplerIndex, place).x;
 }

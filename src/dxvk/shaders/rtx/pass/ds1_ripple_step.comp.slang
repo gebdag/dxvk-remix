@@ -151,7 +151,9 @@ void main(uint2 thread : SV_DispatchThreadID, uint2 groupThread : SV_GroupThread
 
   const float h = tile[centre.y][centre.x];
   const float hPrev = previousAt(windowCell);
-  float next = (h * (2.0f - cb.damping) - hPrev - cb.gravity * verticalDerivative) / (1.0f + cb.damping);
+  float next = cb.thickDamping > 0.0f
+    ? (h + (h - hPrev) * (1.0f - cb.thickDamping) / (1.0f + cb.thickDamping) - cb.gravity * verticalDerivative / (1.0f + cb.thickDamping)) * (1.0f - cb.thickSettle)
+    : (h * (2.0f - cb.damping) - hPrev - cb.gravity * verticalDerivative) / (1.0f + cb.damping);
 
   // Viscous damping, dv/dt = 2 nu Laplacian(v) on the velocity v = h - hPrev: strongest on the shortest waves.
   const float velocityLaplacian =
@@ -161,6 +163,8 @@ void main(uint2 thread : SV_DispatchThreadID, uint2 groupThread : SV_GroupThread
     (tile[centre.y - 1][centre.x] - previousAt(windowCell - int2(0, 1))) -
     4.0f * (h - hPrev);
   next += cb.viscosity * velocityLaplacian;
+  // Rounds what thick mud would otherwise keep as an edge, where a body held it at 0; broad shapes barely notice.
+  next += cb.smoothing * (tile[centre.y][centre.x + 1] + tile[centre.y][centre.x - 1] + tile[centre.y + 1][centre.x] + tile[centre.y - 1][centre.x] - 4.0f * h);
 
   next += cb.displacement * displaced(windowCell);
 

@@ -107,6 +107,8 @@ struct GpuParticleSystemDesc {
   uint8_t restrictVelocityZ : 1;
   // Fork (DS1): drips off the wet player: spawns only where the wet grid says so (rtx_dark_souls_ripples.h).
   uint8_t ds1Drip : 1;
+  // Fork (DS1): water bouncing off the player's body where falling water meets it (rtx_dark_souls_ripples.h).
+  uint8_t ds1Splash : 1;
 
 // Note: Spatial fields (collisionThickness, attractorRadius, gravityForce,
   // initialVelocityFromNormal, attractorForce, turbulenceForce, turbulenceFrequency)
@@ -167,6 +169,7 @@ struct RtxParticleSystemDesc : GpuParticleSystemDesc {
     restrictVelocityY = 0;
     restrictVelocityZ = 0;
     ds1Drip = 0;
+    ds1Splash = 0;
   }
 
   XXH64_hash_t calcHash() const {
@@ -249,5 +252,14 @@ struct ParticleSystemConstants {
   uint ds1WetSamplerIndex;
   // Drips come from grid values above this: the first part of its run from 1 to 0.
   float ds1DripThreshold;
-  uint pad1;
+  // Falling water bounces off the body within this of the contact, sideways, in metres.
+  float ds1SplashRadius;
+
+  // Where falling water meets the player; w above 0 while it does.
+  vec4 ds1FallContact;
+
+  // The topmost body surface there, as of the last frame (ds1_splash_top), around this x and z.
+  vec2 ds1BodyTopCentre;
+  uint ds1BodyTopIndex;
+  uint ds1Pad0;
 };

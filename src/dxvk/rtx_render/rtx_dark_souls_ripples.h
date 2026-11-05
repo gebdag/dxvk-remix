@@ -27,6 +27,27 @@ namespace dxvk {
     RTX_OPTION("rtx.ds1Wet", float, dryTime, 10.0f, "Seconds for a wet part of the body to dry completely.");
     RTX_OPTION("rtx.ds1Wet", float, contactMargin, 0.06f, "A vertex this many metres above the water touches it: the game's shallow water lies at or under the ground.");
     RTX_OPTION("rtx.ds1Wet", float, dropletScale, 1.0f, "Size of the beads of water on wet surfaces, 1 = about a centimetre across; 0: none.");
+    RTX_OPTION("rtx.ds1Wet", float, runnerScale, 1.0f, "Size of the drops that run down the body as it dries, leaving a trail, 1 = about a centimetre across; 0: none.");
+    RTX_OPTION("rtx.ds1Wet", float, mudDryTime, 120.0f, "Seconds for mud on the body to go; water takes it off at once.");
+    RTX_OPTION("rtx.ds1Wet", float, mudHardenTime, 25.0f, "Seconds for mud on the body to harden into a dry crust.");
+    RTX_OPTION("rtx.ds1Wet", float, mudFadeTime, 30.0f, "The last seconds of the mud on the body, over which the crust fades away in patches.");
+    RTX_OPTION("rtx.ds1Wet", float, lavaTime, 90.0f, "Seconds for the marks of lava on the body to go; water takes them off at once.");
+    RTX_OPTION("rtx.ds1Wet", float, lavaMoltenTime, 12.0f, "Seconds a part of the body that was in lava stays molten before it has cooled to char.");
+    RTX_OPTION("rtx.ds1Wet", float, lavaFadeTime, 30.0f, "The last seconds of the char on the body, over which it fades away in patches.");
+    RTX_OPTION("rtx.ds1Wet", float, lavaContact, 0.3f, "A vertex this many metres above lava burns: the game's lava is a floor the body stands on, so only the soles would touch it.");
+    RTX_OPTION("rtx.ds1Wet", float, lavaGlow, 4.0f, "Molten parts of the body at their hottest, radiance.");
+    RTX_OPTION_FLAG("rtx.ds1Wet", float, forceLava, -1.0f, RtxOptionFlags::NoSave, "Test: 0 or above, this much lava on the whole body.");
+    RTX_OPTION_FLAG("rtx.ds1Wet", bool, testLava, false, RtxOptionFlags::NoSave, "Test: rtx.ds1Wet.testWaterHeight is lava.");
+    RTX_OPTION("rtx.ds1Wet", Vector3, mudColour, Vector3(0.16f, 0.13f, 0.065f),
+               "The mud's colour, as a texture would store it: Blighttown's deep swamp colour, c170 (0.094, 0.078, 0.039), over its map's c100 of 0.6.");
+    RTX_OPTION("rtx.ds1Wet", bool, splashes, true, "Falling water bounces off the player's body as droplets.");
+    RTX_OPTION("rtx.ds1Wet", float, splashRate, 3000.0f, "Droplet candidates per second per body draw; only the top of the body near the contact takes them.");
+    RTX_OPTION("rtx.ds1Wet", float, splashSize, 0.8f, "Size of a droplet in centimetres.");
+    RTX_OPTION("rtx.ds1Wet", float, splashRadius, 0.6f, "Droplets come off the body within this of where the water meets it, sideways, in metres.");
+    RTX_OPTION_FLAG("rtx.ds1Wet", Vector3, fallContact, Vector3(0.0f), RtxOptionFlags::NoSave, "Set by the DS1 proxy: where falling water meets the player.");
+    RTX_OPTION_FLAG("rtx.ds1Wet", float, fallStrength, 0.0f, RtxOptionFlags::NoSave, "Set by the DS1 proxy: above 0 while the player stands in falling water.");
+    RTX_OPTION_FLAG("rtx.ds1Wet", bool, testMud, false, RtxOptionFlags::NoSave, "Test: rtx.ds1Wet.testWaterHeight is mud.");
+    RTX_OPTION_FLAG("rtx.ds1Wet", float, forceMud, -1.0f, RtxOptionFlags::NoSave, "Test: 0 or above, this much mud on the whole body.");
     RTX_OPTION("rtx.ds1Wet", bool, drips, true, "Water drips off the downward facing parts of the wet body.");
     RTX_OPTION("rtx.ds1Wet", float, dripTime, 6.0f, "Seconds drips go on after the player leaves the water.");
     RTX_OPTION("rtx.ds1Wet", float, dripRate, 120.0f, "Drip candidates per second per body draw; most are refused by the grid and the surface's direction.");
@@ -81,12 +102,18 @@ namespace dxvk {
                "Viscous damping 2 nu k^2 in m^2/s: short ripples die fast, long ones travel. Clean water is 1e-6; "
                "this stands in for the surface film and the spreading the grid cannot resolve. The step holds it at "
                "its stability limit, 0.1 cellSize^2 * stepRate (0.00135 at 1.5 cm and 60 steps).");
+    RTX_OPTION("rtx.ds1Ripple", float, thickDamping, 0.0f,
+               "Above 0, a thick liquid such as mud: damping per second on the surface's velocity alone, so what a body pushes up stays up. 0: water, rtx.ds1Ripple.damping.");
+    RTX_OPTION("rtx.ds1Ripple", float, thickSettle, 0.4f, "How fast a thick liquid goes flat again, per second.");
+    RTX_OPTION("rtx.ds1Ripple", float, smoothing, 0.0f, "Share of the height difference to the neighbours evened out each step, at most 0.2: rounds the edge a body leaves in a thick liquid.");
     RTX_OPTION("rtx.ds1Ripple", float, displacement, 0.01f,
                "Height of the water a body pushes aside per cell it moves into, in metres (spread over the cells around it).");
     RTX_OPTION("rtx.ds1Ripple", float, collisionSize, 3.0f,
                "Side of the square around the player in which characters' bodies push the water, in metres.");
     RTX_OPTION("rtx.ds1Ripple", float, normalScale, 0.5f, "Scale on the ripple slope added to the water normal (1 = the real slope).");
     RTX_OPTION("rtx.ds1Ripple", float, borderFade, 0.75f, "Metres over which ripples fade towards the window's border.");
+    RTX_OPTION_FLAG("rtx.ds1Ripple", Vector3, testBody, Vector3(0.0f), RtxOptionFlags::NoSave,
+                    "Test on a replay, where nothing moves: x > 0 is a body of that radius, walking a circle of radius y around the player at z m/s.");
   };
 
 } // namespace dxvk

@@ -40,6 +40,10 @@ void main(uint2 texel : SV_DispatchThreadID)
   {
     return;
   }
-  const float wet = cb.reset != 0 ? 0.0f : cb.soak != 0 ? 1.0f : max(grid[texel].x - cb.decay, 0.0f);
-  grid[texel] = float4(wet, 0.0f, 0.0f, 0.0f);
+  const vec4 value = grid[texel];
+  const float wet = cb.reset != 0 ? 0.0f : cb.soak != 0 ? 1.0f : max(value.x - cb.decay, 0.0f);
+  // Falling water takes the mud with it.
+  const float mud = cb.reset != 0 || cb.soak != 0 ? 0.0f : max(value.y - cb.mudDecay, 0.0f);
+  const float lava = cb.reset != 0 || cb.soak != 0 ? 0.0f : max(value.z - cb.lavaDecay, 0.0f);
+  grid[texel] = float4(wet, mud, lava, lava > 0.0f ? value.w : 0.0f);
 }

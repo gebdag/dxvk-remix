@@ -60,6 +60,9 @@
 #define DS1_WET_BINDING_LEVEL            29
 #define DS1_WET_BINDING_POSITIONS        30
 #define DS1_WET_BINDING_COLOURS          31
+#define DS1_WET_BINDING_BODY_TOP         32
+// Cells of the topmost body surface a side, over twice the splash radius (ds1_splash_top).
+#define DS1_SPLASH_TOP_SIZE              40
 
 // The grid is in the body's own space, so what got wet stays wet whatever the pose does. The proxy puts a vertex's
 // bind position in its colour: r = (x + 1) / 2, g = (y + 0.2) / 2.4, b = (z + 0.6) / 1.2 (metres, feet at y = 0),
@@ -77,6 +80,10 @@
 #define DS1_RIPPLE_SURFACE_UVEC4S        16
 #define DS1_RIPPLE_WATER_FLAG            (1u << 26)
 #define DS1_RIPPLE_SKINNED_FLAG          (1u << 29)
+// Surface::isDs1Swamp: a liquid too where rtx.ds1Swamp.wade says so.
+#define DS1_RIPPLE_SWAMP_FLAG            (1u << 19)
+// Surface::hasDs1SelfLit: on an opaque surface that is not a character, the game's lava.
+#define DS1_RIPPLE_SELF_LIT_FLAG         (1u << 30)
 
 // Water height of a cell without water.
 #define DS1_RIPPLE_NO_WATER              (-1.0e9f)
@@ -120,10 +127,15 @@ struct Ds1RippleMapArgs {
   float bodyReach;
   // The bodies are looked for in the window cells collisionMin .. collisionMin + collisionSize - 1.
   uint collisionSize;
-  uint pad0;
+  // 1: a swamp surface counts as water (rtx.ds1Swamp.wade).
+  uint swampIsLiquid;
   ivec2 collisionMin;
+  // Test: a body of this radius at this world x, z, 0 for none.
+  vec2 testBody;
+  float testBodyRadius;
   uint pad1;
   uint pad2;
+  uint pad3;
 };
 
 struct Ds1RippleStepArgs {
@@ -146,6 +158,14 @@ struct Ds1RippleStepArgs {
   uint collisionSize;
   // Height of the water a body pushes aside per cell it fills, over the frame's steps (metres).
   float displacement;
+
+  // Above 0, a thick liquid such as mud: this damping per step falls on the surface's velocity alone, so what a body pushed up stays
+  // up, and heights go only by thickSettle, a share per step. The water's damping above also takes the height itself.
+  float thickDamping;
+  float thickSettle;
+  // Share of the height difference to the neighbours evened out each step.
+  float smoothing;
+  uint pad0;
 };
 
 struct Ds1RippleSlopeArgs {
@@ -173,7 +193,20 @@ struct Ds1WetLevelArgs {
   // Water deeper than this over the feet is another body of water, up above.
   float maxDepth;
   float cellSize;
-  uint pad0;
+  // 1: a swamp surface counts as water, and what the player stands in is told apart (rtx.ds1Swamp.wade).
+  uint swampIsLiquid;
+};
+
+// What falling water meets first (ds1_splash_top).
+struct Ds1SplashTopArgs {
+  vec2 centre;          // x and z
+  float radius;
+  float top;            // the rays start here, above the head
+
+  float bottom;
+  float pad0;
+  float pad1;
+  float pad2;
 };
 
 // The whole body dries a little each frame (ds1_wet_decay).
@@ -183,7 +216,14 @@ struct Ds1WetDecayArgs {
   uint reset;
   // 1: wet all over (under a waterfall).
   uint soak;
-  uint pad0;
+  // The mud in the grid's second channel goes at its own rate.
+  float mudDecay;
+
+  // And the lava in its third.
+  float lavaDecay;
+  float pad0;
+  float pad1;
+  float pad2;
 };
 
 // One body draw's vertices under the water wet their place in the grid (ds1_wet_splat).
@@ -210,7 +250,14 @@ struct Ds1WetSplatArgs {
   vec2 playerXZ;
   // 1: testLevel is the water everywhere, for tests.
   uint useTestLevel;
-  uint pad0;
+  // 1: that test water is mud. 2: it is lava.
+  uint testMud;
+
+  // A vertex this far above lava burns: the game's lava is a floor, the body stands on it.
+  float lavaContact;
+  float pad0;
+  float pad1;
+  float pad2;
 };
 
 // The material's view of it.
@@ -232,7 +279,27 @@ struct Ds1WetArgs {
   float forceWetness;
   // Size of the beads of water on wet surfaces, 1 = about a centimetre across; 0: none.
   float dropletScale;
-  uint pad0;
+  // Size of the drops that run down, 1 = about a centimetre across; 0: none.
+  float runnerScale;
+
+  // Soaked in mud: its colour, stored (gamma) value.
+  vec3 mudColour;
+  // 0 or above: this much mud on the whole body, for tests.
+  float forceMud;
+
+  // The share of mud's run that it takes to harden, and the last share, over which it fades away.
+  float mudHarden;
+  float mudFade;
+  // 0 or above: this much lava on the whole body, for tests.
+  float forceLava;
+  // The share of lava's run that it stays molten, and the last share, over which the char fades away.
+  float lavaMolten;
+
+  float lavaFade;
+  // Molten at its hottest, radiance.
+  float lavaGlow;
+  float pad0;
+  float pad1;
 };
 
 struct Ds1RippleArgs {

@@ -89,6 +89,11 @@ struct Ds1SwampArgs {
   float pad3;
   vec3 layerOffsetV;
   float pad4;
+  // 1: a liquid that lies still until a body moves it (the ripple field's slope and height).
+  uint wade;
+  uint pad5;
+  uint pad6;
+  uint pad7;
 
   // Each ring's texture coordinates from world x, z: u = dot(rings[2i].xyz, (x, z, 1)), v = dot(rings[2i + 1].xyz, (x, z, 1));
   // rings[2i].w = its strength.

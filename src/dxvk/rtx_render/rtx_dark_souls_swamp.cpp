@@ -76,6 +76,7 @@ namespace dxvk {
     args.layerOffsetU = vec3 { offsetU.x, offsetU.y, offsetU.z };
     args.layerOffsetV = vec3 { offsetV.x, offsetV.y, offsetV.z };
     args.heightScale = heightScale();
+    args.wade = wade() ? 1u : 0u;
     args.heightInAlpha = heightInAlpha() ? 1u : 0u;
     if (roughness() >= 0.0f) {
       args.roughness = std::min(roughness(), 1.0f);

@@ -2144,10 +2144,14 @@ struct LegacyMaterialData {
   bool isDs1SkirtDecal = false;
   // Fork: drawn with the DS1 proxy's player body marker. Per draw, not part of the identity.
   bool isDs1WetBody = false;
+  // Fork: a body draw that armour covers: no drops come off it. Per draw, not part of the identity.
+  bool isDs1WetCovered = false;
   // Fork: drawn with the DS1 proxy's lamp marker (Surface::isDs1NoShadow). Per draw, not part of the identity.
   bool isDs1NoShadow = false;
   // Fork: drawn with the DS1 proxy's thin wall marker (Surface::isDs1ThinWall). Per draw, not part of the identity.
   bool isDs1ThinWall = false;
+  // Fork: drawn with the DS1 proxy's fog gate marker (Surface::isDs1CameraPasses). Per draw, not part of the identity.
+  bool isDs1CameraPasses = false;
   // Fork: DS1 haze set slot from the haze marker (not part of the material's identity: the same
   // material is drawn in several regions).
   uint8_t ds1HazeSet = 0;

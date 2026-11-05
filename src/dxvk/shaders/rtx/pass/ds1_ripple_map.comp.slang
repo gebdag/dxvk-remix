@@ -105,6 +105,27 @@ float traceWater(vec3 origin, float length)
   return -1.0f;
 }
 
+// The distance down to the first swamp surface, or -1. It is opaque, and walkways over it do not hide it.
+float traceSwamp(vec3 origin, float length)
+{
+  RayDesc ray;
+  ray.Origin = origin;
+  ray.Direction = vec3(0.0f, -1.0f, 0.0f);
+  ray.TMin = 0.0f;
+  ray.TMax = length;
+
+  RayQuery<0> rayQuery = RayQuery<0>();
+  rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES, OBJECT_MASK_OPAQUE, ray);
+  while (rayQuery.Proceed())
+  {
+    if ((surfaceFlags(rayQuery.CandidateInstanceID(), rayQuery.CandidateGeometryIndex()) & DS1_RIPPLE_SWAMP_FLAG) != 0)
+    {
+      rayQuery.CommitNonOpaqueTriangleHit();
+    }
+  }
+  return rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? rayQuery.CommittedRayT() : -1.0f;
+}
+
 // The ground, as a height above the water, may be up to this far above the water for a body there to push it.
 static const float kMaxGroundAboveWater = 0.15f;
 
@@ -191,7 +212,11 @@ void main(uint2 thread : SV_DispatchThreadID)
   }
 
   const vec3 top = vec3((float(cell.x) + 0.5f) * cb.cellSize, cb.rayTop, (float(cell.y) + 0.5f) * cb.cellSize);
-  const float waterT = traceWater(top, cb.rayLength);
+  float waterT = traceWater(top, cb.rayLength);
+  if (waterT < 0.0f && cb.swampIsLiquid != 0)
+  {
+    waterT = traceSwamp(top, cb.rayLength);
+  }
   const float waterHeight = waterT >= 0.0f ? cb.rayTop - waterT : DS1_RIPPLE_NO_WATER;
   water[texel] = waterHeight;
 
@@ -207,6 +232,10 @@ void main(uint2 thread : SV_DispatchThreadID)
     {
       body = 1.0f;
     }
+  }
+  if (inCollision && waterT >= 0.0f && cb.testBodyRadius > 0.0f && length(top.xz - cb.testBody) < cb.testBodyRadius)
+  {
+    body = 1.0f;
   }
   occupancy[texel] = body;
   // A body already standing in a cell that just entered the window has pushed no water yet.
