@@ -98,6 +98,8 @@ namespace dxvk {
     RTX_OPTION("rtx.ds1Look", float, eyeKnee, 1.25f, "How far below the meter's floor a view may lie with no lift at all: places the game keeps dim stay as they are (measured: views up to about this already match the game).");
     RTX_OPTION("rtx.ds1Look", float, eyeStrength, 0.85f, "How fully the view's lift follows what it is short of past the knee: 1 all the way, less stays darker, as dark rooms look to an eye.");
     RTX_OPTION("rtx.ds1Look", float, eyeLocal, 0.5f, "How much more the view's dark parts come up than its bright ones.");
+    RTX_OPTION("rtx.ds1Look", float, gradeOffsetLimit, 0.08f, "While the eye lifts the view, the game's grade takes off no more than this for black, gamma, on its largest channel; the others keep their proportion. Lost Izalith's takes 0.21. 1 keeps the game's in full.");
+    RTX_OPTION("rtx.ds1Look", float, gradeOffsetLiftFull, 2.0f, "The eye's lift at which that limit holds in full, from none at no lift.");
     RTX_OPTION("rtx.ds1Look", float, eyeBrightenSeconds, 0.3f, "How fast the eye adapts to a part of the view getting brighter.");
     RTX_OPTION("rtx.ds1Look", float, eyeDarkenSeconds, 2.0f, "How slowly the eye adapts to a part of the view getting darker.");
     RTX_OPTION("rtx.ds1Look", bool, dofFullRes, false,

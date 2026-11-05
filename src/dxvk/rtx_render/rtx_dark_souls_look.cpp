@@ -955,6 +955,21 @@ namespace dxvk {
       args.gradeRowR = toVec4(gradeRowR());
       args.gradeRowG = toVec4(gradeRowG());
       args.gradeRowB = toVec4(gradeRowB());
+      // The grade's black offset takes away the floor the game's ambient gives its image. A view the eye has to lift has
+      // no such floor (the path tracer's light does not reach there), and a large offset eats what it has: Lost Izalith
+      // lost its walls to -0.21. So past the limit the offset eases with the lift, all channels by the same factor so the
+      // grade keeps its hue. A view with no lift, or a grade within the limit (the Depths' -0.075), is left as the game's.
+      const float limit = std::max(gradeOffsetLimit(), 0.0f);
+      const float largest = std::max({ -args.gradeRowR.w, -args.gradeRowG.w, -args.gradeRowB.w });
+      if (eyeEnable() && largest > limit) {
+        const float eased = std::clamp((m_eyeViewGain - 1.0f) / std::max(gradeOffsetLiftFull() - 1.0f, 0.01f), 0.0f, 1.0f);
+        const float scale = 1.0f + (limit / largest - 1.0f) * eased;
+        for (vec4* row : { &args.gradeRowR, &args.gradeRowG, &args.gradeRowB }) {
+          if (row->w < 0.0f) {
+            row->w *= scale;
+          }
+        }
+      }
     } else {
       // No ColAdj seen yet: the scene's 1.3 headroom undone, no grade.
       args.sceneScale = 1.3f;
