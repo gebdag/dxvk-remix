@@ -661,6 +661,22 @@ struct Surface
     get { return asfloat(data15.xyz); }
   }
 
+  // The same at a pixel facing this way. Lava carries both ends of the game's hemisphere (each byte * 16 / 255, gamma),
+  // negative as -(1 + 256 * below + above), and takes the value between them as the game does, in gamma.
+  vec3 ds1SelfLitAt(float normalY)
+  {
+    const vec3 raw = asfloat(data15.xyz);
+    if (raw.x >= 0.0f)
+    {
+      return raw;
+    }
+    const vec3 packed = -raw - vec3(1.0f);
+    const vec3 below = floor(packed / 256.0f);
+    const vec3 above = packed - below * 256.0f;
+    const vec3 value = lerp(below, above, saturate(normalY * 0.5f + 0.5f)) * (16.0f / 255.0f);
+    return pow(value, vec3(2.2f));
+  }
+
   // data15.xyz (data15.w is the surface material index): x = half scale | unorm16 offset u << 16,
   // y = unorm16 offset v | half refraction smear << 16, both offsets wrapped to [0, 1); z = the two strength
   // halves (RtSurface::writeGPUData).

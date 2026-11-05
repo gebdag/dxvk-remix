@@ -1316,7 +1316,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   // colour as its own light (Surface::ds1SelfLit).
   if (surface.hasDs1SelfLit)
   {
-    const vec3 selfLit = ds1SelfLitAlbedo * surface.ds1SelfLit;
+    const vec3 selfLit = ds1SelfLitAlbedo * surface.ds1SelfLitAt(opaqueSurfaceMaterialInteraction.shadingNormal.y);
     if (surface.isUnlit && !surface.isEmissiveBlend)
     {
       // An unlit alpha-blended glow layer (the proxy's unlit marker on a PS_UNLIT mesh: Bed of Chaos's glyph
