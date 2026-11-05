@@ -757,7 +757,8 @@ struct Surface
     }
   }
 
-  // Fork: a DS1 soft sprite's feather in metres, or 0 when it has none. The game fades the sprite's alpha
+  // Fork: a DS1 soft sprite's feather in metres, 0 when it has none (Remix's own fade), or -1 for a sprite whose
+  // game shader never reads depth, which is not faded at all (a message's runes on the floor). The game fades the sprite's alpha
   // by saturate(0.5 + (scene depth - sprite depth) / feather) (FRPG_Sfx_SimpleSprite_Base.fxh ZFeather; see
   // ds1ParticleSoftBlend), the feather a per-vertex distance of which the proxy sends the draw's mean.
   // data15.y on the same surfaces as ds1EnvReflection (written only for particles).

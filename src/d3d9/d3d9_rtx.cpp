@@ -1343,9 +1343,11 @@ namespace dxvk {
           }
         }
         // Fork: a DS1 soft sprite's feather in the same stage (0xD8000000 | millimetres, the draw's mean):
-        // its alpha fades by the scene depth over that distance (Surface::ds1ParticleFeather).
+        // its alpha fades by the scene depth over that distance (Surface::ds1ParticleFeather). 0 millimetres:
+        // a sprite whose game shader never reads depth, which gets no fade at all (-1).
         m_activeDrawCallState.materialData.ds1ParticleFeather =
-          (viewFadeTag >> 24) == 0xD8u ? static_cast<float>(viewFadeTag & 0xFFFFFFu) * 0.001f : 0.0f;
+          (viewFadeTag >> 24) != 0xD8u ? 0.0f
+          : (viewFadeTag & 0xFFFFFFu) == 0 ? -1.0f : static_cast<float>(viewFadeTag & 0xFFFFFFu) * 0.001f;
         m_activeDrawCallState.materialData.ds1ViewFade = 0;
         if ((viewFadeTag >> 24) == 0xD6u) {
           const uint32_t offset = (((viewFadeTag >> 8) & 0xFFu) * 63u + 127u) / 255u;

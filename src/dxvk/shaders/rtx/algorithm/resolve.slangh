@@ -1339,7 +1339,8 @@ float resolveVertexUnorderedParticles<
 
     // Fork (DS1): only sprites fade out softly near geometry. An unlit glow mesh carrying the self-lit tag
     // (Bed of Chaos's glyph shells, wrapped tight around the boss's core) has no such fade in the game.
-    const bool softParticle = surface.isParticle && !surface.hasDs1SelfLit;
+    // A sprite whose game shader never reads depth (ds1ParticleFeather -1: a message's runes, lying on the floor) has none either.
+    const bool softParticle = surface.isParticle && !surface.hasDs1SelfLit && surface.ds1ParticleFeather >= 0.0f;
     // Past a blended hit its sprites fade through (the ray is a little longer than the hit): the next segment's.
     if (softParticle && softSurfaceDistance > ray.tMax && rayHitInfo.hitDistance > ray.tMax / kUnorderedResolveRayLengthening)
     {
@@ -1915,8 +1916,9 @@ void resolveVertexUnordered<
 
       // Fork (DS1): only sprites fade out softly near geometry. An unlit glow mesh carrying the self-lit tag
       // (Bed of Chaos's glyph shells, wrapped tight around the boss's core) has no such fade in the game.
+      // A sprite whose game shader never reads depth (ds1ParticleFeather -1) has none either, in reflections too.
       float blendFactor = 1.0f;
-      if (surface.isParticle && !surface.hasDs1SelfLit)
+      if (surface.isParticle && !surface.hasDs1SelfLit && surface.ds1ParticleFeather >= 0.0f)
       {
         blendFactor = ds1ParticleSoftBlend(surface, ray.tMax - rayHitInfo.hitDistance, ray.tMax);
         // A farther surface cannot fade it more, so a full blend needs no look-ahead.

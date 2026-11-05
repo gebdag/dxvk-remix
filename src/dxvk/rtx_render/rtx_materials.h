@@ -505,7 +505,7 @@ struct RtSurface {
   float ds1Effect[8] = {};
   // Fork: DS1 environment reflection weight (data15.z), see Surface::ds1EnvReflection; 0 = none.
   uint32_t ds1SpecularTag = 0;
-  // Fork: DS1 soft sprite feather in metres (data15.y), see Surface::ds1ParticleFeather; 0 = none.
+  // Fork: DS1 soft sprite feather in metres (data15.y), see Surface::ds1ParticleFeather; 0 = none, -1 = no fade.
   float ds1ParticleFeather = 0.0f;
   // Fork: DS1 albedo offset (data15.xyz, flag bit 27), see Surface::ds1AlbedoOffset.
   bool hasDs1AlbedoOffset = false;
