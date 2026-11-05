@@ -64,6 +64,9 @@ namespace dxvk {
     static void dispatch(RtxContext* ctx);
 
     RTX_OPTION("rtx.ds1Ripple", bool, enable, true, "Ripples on DS1 water around the wading player.");
+    RTX_OPTION("rtx.ds1Water", float, refractionFlatDepth, 0.3f, "DS1 water no deeper than this, in metres, does not bend the view: legs in shallow water look straight. Works where the wave smear does: not with PSR prepare (no NRC, SHARC or sparse rendering).");
+    RTX_OPTION("rtx.ds1Water", float, smearFullDepth, 0.3f, "The game's refraction smear on DS1 water shifts the view in full from this depth in metres, less in shallower water, none at the shore.");
+    RTX_OPTION("rtx.ds1Water", float, refractionFullDepth, 2.5f, "DS1 water this deep, in metres, bends the view fully (IOR 1.33). 0 bends it fully at every depth.");
     RTX_OPTION_FLAG("rtx.ds1Ripple", Vector3, playerPosition, Vector3(0.0f), RtxOptionFlags::NoSave,
                     "Set by the DS1 proxy every frame the player moves: their position (feet), where the ripple window is centred.");
     RTX_OPTION("rtx.ds1Ripple", int, gridSize, 512, "Cells along each side of the ripple window (a multiple of 16).");

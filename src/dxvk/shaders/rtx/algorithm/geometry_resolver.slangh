@@ -87,6 +87,51 @@ vec3 geometryResolverDs1RefractionShift(SurfaceMaterialInteractionPSRSample samp
   return guardRay.direction * max(rayQuery.CommittedRayT() - kMargin, 0.0f);
 }
 
+// Fork (DS1): how far a view entering DS1 water bends, by the water's depth there. IOR 1.33 is right for a pool
+// seen from far away, but a player wading in water to the knee looks cut off at the shin, more so at oblique angles
+// (the legs fold towards the viewer). So the depth is measured straight down from each water pixel, and the view
+// goes between straight on (flat depth) and fully refracted (full depth). The wave smear is separate and stays.
+void geometryResolverDs1WaterRefraction(inout SurfaceMaterialInteractionPSRSample sample, vec3 incidentDirection,
+                                        vec3 geometryNormal, vec3 position)
+{
+  const float fullDepth = cb.ds1Ripple.refractionFullDepth;
+  if (!(fullDepth > 0.0f) || all(sample.ds1SmearedNormal == vec3(0.0f)))
+  {
+    return;
+  }
+
+  Ray depthRay = (Ray) 0;
+  depthRay.origin = position;
+  depthRay.direction = -geometryNormal;
+  depthRay.tMax = fullDepth;
+  RayQuery<0> rayQuery = RayQuery<0>();
+  rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES,
+                          OBJECT_MASK_OPAQUE, rayToRayDesc(depthRay));
+  while (rayQuery.Proceed())
+  {
+    // The water's depth is down to the ground: a wading leg or an enemy's foot under this pixel is not its bed,
+    // and would tear the view around them.
+    const uint depthSurface = (rayQuery.CandidateInstanceID() & CUSTOM_INDEX_SURFACE_MASK) + rayQuery.CandidateGeometryIndex();
+    if (!surfaces[depthSurface].isDs1Skinned)
+    {
+      rayQuery.CommitNonOpaqueTriangleHit();
+    }
+  }
+  const float depth = rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? rayQuery.CommittedRayT() : fullDepth;
+  // The smear needs depth to work in too. It moves the view by metres at a distance whatever the depth, and over a
+  // shallow floor that left black patches where a wave's tilt was large (Sanctuary Guardian's arena). Why they are black
+  // was not found: not the guard ray (forcing it to stop at every surface changed nothing), and the albedo there is
+  // only half the surroundings', so it is mostly lighting.
+  sample.ds1SmearedNormal *= saturate(depth / cb.ds1Ripple.smearFullDepth);
+  const float flatDepth = cb.ds1Ripple.refractionFlatDepth;
+  const float bend = saturate((depth - flatDepth) / max(fullDepth - flatDepth, 0.001f));
+  if (bend >= 1.0f)
+  {
+    return;
+  }
+  sample.inputDirection = normalize(lerp(incidentDirection, vec3(sample.inputDirection), bend));
+}
+
 #ifndef GBUFFER_FEATURE_DLSSRR
 #define GBUFFER_FEATURE_DLSSRR 1
 #endif
@@ -2682,6 +2727,8 @@ void geometryResolverVertex(
     {
       // Create a ray from the Transmission PSR material sample
 
+      geometryResolverDs1WaterRefraction(surfaceMaterialInteractionTransmissionPSRSample, vec3(ray.direction),
+        vec3(surfaceInteraction.geometryNormal), surfaceInteraction.position);
       Ray sampledRay = rayCreateDirection(
         rayInteraction, surfaceInteraction, ray, surfaceMaterialInteractionTransmissionPSRSample.inputDirection, pstrPenetrateSurface);
       sampledRay.origin += geometryResolverDs1RefractionShift(
@@ -3253,6 +3300,8 @@ void geometryPSRResolverVertex(
   {
     // Set PSR resolver state information from the transmission sample for the next iteration
 
+    geometryResolverDs1WaterRefraction(surfaceMaterialInteractionTransmissionPSRSample, vec3(ray.direction),
+      vec3(surfaceInteraction.geometryNormal), surfaceInteraction.position);
     const Ray sampledRay = rayCreateDirection(
       rayInteraction, surfaceInteraction, ray, surfaceMaterialInteractionTransmissionPSRSample.inputDirection, penetrateSurface);
 

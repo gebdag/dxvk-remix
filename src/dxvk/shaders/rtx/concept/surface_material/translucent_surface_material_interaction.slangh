@@ -229,15 +229,16 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
   translucentSurfaceMaterialInteraction.ds1RefractionSmear = 0.0f;
   if (cb.translucentMaterialArgs.animatedWaterEnable && surface.isAnimatedWater && surface.isDs1Water)
   {
-    // Fork (DS1): the game reflects each water body by its own weight, c130 * c131 seen face-on, tinted
-    // by c132; the proxy passes them per draw as D3DRS_TEXTUREFACTOR (alpha = weight, rgb = tint).
+    // Fork (DS1): the game reflects each water body by its own weight, c130 * c131 seen face-on, and level,
+    // c132's strength; the proxy passes them per draw as D3DRS_TEXTUREFACTOR (alpha = weight, rgb = level).
     const uint reflection = surface.tFactor;
     translucentSurfaceMaterialInteraction.baseReflectivity = float(reflection >> 24) / 255.0f;
     translucentSurfaceMaterialInteraction.ds1ReflectionTint = gammaToLinear(
       vec3(float((reflection >> 16) & 0xFFu), float((reflection >> 8) & 0xFFu), float(reflection & 0xFFu)) / 255.0f);
     // The game's refraction smear fades with the vertex alpha, 0 along the water's border.
+    // Never quite 0: the resolver tells a water body by it (geometryResolverDs1WaterRefraction).
     translucentSurfaceMaterialInteraction.ds1RefractionSmear =
-      surface.ds1WaterSmear * saturate(float(surfaceInteraction.vertexColor.a));
+      max(surface.ds1WaterSmear * saturate(float(surfaceInteraction.vertexColor.a)), 1e-4f);
   }
   translucentSurfaceMaterialInteraction.refractiveIndex = translucentSurfaceMaterial.refractiveIndex;
 

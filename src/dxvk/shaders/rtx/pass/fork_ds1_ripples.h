@@ -255,5 +255,13 @@ struct Ds1RippleArgs {
   uint textureIndex;
   uint samplerIndex;
   uint enable;
-  uint pad0;
+  // Water refraction by depth, always valid: straight through down to refractionFlatDepth metres, full by
+  // refractionFullDepth (0: full everywhere). See geometryResolverDs1WaterRefraction.
+  float refractionFlatDepth;
+
+  float refractionFullDepth;
+  // The game's refraction smear shifts the view in full from this depth in metres, less in shallower water.
+  float smearFullDepth;
+  float pad1;
+  float pad2;
 };

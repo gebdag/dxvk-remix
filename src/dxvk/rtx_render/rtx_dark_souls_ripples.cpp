@@ -285,6 +285,9 @@ namespace dxvk {
 
   void DxvkDarkSoulsRipples::fillShaderArgs(Ds1RippleArgs& args) {
     args = {};
+    args.refractionFlatDepth = std::max(refractionFlatDepth(), 0.0f);
+    args.refractionFullDepth = refractionFullDepth();
+    args.smearFullDepth = std::max(smearFullDepth(), 0.001f);
     if (!s_frame.active) {
       return;
     }
