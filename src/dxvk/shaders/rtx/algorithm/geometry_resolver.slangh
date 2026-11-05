@@ -3807,10 +3807,9 @@ void geometryResolverOutputDecalDebugViewAndPicking(
 // Raytraced render target receivers use their separate PSR payload path.
 bool geometryResolverResolvesDecalBeforePSR(bool isRaytracedRenderTarget)
 {
-  return !push.usePSRPrepare &&
-         !isRaytracedRenderTarget &&
-         cb.enableSeparateUnorderedApproximations &&
-         cb.enableDecalMaterialBlending;
+  // Fork (DS1): not here. This path blends the decal into the material and leaves the first hit where it is, so a blend skirt would be lit on the
+  // surface under it (geometryResolverDs1LiftToSkirt runs in the decal pass).
+  return false;
 }
 
 // Blends the decal covering a first hit into its material, the way the decal pass blends it into the GBuffer.
