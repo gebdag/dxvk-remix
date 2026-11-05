@@ -183,7 +183,7 @@ namespace dxvk {
     void dispatchDofGaussian(Rc<DxvkContext>& ctx, int constantsIndex, const Resources::Resource& input,
                              const Resources::Resource& output, float sigmaX, float sigmaY);
     void dispatchFilter(Rc<DxvkContext>& ctx, const Rc<DxvkBuffer>& constants, const Resources::Resource& input,
-                        const Resources::Resource& output, const vec4* taps, uint32_t tapCount, bool gated = false);
+                        const Resources::Resource& output, const vec4* taps, uint32_t tapCount, uint32_t gated = false);
     // BrightPassFilter: the scene into m_base[0], thresholded by lerp(near, far, depth rate).
     void dispatchBright(Rc<DxvkContext>& ctx, const Rc<DxvkBuffer>& constants, const Resources::Resource& scene,
                         const Resources::Resource& linearViewZ, const float jitterOffset[2], float missLinearViewZ,

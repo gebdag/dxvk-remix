@@ -26,7 +26,16 @@ void main(uint2 texel : SV_DispatchThreadID)
 
   const vec2 uv = (vec2(texel) + 0.5f) * cb.invOutputSize;
   vec4 sum = vec4(0.0f);
-  if (cb.gated != 0)
+  if (cb.gated == 2)
+  {
+    for (uint i = 0; i < cb.tapCount; ++i)
+    {
+      const vec4 tap = Input.SampleLevel(uv + cb.taps[i].xy * cb.invInputSize, 0);
+      sum += vec4(cb.taps[i].z * tap.rgb, cb.taps[i].w * tap.a);
+    }
+    sum = saturate(sum);
+  }
+  else if (cb.gated != 0)
   {
     const vec4 centre = Input.SampleLevel(uv, 0);
     float centreWeight = 1.0f;

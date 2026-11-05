@@ -270,9 +270,10 @@ struct PostFxDarkSoulsLookFilterArgs {
   uint tapCount;
   // 0: sum of the taps. 1: FRPG_Fil_Dof_Unfocus3x3 / BlurUpSample: a tap counts only where its
   // alpha (DoF rate) is at least the centre's, and the centre keeps the remaining weight.
+  // 2: FRPG_Fil_Bloom: a tap's w weighs alpha, and the result clips at 1 like the game's 8-bit target.
   uint gated;
 
-  // xy = offset in input texels, z = weight.
+  // xy = offset in input texels, z = weight, w = alpha weight for gated 2.
   vec4 taps[DS_LOOK_MAX_TAPS];
 };
 

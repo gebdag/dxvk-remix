@@ -216,17 +216,18 @@ namespace dxvk {
       { 0, 2, kGaussFar, 0 }, { 1, -1, kGaussDiagonal, 0 }, { 1, 0, kGaussEdge, 0 }, { 1, 1, kGaussDiagonal, 0 },
       { 2, 0, kGaussFar, 0 },
     };
-    // FRPG_Fil_Bloom: 15 taps at whole texels, 2 x a sigma 3 Gaussian (the weights sum to 1.976).
+    // FRPG_Fil_Bloom: 15 taps at whole texels, 2 x a sigma 3 Gaussian (the weights sum to 1.976), alpha weights all 1. Its
+    // targets are 8-bit in the game, so each pass clips at 1, which is what keeps this gain in check (filter's gated = 2).
     const float kBloomWeights[8] = { 0.265961f, 0.251589f, 0.212965f, 0.161314f, 0.10934f, 0.066318f, 0.035994f, 0.017481f };
     // FRPG_Fil_Dof_DownSample at half size: one bilinear tap on the corner of four texels.
     const vec4 kDownsample2x[1] = { { 0, 0, 1, 0 } };
 
     void bloomTaps(vec4 (&taps)[15], bool vertical) {
-      taps[0] = vec4 { 0, 0, kBloomWeights[0], 0 };
+      taps[0] = vec4 { 0, 0, kBloomWeights[0], 1 };
       for (int i = 1; i < 8; ++i) {
         const float o = float(i);
-        taps[i] = vertical ? vec4 { 0, o, kBloomWeights[i], 0 } : vec4 { o, 0, kBloomWeights[i], 0 };
-        taps[i + 7] = vertical ? vec4 { 0, -o, kBloomWeights[i], 0 } : vec4 { -o, 0, kBloomWeights[i], 0 };
+        taps[i] = vertical ? vec4 { 0, o, kBloomWeights[i], 1 } : vec4 { o, 0, kBloomWeights[i], 1 };
+        taps[i + 7] = vertical ? vec4 { 0, -o, kBloomWeights[i], 1 } : vec4 { -o, 0, kBloomWeights[i], 1 };
       }
     }
 
@@ -362,9 +363,9 @@ namespace dxvk {
                                               const Resources::Resource& output, float sigmaX, float sigmaY) {
     vec4 taps[DS_LOOK_MAX_TAPS];
     const uint32_t horizontal = gaussianTaps(sigmaX, false, taps, DS_LOOK_MAX_TAPS);
-    dispatchFilter(ctx, m_dofFilterConstants[constantsIndex], input, m_dofScratch, taps, horizontal, true);
+    dispatchFilter(ctx, m_dofFilterConstants[constantsIndex], input, m_dofScratch, taps, horizontal, 1);
     const uint32_t vertical = gaussianTaps(sigmaY, true, taps, DS_LOOK_MAX_TAPS);
-    dispatchFilter(ctx, m_dofFilterConstants[constantsIndex + 1], m_dofScratch, output, taps, vertical, true);
+    dispatchFilter(ctx, m_dofFilterConstants[constantsIndex + 1], m_dofScratch, output, taps, vertical, 1);
   }
 
   void DxvkDarkSoulsLook::dispatchScene(
@@ -669,7 +670,7 @@ namespace dxvk {
 
   void DxvkDarkSoulsLook::dispatchFilter(Rc<DxvkContext>& ctx, const Rc<DxvkBuffer>& constants,
                                          const Resources::Resource& input, const Resources::Resource& output,
-                                         const vec4* taps, uint32_t tapCount, bool gated) {
+                                         const vec4* taps, uint32_t tapCount, uint32_t gated) {
     const VkExtent3D in = input.image->mipLevelExtent(0);
     const VkExtent3D out = output.image->mipLevelExtent(0);
     PostFxDarkSoulsLookFilterArgs args = {};
@@ -677,7 +678,7 @@ namespace dxvk {
     args.invInputSize = { 1.0f / float(in.width), 1.0f / float(in.height) };
     args.invOutputSize = { 1.0f / float(out.width), 1.0f / float(out.height) };
     args.tapCount = std::min(tapCount, uint32_t(DS_LOOK_MAX_TAPS));
-    args.gated = gated ? 1u : 0u;
+    args.gated = gated;
     for (uint32_t i = 0; i < args.tapCount; ++i) {
       args.taps[i] = taps[i];
     }
@@ -936,8 +937,8 @@ namespace dxvk {
       dispatchFilter(ctx, m_filterConstants[0], m_base[0], m_base[1], kGauss5x5, 13);
       dispatchFilter(ctx, m_filterConstants[1], m_base[1], m_half[0], kDownsample2x, 1);
       dispatchFilter(ctx, m_filterConstants[2], m_half[0], m_half[1], kGauss5x5, 13);
-      dispatchFilter(ctx, m_filterConstants[3], m_half[1], m_half[0], vertical, 15);
-      dispatchFilter(ctx, m_filterConstants[4], m_half[0], m_half[1], horizontal, 15);
+      dispatchFilter(ctx, m_filterConstants[3], m_half[1], m_half[0], vertical, 15, 2);
+      dispatchFilter(ctx, m_filterConstants[4], m_half[0], m_half[1], horizontal, 15, 2);
     }
 
     // The game's light shaft chain, the result in m_base[1] (the bloom is done with the bright pass buffers).
