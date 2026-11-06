@@ -1504,6 +1504,14 @@ float resolveVertexUnorderedParticles<
     // channels going negative in Ds1AdditiveRadiance.
     ds1AdditiveRadiance = (pow(max(unlitAdditiveGammaSum - unlitSubtractGammaSum, 0.0f), kSRGBGamma) - pow(subtractLeft, kSRGBGamma)) *
       cb.opaqueMaterialArgs.unlitExposureCompensation / pathSelectionProbability;
+    // Fork (DS1): unhazed alpha layers (a fog wall's ribbons) stay out of the haze here too, after the subtraction, as below.
+    // Left to it, the white wall went a flat grey wherever a subtracted smoke's quad covered it (the black flame,
+    // frame_20261106_114311), with the quad's alpha-tested edge.
+    if (ds1UnhazedLayers)
+    {
+      ds1AdditiveRadiance = (pow(max(unlitGamma - unlitSubtractGammaSum, 0.0f), kSRGBGamma) - pow(subtractLeft, kSRGBGamma)) *
+        cb.opaqueMaterialArgs.unlitExposureCompensation / pathSelectionProbability;
+    }
   }
   else
   {
