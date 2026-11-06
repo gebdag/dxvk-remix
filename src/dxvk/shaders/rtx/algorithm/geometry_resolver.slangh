@@ -59,9 +59,19 @@ vec3 geometryResolverDs1SmearDirection(SurfaceMaterialInteractionPSRSample sampl
   {
     return direction;
   }
-  const vec3 bent = normalize(direction + tilt);
-  // Never out of the water again: a bend past the surface keeps the unbent view.
-  return dot(bent, geometryNormal) < -0.01f ? bent : direction;
+  // Never out of the water again: a bend past the surface tries half and a quarter of it (no snap back to the unbent
+  // view at grazing angles), then keeps the unbent view.
+  float share = 1.0f;
+  for (int i = 0; i < 3; ++i)
+  {
+    const vec3 bent = normalize(direction + tilt * share);
+    if (dot(bent, geometryNormal) < -0.01f)
+    {
+      return bent;
+    }
+    share *= 0.5f;
+  }
+  return direction;
 }
 
 // Fork (DS1): how far a view entering DS1 water bends, by the water's depth there. IOR 1.33 is right for a pool
@@ -95,10 +105,7 @@ void geometryResolverDs1WaterRefraction(inout SurfaceMaterialInteractionPSRSampl
     }
   }
   const float depth = rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? rayQuery.CommittedRayT() : fullDepth;
-  // The smear needs depth to work in too. It moves the view by metres at a distance whatever the depth, and over a
-  // shallow floor that left black patches where a wave's tilt was large (Sanctuary Guardian's arena). Why they are black
-  // was not found: not the guard ray (forcing it to stop at every surface changed nothing), and the albedo there is
-  // only half the surroundings', so it is mostly lighting.
+  // The smear needs depth to work in too: none at the shore, in full from smearFullDepth.
   sample.ds1SmearedNormal *= saturate(depth / cb.ds1Ripple.smearFullDepth);
   const float flatDepth = cb.ds1Ripple.refractionFlatDepth;
   const float bend = saturate((depth - flatDepth) / max(fullDepth - flatDepth, 0.001f));
