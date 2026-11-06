@@ -44,7 +44,7 @@ namespace dxvk {
   }
 
   void DxvkDarkSoulsExposure::showImguiSettings() {
-    if (!ImGui::CollapsingHeader("Exposure (the game's)", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (!ImGui::CollapsingHeader("Exposure (the game's)")) {
       return;
     }
     ImGui::Indent();

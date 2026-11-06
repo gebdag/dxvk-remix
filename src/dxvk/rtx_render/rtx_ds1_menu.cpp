@@ -1,7 +1,7 @@
 // The Dark Souls menu: every DS1-specific runtime option in
 // one place, drawn as the developer menu's Dark Souls tab (Alt+X >
 // Developer Settings Menu > Dark Souls), Nier-style: one collapsing header per
-// feature, all open by default. The widgets are the standard RemixGui ones bound
+// feature, all closed by default. The widgets are the standard RemixGui ones bound
 // to the options themselves, so tooltips come from the option descriptions and
 // values save to rtx.conf like any other setting.
 //
@@ -27,7 +27,8 @@
 namespace dxvk {
 
   namespace {
-    constexpr ImGuiTreeNodeFlags kOpen = ImGuiTreeNodeFlags_DefaultOpen;
+    // Sections start closed: the menu is a place to look something up, not a page of everything.
+    constexpr ImGuiTreeNodeFlags kOpen = ImGuiTreeNodeFlags_None;
     constexpr ImGuiSliderFlags kClamp = ImGuiSliderFlags_AlwaysClamp;
 
     void showParticles() {
@@ -61,19 +62,48 @@ namespace dxvk {
       RemixGui::SliderFloat("Ripple Collision Area (m)", &DxvkDarkSoulsRipples::collisionSizeObject(), 0.5f, 7.0f, "%.1f", kClamp);
       RemixGui::SliderFloat("Ripple Normal Scale", &DxvkDarkSoulsRipples::normalScaleObject(), 0.0f, 5.0f, "%.2f", kClamp);
       RemixGui::SliderFloat("Ripple Cell Size (m)", &DxvkDarkSoulsRipples::cellSizeObject(), 0.01f, 0.05f, "%.3f", kClamp);
-      ImGui::Separator();
-      RemixGui::Checkbox("Wet Player", &DxvkDarkSoulsWet::enableObject());
-      RemixGui::SliderFloat("Wet: Drying Time (s)", &DxvkDarkSoulsWet::dryTimeObject(), 1.0f, 300.0f, "%.0f", kClamp);
-      RemixGui::SliderFloat("Wet: Contact Above Water (m)", &DxvkDarkSoulsWet::contactMarginObject(), 0.0f, 0.3f, "%.2f", kClamp);
-      RemixGui::SliderFloat("Wet: Roughness", &DxvkDarkSoulsWet::roughnessObject(), 0.05f, 1.0f, "%.2f", kClamp);
-      RemixGui::SliderFloat("Wet: Specular Scale", &DxvkDarkSoulsWet::specularScaleObject(), 1.0f, 3.0f, "%.2f", kClamp);
-      RemixGui::SliderFloat("Wet: Porous Albedo Scale", &DxvkDarkSoulsWet::porousFactorObject(), 0.1f, 1.0f, "%.2f", kClamp);
-      RemixGui::Checkbox("Wet: Soak (all over)", &DxvkDarkSoulsWet::soakObject());
-      RemixGui::SliderFloat("Wet: Droplet Size (0 = none)", &DxvkDarkSoulsWet::dropletScaleObject(), 0.0f, 3.0f, "%.2f", kClamp);
-      RemixGui::Checkbox("Wet: Drips", &DxvkDarkSoulsWet::dripsObject());
-      RemixGui::SliderFloat("Wet: Drip Time (s)", &DxvkDarkSoulsWet::dripTimeObject(), 0.5f, 30.0f, "%.1f", kClamp);
-      RemixGui::SliderFloat("Wet: Drip Rate", &DxvkDarkSoulsWet::dripRateObject(), 0.0f, 1000.0f, "%.0f", kClamp);
-      RemixGui::SliderFloat("Wet: Drip Size (cm)", &DxvkDarkSoulsWet::dripSizeObject(), 0.1f, 5.0f, "%.2f", kClamp);
+      ImGui::Unindent();
+    }
+
+    // What water, mud and lava leave on the player's body. All of it clears on resting at a bonfire and on a warp.
+    void showBody() {
+      if (!ImGui::CollapsingHeader("Water, mud and lava on the player", kOpen)) {
+        return;
+      }
+      ImGui::Indent();
+      RemixGui::Checkbox("On", &DxvkDarkSoulsWet::enableObject());
+      ImGui::TextDisabled("Clears when resting at a bonfire and on a warp.");
+      if (ImGui::TreeNode("Water")) {
+        RemixGui::SliderFloat("Drying Time (s)", &DxvkDarkSoulsWet::dryTimeObject(), 1.0f, 300.0f, "%.0f", kClamp);
+        RemixGui::SliderFloat("Droplet Size (0 = none)", &DxvkDarkSoulsWet::dropletScaleObject(), 0.0f, 3.0f, "%.2f", kClamp);
+        RemixGui::Checkbox("Drips", &DxvkDarkSoulsWet::dripsObject());
+        RemixGui::SliderFloat("Drip Time (s)", &DxvkDarkSoulsWet::dripTimeObject(), 0.5f, 30.0f, "%.1f", kClamp);
+        ImGui::TreePop();
+      }
+      if (ImGui::TreeNode("Mud")) {
+        RemixGui::SliderFloat("Time on the Body (s)", &DxvkDarkSoulsWet::mudDryTimeObject(), 10.0f, 600.0f, "%.0f", kClamp);
+        RemixGui::SliderFloat("Hardens Within (s)", &DxvkDarkSoulsWet::mudHardenTimeObject(), 1.0f, 120.0f, "%.0f", kClamp);
+        RemixGui::SliderFloat("Fades Over the Last (s)", &DxvkDarkSoulsWet::mudFadeTimeObject(), 1.0f, 120.0f, "%.0f", kClamp);
+        ImGui::TreePop();
+      }
+      if (ImGui::TreeNode("Lava")) {
+        RemixGui::SliderFloat("Time on the Body (s)", &DxvkDarkSoulsWet::lavaTimeObject(), 10.0f, 600.0f, "%.0f", kClamp);
+        RemixGui::SliderFloat("Glows For (s)", &DxvkDarkSoulsWet::lavaMoltenTimeObject(), 1.0f, 60.0f, "%.0f", kClamp);
+        RemixGui::SliderFloat("Fades Over the Last (s)", &DxvkDarkSoulsWet::lavaFadeTimeObject(), 1.0f, 120.0f, "%.0f", kClamp);
+        RemixGui::SliderFloat("Glow Strength", &DxvkDarkSoulsWet::lavaGlowObject(), 0.0f, 20.0f, "%.1f", kClamp);
+        ImGui::TreePop();
+      }
+      if (ImGui::TreeNode("More")) {
+        RemixGui::SliderFloat("Water Reaches Above Its Surface (m)", &DxvkDarkSoulsWet::contactMarginObject(), 0.0f, 0.3f, "%.2f", kClamp);
+        RemixGui::SliderFloat("Lava Reaches Above Its Surface (m)", &DxvkDarkSoulsWet::lavaContactObject(), 0.0f, 0.3f, "%.2f", kClamp);
+        RemixGui::SliderFloat("Wet Roughness", &DxvkDarkSoulsWet::roughnessObject(), 0.05f, 1.0f, "%.2f", kClamp);
+        RemixGui::SliderFloat("Wet Specular Scale", &DxvkDarkSoulsWet::specularScaleObject(), 1.0f, 3.0f, "%.2f", kClamp);
+        RemixGui::SliderFloat("Wet Porous Albedo Scale", &DxvkDarkSoulsWet::porousFactorObject(), 0.1f, 1.0f, "%.2f", kClamp);
+        RemixGui::SliderFloat("Drip Rate", &DxvkDarkSoulsWet::dripRateObject(), 0.0f, 1000.0f, "%.0f", kClamp);
+        RemixGui::SliderFloat("Drip Size (cm)", &DxvkDarkSoulsWet::dripSizeObject(), 0.1f, 5.0f, "%.2f", kClamp);
+        RemixGui::Checkbox("Soak All Over (test)", &DxvkDarkSoulsWet::soakObject());
+        ImGui::TreePop();
+      }
       ImGui::Unindent();
     }
 
@@ -133,6 +163,7 @@ namespace dxvk {
     }
 
     showWater();
+    showBody();
     showMaterials();
     showMarkers();
 

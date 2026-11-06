@@ -1010,7 +1010,7 @@ namespace dxvk {
   }
 
   void DxvkDarkSoulsLook::showImguiSettings() {
-    if (!ImGui::CollapsingHeader("Dark Souls image pipeline", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (!ImGui::CollapsingHeader("Dark Souls image pipeline")) {
       return;
     }
     ImGui::Indent();

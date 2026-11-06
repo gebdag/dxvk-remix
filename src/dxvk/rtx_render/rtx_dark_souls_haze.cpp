@@ -109,7 +109,7 @@ namespace dxvk {
   }
 
   void DxvkDarkSoulsHaze::showImguiSettings() {
-    if (!ImGui::CollapsingHeader("Haze (game fog and sky scattering)", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (!ImGui::CollapsingHeader("Haze (game fog and sky scattering)")) {
       return;
     }
     ImGui::Indent();

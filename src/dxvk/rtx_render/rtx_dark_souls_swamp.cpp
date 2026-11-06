@@ -105,7 +105,7 @@ namespace dxvk {
   }
 
   void DxvkDarkSoulsSwamp::showImguiSettings() {
-    if (!ImGui::CollapsingHeader("Swamp (FRPG_Snow)", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (!ImGui::CollapsingHeader("Swamp (FRPG_Snow)")) {
       return;
     }
     ImGui::Indent();

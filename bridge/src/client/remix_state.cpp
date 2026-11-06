@@ -28,6 +28,11 @@ using namespace bridge_util;
 
 uint64_t RemixState::m_state = 0;
 
+// Fork (DS1): for the proxy in front of this dll: whether the Remix menu is open and holds the game's input (rtx.blockInputToGameInUI).
+extern "C" __declspec(dllexport) int __stdcall ds1_remix_ui_active() {
+  return RemixState::isUIActive() ? 1 : 0;
+}
+
 void RemixState::init(MessageChannelBase& msgChannel) {
   msgChannel.registerHandler(kUIActiveMsgName,
     [](uint32_t wParam, uint32_t lParam) {

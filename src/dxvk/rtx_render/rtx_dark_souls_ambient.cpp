@@ -21,7 +21,7 @@ namespace dxvk {
   }
 
   void DxvkDarkSoulsAmbient::showImguiSettings() {
-    if (!ImGui::CollapsingHeader("Ambient light (the game's)", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (!ImGui::CollapsingHeader("Ambient light (the game's)")) {
       return;
     }
     ImGui::Indent();

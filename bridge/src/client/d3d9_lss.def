@@ -20,3 +20,4 @@ EXPORTS
 
   remixapi_InitializeLibrary @ 39
   remixapi_RegisterCallbacks @ 40
+  ds1_remix_ui_active
