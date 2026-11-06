@@ -109,11 +109,17 @@ void geometryResolverDs1WaterRefraction(inout SurfaceMaterialInteractionPSRSampl
   sample.ds1SmearedNormal *= saturate(depth / cb.ds1Ripple.smearFullDepth);
   const float flatDepth = cb.ds1Ripple.refractionFlatDepth;
   const float bend = saturate((depth - flatDepth) / max(fullDepth - flatDepth, 0.001f));
-  if (bend >= 1.0f)
+  if (bend < 1.0f)
   {
-    return;
+    sample.inputDirection = normalize(lerp(incidentDirection, vec3(sample.inputDirection), bend));
   }
-  sample.inputDirection = normalize(lerp(incidentDirection, vec3(sample.inputDirection), bend));
+  // The game's smear moves what the water shows by the wave's tilt times the distance to the camera (a screen-space
+  // shift: metres far off). Bent by the tilt alone the view moves only about as far as the water is deep and the water
+  // looked still. So the bend aims at the point the shift shows on the bed: tilt x camera distance across the length
+  // the view runs to the bed (geometryResolverDs1SmearDirection keeps it in the water).
+  const float down = max(-dot(vec3(sample.inputDirection), geometryNormal), 0.05f);
+  const float toBed = max(depth / down, 0.05f);
+  sample.ds1SmearedNormal *= length(position - cameraGetWorldPosition(cb.camera)) / toBed;
 }
 
 #ifndef GBUFFER_FEATURE_DLSSRR
