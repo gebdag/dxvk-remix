@@ -2,6 +2,9 @@
 #include "rtx_dark_souls_ambient.h"
 #include "rtx_dark_souls_exposure.h"
 #include "rtx_dark_souls_haze.h"
+#include "rtx_dark_souls_ripples.h"
+#include "rtx_global_volumetrics.h"
+#include "rtx_scene_manager.h"
 #include "rtx_context.h"
 #include "rtx_camera.h"
 #include "dxvk_device.h"
@@ -22,6 +25,9 @@
 #include <rtx_shaders/post_fx_dark_souls_look_dof.h>
 #include <rtx_shaders/post_fx_dark_souls_look_dof_prepare.h>
 #include <rtx_shaders/post_fx_dark_souls_look_eye.h>
+#include <rtx_shaders/post_fx_dark_souls_fog_gate_noise.h>
+#include <rtx_shaders/post_fx_dark_souls_fog_gate_sim.h>
+#include <rtx_shaders/post_fx_dark_souls_fog_gate_march.h>
 #include <rtx_shaders/post_fx_dark_souls_look_meter.h>
 #include <rtx_shaders/post_fx_dark_souls_look_ambient_meter.h>
 #include <rtx_shaders/post_fx_dark_souls_look_shafts.h>
@@ -74,6 +80,45 @@ namespace dxvk {
     };
     PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookEyeShader);
 
+    class PostFxDarkSoulsFogGateNoiseShader : public ManagedShader {
+      SHADER_SOURCE(PostFxDarkSoulsFogGateNoiseShader, VK_SHADER_STAGE_COMPUTE_BIT, post_fx_dark_souls_fog_gate_noise)
+
+      BEGIN_PARAMETER()
+        RW_TEXTURE3D(POST_FX_DS_FOG_GATE_NOISE_OUTPUT)
+      END_PARAMETER()
+    };
+
+    class PostFxDarkSoulsFogGateSimShader : public ManagedShader {
+      SHADER_SOURCE(PostFxDarkSoulsFogGateSimShader, VK_SHADER_STAGE_COMPUTE_BIT, post_fx_dark_souls_fog_gate_sim)
+
+      BEGIN_PARAMETER()
+        SAMPLER3D(POST_FX_DS_FOG_GATE_SIM_HISTORY)
+        RW_TEXTURE3D(POST_FX_DS_FOG_GATE_SIM_OUTPUT)
+        CONSTANT_BUFFER(POST_FX_DS_FOG_GATE_SIM_CONSTANTS)
+      END_PARAMETER()
+    };
+
+    class PostFxDarkSoulsFogGateMarchShader : public ManagedShader {
+      SHADER_SOURCE(PostFxDarkSoulsFogGateMarchShader, VK_SHADER_STAGE_COMPUTE_BIT, post_fx_dark_souls_fog_gate_march)
+
+      BEGIN_PARAMETER()
+        RW_TEXTURE2D(POST_FX_DS_FOG_GATE_MARCH_INOUT)
+        TEXTURE2D(POST_FX_DS_FOG_GATE_MARCH_VIEW_Z)
+        SAMPLER3D(POST_FX_DS_FOG_GATE_MARCH_NOISE)
+        SAMPLER3D(POST_FX_DS_FOG_GATE_MARCH_SIM)
+        SAMPLER3D(POST_FX_DS_FOG_GATE_MARCH_RADIANCE_Y)
+        SAMPLER3D(POST_FX_DS_FOG_GATE_MARCH_RADIANCE_COCG)
+        CONSTANT_BUFFER(POST_FX_DS_FOG_GATE_MARCH_HAZE)
+        CONSTANT_BUFFER(POST_FX_DS_FOG_GATE_MARCH_CONSTANTS)
+        RW_TEXTURE2D(POST_FX_DS_FOG_GATE_MARCH_DOF_RATE)
+        RW_TEXTURE2D(POST_FX_DS_FOG_GATE_MARCH_MASK)
+      END_PARAMETER()
+    };
+    // The first gate must not stall the game.
+    PREWARM_SHADER_PIPELINE(PostFxDarkSoulsFogGateNoiseShader);
+    PREWARM_SHADER_PIPELINE(PostFxDarkSoulsFogGateSimShader);
+    PREWARM_SHADER_PIPELINE(PostFxDarkSoulsFogGateMarchShader);
+
     class PostFxDarkSoulsLookRegionShader : public ManagedShader {
       SHADER_SOURCE(PostFxDarkSoulsLookRegionShader, VK_SHADER_STAGE_COMPUTE_BIT, post_fx_dark_souls_look_region)
 
@@ -95,6 +140,7 @@ namespace dxvk {
         TEXTURE2D(POST_FX_DS_LOOK_BRIGHT_LINEAR_VIEW_Z)
         RW_TEXTURE2D(POST_FX_DS_LOOK_BRIGHT_OUTPUT)
         CONSTANT_BUFFER(POST_FX_DS_LOOK_BRIGHT_CONSTANTS)
+        TEXTURE2D(POST_FX_DS_LOOK_BRIGHT_FOG_GATE_MASK)
       END_PARAMETER()
     };
     PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookBrightShader);
@@ -265,6 +311,10 @@ namespace dxvk {
 
   DxvkDarkSoulsLook::DxvkDarkSoulsLook(DxvkDevice* device)
     : m_device(device) {
+    m_fogGateRepeatSampler = device->getCommon()->getResources().getSampler(
+      VK_FILTER_LINEAR,
+      VK_SAMPLER_MIPMAP_MODE_NEAREST,
+      VK_SAMPLER_ADDRESS_MODE_REPEAT);
     m_linearSampler = device->getCommon()->getResources().getSampler(
       VK_FILTER_LINEAR,
       VK_SAMPLER_MIPMAP_MODE_NEAREST,
@@ -302,6 +352,12 @@ namespace dxvk {
       m_hazeConstants = makeConstants(sizeof(PostFxDarkSoulsHazeArgs), "DS1 Look Haze Constants");
       m_regionConstants = makeConstants(sizeof(PostFxDarkSoulsLookRegionArgs), "DS1 Look Haze Region Constants");
       m_eyeConstants = makeConstants(sizeof(PostFxDarkSoulsLookEyeArgs), "DS1 Look Eye Constants");
+      m_fogGateSimConstants = makeConstants(sizeof(DsFogGateSimArgs), "DS1 Fog Gate Sim Constants");
+      m_fogGateMarchConstants = makeConstants(sizeof(DsFogGateMarchArgs), "DS1 Fog Gate March Constants");
+      const VkExtent3D fogGateGrid { DS_FOG_GATE_SIM_X, DS_FOG_GATE_SIM_Y, DS_FOG_GATE_SIM_Z };
+      m_fogGateSim[0] = Resources::createImageResource(ctx, "DS1 fog gate sim", fogGateGrid, VK_FORMAT_R16G16B16A16_SFLOAT, 1, VK_IMAGE_TYPE_3D, VK_IMAGE_VIEW_TYPE_3D);
+      m_fogGateSim[1] = Resources::createImageResource(ctx, "DS1 fog gate sim", fogGateGrid, VK_FORMAT_R16G16B16A16_SFLOAT, 1, VK_IMAGE_TYPE_3D, VK_IMAGE_VIEW_TYPE_3D);
+      m_fogGateNoise = Resources::createImageResource(ctx, "DS1 fog gate noise", VkExtent3D { DS_FOG_GATE_NOISE_SIZE, DS_FOG_GATE_NOISE_SIZE, DS_FOG_GATE_NOISE_SIZE }, VK_FORMAT_R16_SFLOAT, 1, VK_IMAGE_TYPE_3D, VK_IMAGE_VIEW_TYPE_3D);
       m_eyeLevel[0] = Resources::createImageResource(ctx, "DS1 look eye level", VkExtent3D { 64, 36, 1 }, VK_FORMAT_R16G16_SFLOAT);
       m_eyeLevel[1] = Resources::createImageResource(ctx, "DS1 look eye level", VkExtent3D { 64, 36, 1 }, VK_FORMAT_R16G16_SFLOAT);
       m_brightConstants = makeConstants(sizeof(PostFxDarkSoulsLookBrightArgs), "DS1 Look Bright Constants");
@@ -352,6 +408,7 @@ namespace dxvk {
     m_dofExtent = extent;
     const VkExtent3D size { extent.width, extent.height, 1 };
     m_dofRate = Resources::createImageResource(ctx, "DS1 look DoF far rate", size, VK_FORMAT_R16G16_SFLOAT);
+    m_fogGateMask = Resources::createImageResource(ctx, "DS1 fog gate mask", size, VK_FORMAT_R16G16_SFLOAT);
     for (auto& history : m_depthHistory) {
       history[0] = Resources::createImageResource(ctx, "DS1 look depth terms history A", size, VK_FORMAT_R16G16B16A16_SFLOAT);
       history[1] = Resources::createImageResource(ctx, "DS1 look depth terms history B", size, VK_FORMAT_R16G16B16A16_SFLOAT);
@@ -507,6 +564,151 @@ namespace dxvk {
     if (DxvkDarkSoulsExposure::wantsMeter()) {
       dispatchMeter(ctx, inOutColor, args.exposure);
     }
+    // After the meter: the game's exposure does not follow a fog of our making.
+    dispatchFogGates(ctx, inOutColor, linearViewZ, args.exposure, extent);
+  }
+
+  void DxvkDarkSoulsLook::dispatchFogGates(Rc<DxvkContext>& ctx, const Resources::Resource& color, const Resources::Resource& linearViewZ, float exposure, const VkExtent3D& extent) {
+    m_fogGateMaskUsed = false;
+    const Vector4 sentA[DS_FOG_GATE_MAX] = { gate0A(), gate1A(), gate2A(), gate3A() };
+    const Vector4 sentB[DS_FOG_GATE_MAX] = { gate0B(), gate1B(), gate2B(), gate3B() };
+
+    const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    const float dt = float(std::clamp(now - m_fogGateClock, 0.0, 0.05));
+    m_fogGateClock = now;
+    m_fogGateTime += dt;
+
+    DsFogGateMarchArgs march = {};
+    uint32_t count = 0;
+    const Vector3 feet = DxvkDarkSoulsRipples::playerPosition();
+    float player[3] = { feet.x, feet.y, feet.z };
+    int nearest = -1;
+    float nearestDistance = debugWalk() ? 1e9f : std::max(simRange(), 0.0f);
+    const float level = debugLevel();
+    for (uint32_t i = 0; i < DS_FOG_GATE_MAX; ++i) {
+      const float gateLevel = level >= 0.0f && sentA[i].w > 0.0f ? level : sentA[i].w;
+      if (gateLevel <= 0.0f || sentB[i].y <= 0.0f) {
+        continue;
+      }
+      DsFogGate& gate = march.gates[count];
+      gate.centreLevel = vec4 { sentA[i].x, sentA[i].y, sentA[i].z, std::min(gateLevel, 1.0f) };
+      const float c = std::cos(sentB[i].x), s = std::sin(sentB[i].x);
+      gate.axisUHalfWidth = vec4 { c, 0.0f, s, sentB[i].y };
+      gate.axisWHalfThick = vec4 { -s, 0.0f, c, sentB[i].w };
+      gate.halfHeightSim = vec4 { sentB[i].z, 0.0f, 0.0f, 0.0f };
+      const float dx = sentA[i].x - player[0], dz = sentA[i].z - player[2];
+      const float distance = std::sqrt(dx * dx + dz * dz);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = int(count);
+      }
+      ++count;
+    }
+    if (count == 0) {
+      m_fogGateSimGate = -1;
+      return;
+    }
+
+    ScopedGpuProfileZone(ctx, "Dark Souls 1 Look: Fog Gates");
+    if (!m_fogGateNoiseBaked) {
+      m_fogGateNoiseBaked = true;
+      ctx->bindResourceView(POST_FX_DS_FOG_GATE_NOISE_OUTPUT, m_fogGateNoise.view, nullptr);
+      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsFogGateNoiseShader::getShader());
+      ctx->dispatch(DS_FOG_GATE_NOISE_SIZE / 4, DS_FOG_GATE_NOISE_SIZE / 4, DS_FOG_GATE_NOISE_SIZE / 4);
+    }
+
+    // The nearest gate's fog, with the body in it.
+    if (nearest >= 0) {
+      DsFogGate& gate = march.gates[nearest];
+      gate.halfHeightSim.y = 1.0f;
+      const bool sameGate = m_fogGateSimGate >= 0 && m_fogGateSimKey[0] == gate.centreLevel.x && m_fogGateSimKey[1] == gate.centreLevel.y && m_fogGateSimKey[2] == gate.centreLevel.z;
+      m_fogGateSimKey[0] = gate.centreLevel.x;
+      m_fogGateSimKey[1] = gate.centreLevel.y;
+      m_fogGateSimKey[2] = gate.centreLevel.z;
+      if (debugWalk()) {
+        m_fogGateWalk += dt * std::max(debugWalkSpeed(), 0.0f);
+        // Back and forth, 4 m either side of the plane, with a pause out of it.
+        const float along = std::abs(std::fmod(m_fogGateWalk, 16.0f) - 8.0f) - 4.0f;
+        player[0] = gate.centreLevel.x + gate.axisWHalfThick.x * along;
+        player[1] = gate.centreLevel.y - gate.halfHeightSim.x;
+        player[2] = gate.centreLevel.z + gate.axisWHalfThick.z * along;
+      }
+      DsFogGateSimArgs sim = {};
+      sim.gate = gate;
+      sim.player = vec3 { player[0], player[1], player[2] };
+      if (m_fogGateHavePlayer && dt > 0.0f) {
+        sim.playerVelocity = vec3 { (player[0] - m_fogGatePlayer[0]) / dt, (player[1] - m_fogGatePlayer[1]) / dt, (player[2] - m_fogGatePlayer[2]) / dt };
+        // A warp is no walk.
+        const float speed = std::sqrt(sim.playerVelocity.x * sim.playerVelocity.x + sim.playerVelocity.y * sim.playerVelocity.y + sim.playerVelocity.z * sim.playerVelocity.z);
+        if (speed > 20.0f) {
+          sim.playerVelocity = vec3 { 0.0f, 0.0f, 0.0f };
+        }
+      }
+      std::memcpy(m_fogGatePlayer, player, sizeof(player));
+      m_fogGateHavePlayer = true;
+      sim.dt = std::max(dt, 1e-3f);
+      sim.recoverSeconds = recoverSeconds();
+      sim.radius = bodyRadius();
+      sim.height = bodyHeight();
+      sim.historyValid = sameGate ? 1u : 0u;
+      m_fogGateSimGate = nearest;
+      m_fogGateSimIndex ^= 1;
+      ctx->writeToBuffer(m_fogGateSimConstants, 0, sizeof(sim), &sim);
+      ctx->getCommandList()->trackResource<DxvkAccess::Read>(m_fogGateSimConstants);
+      ctx->bindResourceView(POST_FX_DS_FOG_GATE_SIM_HISTORY, m_fogGateSim[m_fogGateSimIndex ^ 1].view, nullptr);
+      ctx->bindResourceSampler(POST_FX_DS_FOG_GATE_SIM_HISTORY, m_linearSampler);
+      ctx->bindResourceView(POST_FX_DS_FOG_GATE_SIM_OUTPUT, m_fogGateSim[m_fogGateSimIndex].view, nullptr);
+      ctx->bindResourceBuffer(POST_FX_DS_FOG_GATE_SIM_CONSTANTS, DxvkBufferSlice(m_fogGateSimConstants, 0, m_fogGateSimConstants->info().size));
+      ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsFogGateSimShader::getShader());
+      ctx->dispatch(DS_FOG_GATE_SIM_X / 4, DS_FOG_GATE_SIM_Y / 4, DS_FOG_GATE_SIM_Z / 4);
+    } else {
+      m_fogGateSimGate = -1;
+      m_fogGateHavePlayer = false;
+    }
+
+    auto& common = *ctx->getCommonObjects();
+    auto& volumetrics = common.metaGlobalVolumetrics();
+    march.volumeArgs = volumetrics.getVolumeArgs(common.getSceneManager().getCameraManager(), common.getSceneManager().getFogState(), false);
+    DxvkDarkSoulsAmbient::fillShaderArgs(march.ambient);
+    const Vector3 ownLight = glow();
+    march.glow = vec3 { ownLight.x, ownLight.y, ownLight.z };
+    march.density = density();
+    march.gateCount = count;
+    march.maxSteps = uint32_t(std::clamp(maxSteps(), 4, 128));
+    march.exposure = exposure;
+    march.time = float(std::fmod(m_fogGateTime, 3600.0));
+    march.lightGain = lightGain();
+    march.ambientGain = ambientGain();
+    march.useCache = useCache() ? 1u : 0u;
+    march.shapeLow = shapeLow();
+    march.shapeGain = shapeGain();
+    march.selfShadow = selfShadow();
+    march.solid = solid();
+    march.contact = contact();
+    march.ambientSaturation = ambientSaturation();
+    march.dofFarBegin = dofFarBegin();
+    march.dofFarEnd = dofFarEnd();
+    march.dofFarStrength = dofEnable() ? dofFarStrength() : 0.0f;
+    m_fogGateMaskUsed = true;
+    ctx->writeToBuffer(m_fogGateMarchConstants, 0, sizeof(march), &march);
+    ctx->getCommandList()->trackResource<DxvkAccess::Read>(m_fogGateMarchConstants);
+    ctx->bindResourceView(POST_FX_DS_FOG_GATE_MARCH_INOUT, color.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_FOG_GATE_MARCH_DOF_RATE, m_dofRate.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_FOG_GATE_MARCH_MASK, m_fogGateMask.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_FOG_GATE_MARCH_VIEW_Z, linearViewZ.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_FOG_GATE_MARCH_NOISE, m_fogGateNoise.view, nullptr);
+    ctx->bindResourceSampler(POST_FX_DS_FOG_GATE_MARCH_NOISE, m_fogGateRepeatSampler);
+    ctx->bindResourceView(POST_FX_DS_FOG_GATE_MARCH_SIM, m_fogGateSim[m_fogGateSimIndex].view, nullptr);
+    ctx->bindResourceSampler(POST_FX_DS_FOG_GATE_MARCH_SIM, m_linearSampler);
+    ctx->bindResourceView(POST_FX_DS_FOG_GATE_MARCH_RADIANCE_Y, volumetrics.getCurrentVolumeAccumulatedRadianceY().view, nullptr);
+    ctx->bindResourceSampler(POST_FX_DS_FOG_GATE_MARCH_RADIANCE_Y, m_linearSampler);
+    ctx->bindResourceView(POST_FX_DS_FOG_GATE_MARCH_RADIANCE_COCG, volumetrics.getCurrentVolumeAccumulatedRadianceCoCg().view, nullptr);
+    ctx->bindResourceSampler(POST_FX_DS_FOG_GATE_MARCH_RADIANCE_COCG, m_linearSampler);
+    ctx->bindResourceBuffer(POST_FX_DS_FOG_GATE_MARCH_HAZE, DxvkBufferSlice(m_hazeConstants, 0, m_hazeConstants->info().size));
+    ctx->bindResourceBuffer(POST_FX_DS_FOG_GATE_MARCH_CONSTANTS, DxvkBufferSlice(m_fogGateMarchConstants, 0, m_fogGateMarchConstants->info().size));
+    ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsFogGateMarchShader::getShader());
+    const VkExtent3D workgroups = util::computeBlockCount(extent, VkExtent3D { 16, 8, 1 });
+    ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
   }
 
   DxvkDarkSoulsLook::MeterGrid DxvkDarkSoulsLook::meterGrid() {
@@ -819,10 +1021,12 @@ namespace dxvk {
     args.thresholdFar = thresholdFar;
     args.depthBegin = depthBegin();
     args.depthEnd = depthEnd();
+    args.useFogGateMask = m_fogGateMaskUsed ? 1u : 0u;
     ctx->writeToBuffer(constants, 0, sizeof(args), &args);
     ctx->getCommandList()->trackResource<DxvkAccess::Read>(constants);
 
     ctx->bindResourceView(POST_FX_DS_LOOK_BRIGHT_SCENE, scene.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_LOOK_BRIGHT_FOG_GATE_MASK, m_fogGateMask.view, nullptr);
     ctx->bindResourceView(POST_FX_DS_LOOK_BRIGHT_LINEAR_VIEW_Z, linearViewZ.view, nullptr);
     ctx->bindResourceView(POST_FX_DS_LOOK_BRIGHT_OUTPUT, m_base[0].view, nullptr);
     ctx->bindResourceBuffer(POST_FX_DS_LOOK_BRIGHT_CONSTANTS, DxvkBufferSlice(constants, 0, constants->info().size));

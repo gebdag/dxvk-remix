@@ -78,6 +78,8 @@ interface IBasePayloadState
   // Fork (DS1): the geometry normal of the surface the ray left, as sphereDirectionToSnorm2x16; 0 = none, the ray
   // passes no thin wall (Surface::isDs1ThinWall).
   property uint ds1OriginNormal { get; }
+  // Fork (DS1): a ray from the camera, no reflection: it passes a fog gate's quad (Surface::isDs1CameraPasses).
+  property bool ds1CameraRay { get; }
 
 #ifdef RAY_PIPELINE
   // Returns if the caller should reorder before invokeHitObject, along with coherence hints to use

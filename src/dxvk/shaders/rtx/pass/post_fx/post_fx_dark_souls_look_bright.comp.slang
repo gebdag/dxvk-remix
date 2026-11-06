@@ -23,6 +23,9 @@ RWTexture2D<float4> Output;
 layout(binding = POST_FX_DS_LOOK_BRIGHT_CONSTANTS)
 ConstantBuffer<PostFxDarkSoulsLookBrightArgs> cb;
 
+layout(binding = POST_FX_DS_LOOK_BRIGHT_FOG_GATE_MASK)
+Texture2D<float2> FogGateMask;
+
 [shader("compute")]
 [numthreads(16, 8, 1)]
 void main(uint2 texel : SV_DispatchThreadID)
@@ -50,8 +53,13 @@ void main(uint2 texel : SV_DispatchThreadID)
   const uint2 viewZTexel = min(uint2(max(uv, 0.0f) * vec2(viewZSize)), viewZSize - 1);
   const float viewZ = LinearViewZ[viewZTexel];
   // A miss is the sky, at the game's far plane: full rate.
-  const float rate = viewZ == cb.missLinearViewZ ? 1.0f
+  float rate = viewZ == cb.missLinearViewZ ? 1.0f
     : saturate((abs(viewZ) - cb.depthBegin) / max(cb.depthEnd - cb.depthBegin, 1e-6f));
+  if (cb.useFogGateMask != 0)
+  {
+    const float2 fog = FogGateMask[min((begin + end) / 2, cb.sceneSize - 1)];
+    rate = lerp(rate, saturate((fog.y - cb.depthBegin) / max(cb.depthEnd - cb.depthBegin, 1e-6f)), fog.x);
+  }
 
   const float threshold = lerp(cb.thresholdNear, cb.thresholdFar, rate);
   Output[texel] = vec4(max(scene - threshold, vec3(0.0f)) / max(1.0f - threshold, 1e-6f), rate);

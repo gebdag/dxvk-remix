@@ -1302,6 +1302,8 @@ namespace dxvk {
         m_activeDrawCallState.materialData.isDs1SingleSided = d3d9State().textureStages[4][DXVK_TSS_CONSTANT] == 0xD4000002u;
         // Fork: DS1 lamp (stage 4 0xD4000004), see Surface::isDs1NoShadow.
         m_activeDrawCallState.materialData.isDs1NoShadow = d3d9State().textureStages[4][DXVK_TSS_CONSTANT] == 0xD4000004u;
+        // Fork: DS1 fog gate quad (stage 4 0xD4000005), see Surface::isDs1CameraPasses.
+        m_activeDrawCallState.materialData.isDs1CameraPasses = d3d9State().textureStages[4][DXVK_TSS_CONSTANT] == 0xD4000005u;
         // Fork: DS1 thin wall (stage 4 0xD4000003), see Surface::isDs1ThinWall.
         m_activeDrawCallState.materialData.isDs1ThinWall = d3d9State().textureStages[4][DXVK_TSS_CONSTANT] == 0xD4000003u;
         // Fork: DS1 albedo offset in stage 5's D3DTSS_CONSTANT (0xD3rrggbb, signed bytes / 255): the

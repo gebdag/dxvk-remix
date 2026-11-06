@@ -5,6 +5,7 @@
 #include "rtx_resources.h"
 #include "rtx_options.h"
 #include "rtx/pass/post_fx/post_fx_dark_souls_look.h"
+#include "rtx/pass/post_fx/post_fx_dark_souls_fog_gate.h"
 
 namespace dxvk {
 
@@ -90,6 +91,35 @@ namespace dxvk {
     RTX_OPTION("rtx.ds1Look", bool, hazeEnable, true, "Apply the game's fog and sky scattering in the scene pass.");
     RTX_OPTION("rtx.ds1Look", bool, bloomEnable, true, "Apply the game's bloom in the composite.");
     RTX_OPTION("rtx.ds1Look", bool, dofEnable, true, "Apply the game's depth of field (FRPG_Fil_Dof) after the scene pass.");
+    // The fog gates as a volume (post_fx_dark_souls_fog_gate.h). A prototype.
+    RTX_OPTION_FLAG("rtx.ds1FogGate", Vector4, gate0A, Vector4(0.0f), RtxOptionFlags::NoSave, "Sent by the proxy: the centre; w: how much of the gate there is, 0-1.");
+    RTX_OPTION_FLAG("rtx.ds1FogGate", Vector4, gate0B, Vector4(0.0f), RtxOptionFlags::NoSave, "Sent by the proxy: the angle of the gate around up, half width, half height, half thickness.");
+    RTX_OPTION_FLAG("rtx.ds1FogGate", Vector4, gate1A, Vector4(0.0f), RtxOptionFlags::NoSave, "Sent by the proxy: the centre; w: how much of the gate there is, 0-1.");
+    RTX_OPTION_FLAG("rtx.ds1FogGate", Vector4, gate1B, Vector4(0.0f), RtxOptionFlags::NoSave, "Sent by the proxy: the angle of the gate around up, half width, half height, half thickness.");
+    RTX_OPTION_FLAG("rtx.ds1FogGate", Vector4, gate2A, Vector4(0.0f), RtxOptionFlags::NoSave, "Sent by the proxy: the centre; w: how much of the gate there is, 0-1.");
+    RTX_OPTION_FLAG("rtx.ds1FogGate", Vector4, gate2B, Vector4(0.0f), RtxOptionFlags::NoSave, "Sent by the proxy: the angle of the gate around up, half width, half height, half thickness.");
+    RTX_OPTION_FLAG("rtx.ds1FogGate", Vector4, gate3A, Vector4(0.0f), RtxOptionFlags::NoSave, "Sent by the proxy: the centre; w: how much of the gate there is, 0-1.");
+    RTX_OPTION_FLAG("rtx.ds1FogGate", Vector4, gate3B, Vector4(0.0f), RtxOptionFlags::NoSave, "Sent by the proxy: the angle of the gate around up, half width, half height, half thickness.");
+    RTX_OPTION("rtx.ds1FogGate", float, density, 18.0f, "The fog's thickness per metre at full density: enough that nothing shows through a gate at rest.");
+    RTX_OPTION("rtx.ds1FogGate", float, contact, 0.12f, "Over this many metres behind the gate's plane a surface fades the fog: keeps it in its doorway.");
+    RTX_OPTION("rtx.ds1FogGate", float, solid, 0.7f, "What the thinnest noise still holds at rest, 0-1. Above 0 a whole gate has no holes.");
+    RTX_OPTION("rtx.ds1FogGate", int, maxSteps, 32, "Most samples along a ray per gate.");
+    RTX_OPTION("rtx.ds1FogGate", Vector3, glow, Vector3(0.16f, 0.165f, 0.17f), "The fog's own light, scene gamma.");
+    RTX_OPTION("rtx.ds1FogGate", float, lightGain, 0.04f, "Scale on the light from the froxel radiance cache: irradiance, so 1 / 4 pi is scattering evenly.");
+    RTX_OPTION("rtx.ds1FogGate", float, shapeLow, 0.3f, "Where the noise starts to hold fog: higher leaves more holes.");
+    RTX_OPTION("rtx.ds1FogGate", float, shapeGain, 2.2f, "How sharply fog sets in from there.");
+    RTX_OPTION("rtx.ds1FogGate", float, selfShadow, 0.8f, "How much the fog above a point darkens it, which gives the fog its shape.");
+    RTX_OPTION("rtx.ds1FogGate", float, ambientGain, 0.5f, "Scale on the area's ambient light.");
+    RTX_OPTION("rtx.ds1FogGate", float, ambientSaturation, 0.3f, "How much of the ambient's colour the fog takes, 0-1: the game's fog is neutral grey.");
+    RTX_OPTION("rtx.ds1FogGate", bool, useCache, true, "Light the fog from the froxel radiance cache (the area's lights and their shadows).");
+    RTX_OPTION("rtx.ds1FogGate", float, recoverSeconds, 1.2f, "How fast the fog closes behind the body.");
+    RTX_OPTION("rtx.ds1FogGate", float, bodyRadius, 0.5f, "The body's capsule radius, in metres.");
+    RTX_OPTION("rtx.ds1FogGate", float, bodyHeight, 1.85f, "The body's capsule height, in metres.");
+    RTX_OPTION("rtx.ds1FogGate", float, simRange, 20.0f, "The nearest gate within this many metres of the player is simulated.");
+    RTX_OPTION_FLAG("rtx.ds1FogGate", bool, debugWalk, false, RtxOptionFlags::NoSave, "Test: a body walks back and forth through the nearest gate.");
+    RTX_OPTION_FLAG("rtx.ds1FogGate", float, debugWalkSpeed, 1.8f, RtxOptionFlags::NoSave, "Test: its speed, in metres per second.");
+    RTX_OPTION_FLAG("rtx.ds1FogGate", float, debugLevel, -1.0f, RtxOptionFlags::NoSave, "Test: how much of the gates there is, in place of the game's; negative: off.");
+
     RTX_OPTION("rtx.ds1Look", bool, eyeEnable, true,
                "Adapt as an eye does where the game's exposure stops: below the meter's floor (its luminance clamp) the view comes up, up to what the game's "
                "own light gives on the same surfaces, so dark interiors can be seen without lights being added and places dark in the game stay dark. "
@@ -222,6 +252,21 @@ namespace dxvk {
     int m_eyeIndex = 0;
     uint32_t m_eyeFrame = 0xFFFFFFFFu;
     double m_eyeTime = 0.0;
+    void dispatchFogGates(Rc<DxvkContext>& ctx, const Resources::Resource& color, const Resources::Resource& linearViewZ, float exposure, const VkExtent3D& extent);
+    Resources::Resource m_fogGateNoise;
+    Resources::Resource m_fogGateSim[2];
+    Rc<DxvkBuffer> m_fogGateSimConstants;
+    Rc<DxvkBuffer> m_fogGateMarchConstants;
+    Rc<DxvkSampler> m_fogGateRepeatSampler;
+    bool m_fogGateNoiseBaked = false;
+    int m_fogGateSimIndex = 0;
+    int m_fogGateSimGate = -1;
+    float m_fogGateSimKey[3] = {};
+    double m_fogGateTime = 0.0;
+    double m_fogGateClock = 0.0;
+    float m_fogGatePlayer[3] = {};
+    bool m_fogGateHavePlayer = false;
+    float m_fogGateWalk = 0.0f;
     float m_eyeViewGain = 1.0f;
     bool m_eyeLifted = false;
     double m_eyeGainTime = 0.0;
@@ -249,6 +294,8 @@ namespace dxvk {
     Resources::Resource m_dofScratch;
     Resources::Resource m_dofNear;
     // The far DoF rate, written by the scene pass (the frame's alpha belongs to whatever runs after it).
+    Resources::Resource m_fogGateMask;
+    bool m_fogGateMaskUsed = false;
     Resources::Resource m_dofRate;
     VkExtent3D m_dofExtent = { 0, 0, 0 };
     bool m_dofIsFullRes = false;

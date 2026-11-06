@@ -535,7 +535,14 @@ struct Surface
   // from outside meet a back face or a front not turned towards their origin, and stop.
   property bool isDs1ThinWall
   {
-    get { return packedFlagGet(data13.x, 1u << 31) && (data13.x >> 24) != 0xFFu; }
+    get { return packedFlagGet(data13.x, 1u << 31) && (data13.x >> 24) < 0xFEu; }
+  }
+
+  // Fork: the opaque quad that closes a DS1 fog gate's door, where the gate is a volume now (game/fog_gates in the proxy). The camera's rays pass it, so the door shows the
+  // volume and what is behind. All others meet it, as they did: it keeps the sun out of the room and light bounces off it, which fog that dense would do too.
+  property bool isDs1CameraPasses
+  {
+    get { return (data13.x >> 24) == 0xFEu; }
   }
 
   // Fork: a DS1 lamp whose light sits inside its closed mesh (game/mesh_lights in the proxy): lighting rays pass it. The thin wall

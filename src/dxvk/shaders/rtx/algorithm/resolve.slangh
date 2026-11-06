@@ -386,6 +386,13 @@ float resolveVertex<T: IBasePayloadState>(
     return 1.0f;
   }
 
+  // Fork (DS1): a fog gate's quad, to the camera's rays. Surface::isDs1CameraPasses.
+  if (resolveVertexState.continueResolving && resolveVertexState.ds1CameraRay && surface.isDs1CameraPasses)
+  {
+    resolveVertexFinalContinue(ray, surfaceInteraction, teleport, teleportMatrix, resolveVertexState);
+    return 1.0f;
+  }
+
   if (isSurfaceClipped(surface, surfaceInteraction) && resolveVertexState.continueResolving)
   {
     // Continue resolving when we hit a clipped geometry to find possible objects behind it.
@@ -826,12 +833,13 @@ float ds1SeeThroughSpan(Ray ray, RayHitInfo orderedHit, uint orderedRayMask, boo
   {
     const RayInteraction rayInteraction = rayInteractionCreate(ray, orderedHit);
     const Surface surface = surfaces[uint(rayInteraction.surfaceIndex)];
-    if ((surface.isFullyOpaque && !surface.isClipPlaneEnabled) || rayInteraction.materialType != surfaceMaterialTypeOpaque)
+    // A fog gate's quad is not there for this ray: nothing to fade against.
+    if (!surface.isDs1CameraPasses && ((surface.isFullyOpaque && !surface.isClipPlaneEnabled) || rayInteraction.materialType != surfaceMaterialTypeOpaque))
     {
       break;
     }
     SurfaceInteraction surfaceInteraction = surfaceInteractionCreate<SurfaceGenerateTangents>(surface, rayInteraction, ray);
-    if (!isSurfaceClipped(surface, surfaceInteraction))
+    if (!surface.isDs1CameraPasses && !isSurfaceClipped(surface, surfaceInteraction))
     {
       if (surface.isFullyOpaque)
       {

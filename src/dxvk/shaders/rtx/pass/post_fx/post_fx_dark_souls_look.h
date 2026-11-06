@@ -56,6 +56,7 @@
 #define POST_FX_DS_LOOK_BRIGHT_LINEAR_VIEW_Z 1
 #define POST_FX_DS_LOOK_BRIGHT_OUTPUT        2
 #define POST_FX_DS_LOOK_BRIGHT_CONSTANTS     3
+#define POST_FX_DS_LOOK_BRIGHT_FOG_GATE_MASK 4
 
 // Near rate: FRPG_Fil_Dof_NearRate and UnfocusNearRate3x3 (rate from depth, dilated).
 #define POST_FX_DS_LOOK_NEAR_LINEAR_VIEW_Z   0
@@ -259,7 +260,7 @@ struct PostFxDarkSoulsLookBrightArgs {
   float thresholdFar;   // c71.x
   float depthBegin;     // c71.z: bloom depth rate = sat((viewZ - begin) / (end - begin))
   float depthEnd;       // c71.w
-  float pad0;
+  uint useFogGateMask;  // fog gates were drawn: post_fx_dark_souls_fog_gate_march
 };
 
 struct PostFxDarkSoulsLookFilterArgs {

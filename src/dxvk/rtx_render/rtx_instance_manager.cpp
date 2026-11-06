@@ -28,6 +28,7 @@
 #include "rtx_context.h"
 #include "rtx_scene_manager.h"
 #include "rtx_instance_manager.h"
+#include "rtx_dark_souls_look.h"
 #include "rtx_camera_manager.h"
 #include "rtx_options.h"
 #include "rtx_materials.h"
@@ -1137,6 +1138,7 @@ namespace dxvk {
         currentInstance.surface.isDs1Swamp = drawCall.getMaterialData().isDs1Swamp;
         currentInstance.surface.isDs1SkirtDecal = drawCall.getMaterialData().isDs1SkirtDecal;
         currentInstance.surface.isDs1ThinWall = drawCall.getMaterialData().isDs1ThinWall;
+        currentInstance.surface.isDs1CameraPasses = drawCall.getMaterialData().isDs1CameraPasses && DxvkDarkSoulsLook::isActive();
         currentInstance.surface.isDs1NoShadow = drawCall.getMaterialData().isDs1NoShadow;
         currentInstance.surface.isDs1WetBody = drawCall.getMaterialData().isDs1WetBody;
         currentInstance.surface.ds1HazeSet = drawCall.getMaterialData().ds1HazeSet;

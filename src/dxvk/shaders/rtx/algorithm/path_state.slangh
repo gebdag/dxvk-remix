@@ -469,6 +469,11 @@ struct PathState : IBasePayloadState
       set { _direction = f16vec3(newValue); }
   }
 
+  property bool ds1CameraRay
+  {
+    get { return false; }
+  }
+
   property uint ds1OriginNormal
   {
     get { return _ds1OriginNormal; }

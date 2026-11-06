@@ -341,6 +341,10 @@ struct RtSurface {
     textureSpritesheetData |= (static_cast<uint32_t>(decalSortOrder & 0x7F) << 24) | (isDs1ThinWall ? (1u << 31) : 0);
     // Fork: all eight, a DS1 lamp lighting rays pass (Surface::isDs1NoShadow).
     textureSpritesheetData |= isDs1NoShadow ? 0xFF000000u : 0u;
+    // Fork: 0xFE, a DS1 fog gate's quad the camera's rays pass (Surface::isDs1CameraPasses).
+    if (isDs1CameraPasses) {
+      textureSpritesheetData = (textureSpritesheetData & 0x00FFFFFFu) | 0xFE000000u;
+    }
 
     writeGPUHelper(data, offset, textureSpritesheetData);
 
@@ -483,6 +487,8 @@ struct RtSurface {
   bool isDs1SkirtDecal = false;
   // Fork: a DS1 thin wall, passed by lighting rays leaving the face in front of it (Surface::isDs1ThinWall).
   bool isDs1ThinWall = false;
+  // Fork: a DS1 fog gate's quad, passed by the camera's rays (Surface::isDs1CameraPasses).
+  bool isDs1CameraPasses = false;
   // Fork: a DS1 lamp, passed by all lighting rays (Surface::isDs1NoShadow).
   bool isDs1NoShadow = false;
   // Fork: a draw of the DS1 player's body: its vertices wet the body against the water (rtx_dark_souls_ripples.h).
