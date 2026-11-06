@@ -48,30 +48,49 @@
 #include "rtx/pass/sharc/sharc_integrator_utilities.slangh"
 #include "rtx/pass/gbuffer/gbuffer_guides_output.slangh"
 
-// Fork (DS1): the game's refraction smear as a bend of the view entering the water: the wave's tilt added to the
-// transmitted direction. Moving the ray's origin along the surface instead (by metres at a distance, as it was)
-// broke the view's continuity, and the lighting reused across pixels and frames turned black in patches along the
-// waves (Firelink's cistern, frame_20261106_003941; Sanctuary Guardian's arena).
-vec3 geometryResolverDs1SmearDirection(SurfaceMaterialInteractionPSRSample sample, vec3 geometryNormal, vec3 direction)
+// Fork (DS1): where a transmission PSR sample continues from, relative to its ray's origin. The game's
+// refraction smear shifts what shows through its water by a view angle, the wave normal's tilt times the
+// smear, whatever the depth below. Physical refraction through shallow water moves the floor by about
+// depth * 0.25 * tilt, a small fraction of that, so the sample continues from the point that angle reaches
+// at the water's distance: the tilt along the surface, scaled by the distance from the camera. 0 for
+// everything but DS1 water (SurfaceMaterialInteractionPSRSample::ds1SmearedNormal).
+// The game reads whatever its screen shows there; a ray has to stay in the water to see the same, so the
+// shift stops short of the first opaque surface along it (a wall or step rising out of the water), or the
+// ray would start inside that geometry and see through it.
+// The shift runs in the plane of the water's triangle (triangleNormal), not across the shading geometry normal:
+// that one follows the vertex normals, about 5 degrees off the triangle on Firelink's cistern water, and the ray
+// leaves the surface only a fraction of a millimetre under it. Shifted across the geometry normal, the origin
+// rose above the water wherever the wave tilt pointed up that slope; the ray then met the water again from above
+// within a millimetre while the resolver held it inside the medium, took it as leaving the water, and ran on for
+// metres through it (black patches along the waves: frame_20261106_003941, Sanctuary Guardian's arena).
+vec3 geometryResolverDs1RefractionShift(SurfaceMaterialInteractionPSRSample sample, vec3 triangleNormal, vec3 position,
+                                        vec3 rayOrigin)
 {
-  const vec3 tilt = sample.ds1SmearedNormal - geometryNormal * dot(sample.ds1SmearedNormal, geometryNormal);
-  if (!(dot(tilt, tilt) > 0.0f))
+  const vec3 tilt = sample.ds1SmearedNormal - triangleNormal * dot(sample.ds1SmearedNormal, triangleNormal);
+  const vec3 shift = tilt * length(position - cameraGetWorldPosition(cb.camera));
+  const float shiftLength = length(shift);
+  if (!(shiftLength > 0.0f))
   {
-    return direction;
+    return vec3(0.0f);
   }
-  // Never out of the water again: a bend past the surface tries half and a quarter of it (no snap back to the unbent
-  // view at grazing angles), then keeps the unbent view.
-  float share = 1.0f;
-  for (int i = 0; i < 3; ++i)
+
+  Ray guardRay = (Ray) 0;
+  guardRay.origin = rayOrigin;
+  guardRay.direction = shift / shiftLength;
+  guardRay.tMax = shiftLength;
+  RayQuery<0> rayQuery = RayQuery<0>();
+  rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_CULL_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES,
+                          OBJECT_MASK_OPAQUE, rayToRayDesc(guardRay));
+  while (rayQuery.Proceed())
   {
-    const vec3 bent = normalize(direction + tilt * share);
-    if (dot(bent, geometryNormal) < -0.01f)
-    {
-      return bent;
-    }
-    share *= 0.5f;
   }
-  return direction;
+  if (rayQuery.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
+  {
+    return shift;
+  }
+  // A small margin keeps the new origin off the surface it stopped at.
+  const float kMargin = 0.01f;
+  return guardRay.direction * max(rayQuery.CommittedRayT() - kMargin, 0.0f);
 }
 
 // Fork (DS1): how far a view entering DS1 water bends, by the water's depth there. IOR 1.33 is right for a pool
@@ -87,13 +106,10 @@ void geometryResolverDs1WaterRefraction(inout SurfaceMaterialInteractionPSRSampl
     return;
   }
 
-  // Down to the bed or kSmearBedSearch: the refraction saturates at fullDepth, but the smear's bend needs the real depth
-  // (assumed fullDepth, a bed 10 m down was smeared four times the game's shift).
-  const float kSmearBedSearch = 20.0f;
   Ray depthRay = (Ray) 0;
   depthRay.origin = position;
   depthRay.direction = -geometryNormal;
-  depthRay.tMax = max(fullDepth, kSmearBedSearch);
+  depthRay.tMax = fullDepth;
   RayQuery<0> rayQuery = RayQuery<0>();
   rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES,
                           OBJECT_MASK_OPAQUE, rayToRayDesc(depthRay));
@@ -107,22 +123,16 @@ void geometryResolverDs1WaterRefraction(inout SurfaceMaterialInteractionPSRSampl
       rayQuery.CommitNonOpaqueTriangleHit();
     }
   }
-  const float depth = rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? rayQuery.CommittedRayT() : depthRay.tMax;
+  const float depth = rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? rayQuery.CommittedRayT() : fullDepth;
   // The smear needs depth to work in too: none at the shore, in full from smearFullDepth.
   sample.ds1SmearedNormal *= saturate(depth / cb.ds1Ripple.smearFullDepth);
   const float flatDepth = cb.ds1Ripple.refractionFlatDepth;
   const float bend = saturate((depth - flatDepth) / max(fullDepth - flatDepth, 0.001f));
-  if (bend < 1.0f)
+  if (bend >= 1.0f)
   {
-    sample.inputDirection = normalize(lerp(incidentDirection, vec3(sample.inputDirection), bend));
+    return;
   }
-  // The game's smear moves what the water shows by the wave's tilt times the distance to the camera (a screen-space
-  // shift: metres far off). Bent by the tilt alone the view moves only about as far as the water is deep and the water
-  // looked still. So the bend aims at the point the shift shows on the bed: tilt x camera distance across the length
-  // the view runs to the bed (geometryResolverDs1SmearDirection keeps it in the water).
-  const float down = max(-dot(vec3(sample.inputDirection), geometryNormal), 0.05f);
-  const float toBed = max(depth / down, 0.05f);
-  sample.ds1SmearedNormal *= length(position - cameraGetWorldPosition(cb.camera)) / toBed;
+  sample.inputDirection = normalize(lerp(incidentDirection, vec3(sample.inputDirection), bend));
 }
 
 #ifndef GBUFFER_FEATURE_DLSSRR
@@ -2722,11 +2732,11 @@ void geometryResolverVertex(
 
       geometryResolverDs1WaterRefraction(surfaceMaterialInteractionTransmissionPSRSample, vec3(ray.direction),
         vec3(surfaceInteraction.geometryNormal), surfaceInteraction.position);
-      surfaceMaterialInteractionTransmissionPSRSample.inputDirection = geometryResolverDs1SmearDirection(
-        surfaceMaterialInteractionTransmissionPSRSample, vec3(surfaceInteraction.geometryNormal),
-        vec3(surfaceMaterialInteractionTransmissionPSRSample.inputDirection));
       Ray sampledRay = rayCreateDirection(
         rayInteraction, surfaceInteraction, ray, surfaceMaterialInteractionTransmissionPSRSample.inputDirection, pstrPenetrateSurface);
+      sampledRay.origin += geometryResolverDs1RefractionShift(
+        surfaceMaterialInteractionTransmissionPSRSample, surfaceInteraction.triangleNormal, surfaceInteraction.position,
+        sampledRay.origin);
 
       vec4 vectorTransform = quaternionMultiply(geometryResolverState.accumulatedRotation, surfaceMaterialInteractionTransmissionPSRSample.vectorTransform, true);
       
@@ -3295,13 +3305,12 @@ void geometryPSRResolverVertex(
 
     geometryResolverDs1WaterRefraction(surfaceMaterialInteractionTransmissionPSRSample, vec3(ray.direction),
       vec3(surfaceInteraction.geometryNormal), surfaceInteraction.position);
-    surfaceMaterialInteractionTransmissionPSRSample.inputDirection = geometryResolverDs1SmearDirection(
-      surfaceMaterialInteractionTransmissionPSRSample, vec3(surfaceInteraction.geometryNormal),
-      vec3(surfaceMaterialInteractionTransmissionPSRSample.inputDirection));
     const Ray sampledRay = rayCreateDirection(
       rayInteraction, surfaceInteraction, ray, surfaceMaterialInteractionTransmissionPSRSample.inputDirection, penetrateSurface);
 
-    geometryPSRResolverState.origin = sampledRay.origin;
+    geometryPSRResolverState.origin = sampledRay.origin + geometryResolverDs1RefractionShift(
+      surfaceMaterialInteractionTransmissionPSRSample, surfaceInteraction.triangleNormal, surfaceInteraction.position,
+      sampledRay.origin);
     geometryPSRResolverState.coneRadius = sampledRay.coneRadius;
     geometryPSRResolverState.direction = sampledRay.direction;
     geometryPSRResolverState.attenuation *= surfaceMaterialInteractionTransmissionPSRSample.attenuation;

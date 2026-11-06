@@ -1166,8 +1166,8 @@ SurfaceMaterialInteractionPSRSample translucentSurfaceMaterialInteractionCalcPSR
   materialPSRSample.inputDirection = inputDirection;
   materialPSRSample.attenuation = attenuation;
   materialPSRSample.vectorTransform = vectorTransform;
-  // Fork (DS1): entering a DS1 water body, the view bends by the game's refraction smear
-  // (geometryResolverDs1SmearDirection).
+  // Fork (DS1): entering a DS1 water body, the view continues from where the game's refraction smear looks
+  // (geometryResolverDs1RefractionShift).
   materialPSRSample.ds1SmearedNormal = (!isThinWalled && !oldInsideMedium)
     ? normal * translucentSurfaceMaterialInteraction.ds1RefractionSmear : vec3(0.0f);
 
