@@ -567,39 +567,6 @@ float ds1WetNoise(vec3 p)
          lerp(ds1WetNoiseCorner(cell + vec3(0, 1, 1)), ds1WetNoiseCorner(cell + vec3(1, 1, 1)), f.x), f.y), f.z);
 }
 
-// Fork (DS1): a cooling crust's cracks: cells in 3D (Voronoi), the distance to the nearest edge between two cells (F2 - F1),
-// 0 on an edge. On a surface they make the polygonal plates of a crust.
-float ds1LavaCells(vec3 p)
-{
-  const vec3 cell = floor(p);
-  const vec3 f = p - cell;
-  float d1 = 8.0f, d2 = 8.0f;
-  for (int z = -1; z <= 1; ++z)
-  {
-    for (int y = -1; y <= 1; ++y)
-    {
-      for (int x = -1; x <= 1; ++x)
-      {
-        const vec3 o = vec3(float(x), float(y), float(z));
-        const vec3 c = cell + o;
-        const vec3 h = vec3(ds1WetNoiseCorner(c), ds1WetNoiseCorner(c + vec3(17.3f, 0.0f, 0.0f)), ds1WetNoiseCorner(c + vec3(0.0f, 31.7f, 0.0f)));
-        const vec3 r = o + h - f;
-        const float d = dot(r, r);
-        if (d < d1)
-        {
-          d2 = d1;
-          d1 = d;
-        }
-        else if (d < d2)
-        {
-          d2 = d;
-        }
-      }
-    }
-  }
-  return sqrt(d2) - sqrt(d1);
-}
-
 // A drop that runs down the body as it dries, and the trail it leaves. The tracks are meridians around each body part in its own
 // space: the legs and the trunk with the head around a vertical axis, the arms, which the bind pose holds out, around theirs, as they
 // hang. A track at one angle stays on the surface however it curves, over a helmet's dome or a pauldron, heading down it. How far a
@@ -1410,34 +1377,34 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
         }
         const float dropMud = saturate(mudLiquid * 3.0f);
 
-        // Where lava has touched the body it leaves a crust that cools: dark plates parted by glowing cracks over an ember glow
-        // that runs under the whole coat. The parts that were deepest are the hottest and stay molten longest. The coat's top
-        // is feathered by noise and by facing (upward faces take less of it). Then it is char, which breaks up in patches.
+        // Where lava has touched the body it smoulders: a soft glow, yellow where hottest, through orange to red, in patches a hand
+        // across, no cracks (armour is cloth, leather and steel, not rock). Metal glows evenly, as heated metal does; cloth and
+        // leather in patches, with embers that outlast them. The parts that were deepest are the hottest and stay so longest. The
+        // coat fades out at the surface, raggedly, upward faces first. Then it is soot and char, which wear off in patches.
         if (lava > 0.0f)
         {
-          // How deep this place was, 0 at the contact's top to 1 a hand under it (grid w). Forced: the lower legs.
-          const float depth = cb.ds1Wet.forceLava >= 0.0f ? saturate((0.42f - place.y) / 0.3f) : soaked.w;
+          // How deep this place was, 0 at the contact's top to 1 a hand under the surface (grid w). Forced: the lower legs.
+          const float depth = cb.ds1Wet.forceLava >= 0.0f ? saturate((0.3f - place.y) / 0.25f) : soaked.w;
           const float lavaAge = 1.0f - lava;
           const vec3 up = normalize(vec3(opaqueSurfaceMaterialInteraction.shadingNormal));
-          const float edgeNoise = 0.6f * ds1WetNoise(body / 0.045f) + 0.4f * ds1WetNoise(body / 0.012f);
-          const float coat = saturate((depth - 0.35f * edgeNoise - 0.12f * max(up.y, 0.0f) + 0.12f) / 0.3f);
+          const float slow = ds1WetNoise(body / 0.07f);
+          const float fine = ds1WetNoise(body / 0.018f);
+          const float coat = saturate((depth - 0.3f * (0.7f * slow + 0.3f * fine) - 0.12f * max(up.y, 0.0f) + 0.2f) / 0.25f);
           const float wear = saturate((lava / cb.ds1Wet.lavaFade - 0.9f * ds1WetNoise(body / 0.09f)) / 0.1f);
           const float lavaLayer = coat * wear;
           const float heat = saturate(1.0f - lavaAge / (cb.ds1Wet.lavaMolten * (0.4f + 1.2f * depth)));
-          // Cracks between plates a few centimetres across and finer ones inside them, wide while hot, closing as it cools.
-          const float width = lerp(0.03f, 0.18f, heat);
-          const float crack = saturate(1.0f - ds1LavaCells(body / 0.045f) / width);
-          const float fineCrack = saturate(1.0f - ds1LavaCells(body / 0.016f + vec3(7.3f)) / (width * 0.6f));
-          const float ember = heat * (0.05f + 0.12f * depth);
-          const float molten = saturate(ember + heat * (0.9f * crack + 0.35f * fineCrack * heat) * (0.5f + 0.5f * depth));
-          // The crust itself: dark, a little lighter where it is still soft.
-          const vec3 crust = lerp(vec3(0.012f, 0.0105f, 0.009f), vec3(0.03f, 0.016f, 0.01f), heat);
-          opaqueSurfaceMaterialInteraction.albedo = lerp(vec3(opaqueSurfaceMaterialInteraction.albedo), crust, lavaLayer);
-          opaqueSurfaceMaterialInteraction.baseReflectivity = lerp(vec3(opaqueSurfaceMaterialInteraction.baseReflectivity), vec3(0.025f), lavaLayer);
-          roughness = lerp(roughness, lerp(0.92f, 0.5f, heat * crack), lavaLayer);
-          // Dull red at its coolest, through orange to yellow at its hottest.
-          const vec3 glowColour = lerp(lerp(vec3(1.0f, 0.05f, 0.004f), vec3(1.0f, 0.28f, 0.03f), saturate(molten * 2.0f)), vec3(1.0f, 0.65f, 0.18f), saturate(molten * 2.0f - 1.0f));
-          ds1EffectGlow += glowColour * pow(molten, 1.5f) * cb.ds1Wet.lavaGlow * lavaLayer;
+          const float isMetal = saturate(metallic * 1.5f);
+          const float patches = lerp(saturate((0.7f * slow + 0.3f * fine - 0.3f) * 2.5f), 1.0f, 0.7f * isMetal);
+          const float glow = heat * lerp(0.4f, 1.0f, depth) * patches * (0.75f + 0.25f * slow);
+          const float embers = (1.0f - isMetal) * saturate((fine - 0.74f) * 7.0f) * saturate(heat * 2.5f + 0.15f * (1.0f - lavaAge));
+          const float smoulder = saturate(glow + 0.45f * embers);
+          // Soot on metal, char on cloth and leather.
+          const vec3 burnt = lerp(vec3(0.014f, 0.012f, 0.01f), vec3(opaqueSurfaceMaterialInteraction.albedo) * 0.3f, isMetal);
+          opaqueSurfaceMaterialInteraction.albedo = lerp(vec3(opaqueSurfaceMaterialInteraction.albedo), burnt, lavaLayer * (0.6f + 0.4f * (1.0f - heat)));
+          roughness = lerp(roughness, lerp(0.95f, min(roughness + 0.3f, 1.0f), isMetal), lavaLayer);
+          // Red when it has cooled most, through orange to yellow at its hottest.
+          const vec3 glowColour = lerp(lerp(vec3(1.0f, 0.1f, 0.015f), vec3(1.0f, 0.36f, 0.05f), saturate(smoulder * 2.0f)), vec3(1.0f, 0.68f, 0.22f), saturate(smoulder * 2.0f - 1.0f));
+          ds1EffectGlow += glowColour * pow(smoulder, 1.4f) * cb.ds1Wet.lavaGlow * lavaLayer;
         }
 
         if (cb.ds1Wet.runnerScale > 0.0f)

@@ -99,6 +99,10 @@ void main(uint id : SV_DispatchThreadID)
   const vec3 place = vec3(float((colour >> 16) & 0xFF), float((colour >> 8) & 0xFF), float(colour & 0xFF)) / 255.0f;
   const int3 cells = int3(DS1_WET_CELLS_X, DS1_WET_CELLS_Y, DS1_WET_CELLS_Z);
   const int3 first = int3(floor(place * vec3(cells) - 0.5f));
+  // The colour holds the bind position, y = (height + 0.2) / 2.4 in metres. A cell's height in the world is about the vertex's
+  // plus the cell's height above it in the bind pose (the body upright). Cells above the surface take nothing: the eight cells
+  // round a vertex reach a cell further up, and the effect started above the water line.
+  const float topAllowed = surface + (lava ? cb.lavaContact : cb.contactMargin);
   // The eight cells around it: vertices lie further apart than the cells on the larger polygons.
   for (int z = 0; z < 2; ++z)
   {
@@ -107,12 +111,17 @@ void main(uint id : SV_DispatchThreadID)
       for (int x = 0; x < 2; ++x)
       {
         const int3 c = clamp(first + int3(x, y, z), int3(0), cells - 1);
+        const float cellHeight = world.y + ((float(c.y) + 0.5f) / float(DS1_WET_CELLS_Y) - place.y) * 2.4f;
+        if (cellHeight > topAllowed)
+        {
+          continue;
+        }
         const int2 slice = int2(c.z % DS1_WET_SLICES_PER_ROW, c.z / DS1_WET_SLICES_PER_ROW);
         const int2 texel = slice * int2(DS1_WET_CELLS_X, DS1_WET_CELLS_Y) + c.xy;
         if (lava)
         {
-          // How deep: 0 at the top of the contact, 1 a hand under it. The deepest a place has been while the coat lasts.
-          const float depth = saturate((surface + cb.lavaContact - world.y) / max(cb.lavaContact + 0.1f, 0.05f));
+          // How deep this cell was: 0 at the top of the contact, 1 a hand under the surface. The deepest it has been while the coat lasts.
+          const float depth = saturate((topAllowed - cellHeight) / max(cb.lavaContact + 0.12f, 0.05f));
           const vec4 old = grid[texel];
           grid[texel] = float4(old.x, 0.0f, 1.0f, old.z > 0.0f ? max(old.w, depth) : depth);
         }

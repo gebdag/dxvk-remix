@@ -34,7 +34,7 @@ namespace dxvk {
     RTX_OPTION("rtx.ds1Wet", float, lavaTime, 90.0f, "Seconds for the marks of lava on the body to go; water takes them off at once.");
     RTX_OPTION("rtx.ds1Wet", float, lavaMoltenTime, 12.0f, "Seconds a part of the body that was in lava stays molten before it has cooled to char.");
     RTX_OPTION("rtx.ds1Wet", float, lavaFadeTime, 30.0f, "The last seconds of the char on the body, over which it fades away in patches.");
-    RTX_OPTION("rtx.ds1Wet", float, lavaContact, 0.3f, "A vertex this many metres above lava burns: the game's lava is a floor the body stands on, so only the soles would touch it.");
+    RTX_OPTION("rtx.ds1Wet", float, lavaContact, 0.05f, "A part of the body this many metres above the lava's surface still takes it. The lava is a floor the body stands in, so the coat ends about at the surface.");
     RTX_OPTION("rtx.ds1Wet", float, lavaGlow, 4.0f, "Molten parts of the body at their hottest, radiance.");
     RTX_OPTION_FLAG("rtx.ds1Wet", float, forceLava, -1.0f, RtxOptionFlags::NoSave, "Test: 0 or above, this much lava on the whole body.");
     RTX_OPTION_FLAG("rtx.ds1Wet", bool, testLava, false, RtxOptionFlags::NoSave, "Test: rtx.ds1Wet.testWaterHeight is lava.");
@@ -59,6 +59,7 @@ namespace dxvk {
     RTX_OPTION("rtx.ds1Wet", float, porousFactor, 0.2f, "Albedo scale of a fully porous wet surface.");
     RTX_OPTION_FLAG("rtx.ds1Wet", bool, soak, false, RtxOptionFlags::NoSave, "Wet all over, as under a waterfall.");
     RTX_OPTION_FLAG("rtx.ds1Wet", bool, clear, false, RtxOptionFlags::NoSave, "Test: dry the whole body at once.");
+    RTX_OPTION_FLAG("rtx.ds1Wet", int, clearEvent, 0, RtxOptionFlags::NoSave, "Set by the DS1 proxy: a new value clears water, mud and lava off the body (resting at a bonfire, a warp, a load).");
     RTX_OPTION_FLAG("rtx.ds1Wet", float, testWaterHeight, -100000.0f, RtxOptionFlags::NoSave, "Test: above -99999, the water's height everywhere.");
     RTX_OPTION_FLAG("rtx.ds1Wet", float, forceWetness, -1.0f, RtxOptionFlags::NoSave, "Test: 0 or above, this grid value on the whole body.");
   };

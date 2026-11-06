@@ -617,7 +617,15 @@ namespace dxvk {
       {
         Ds1WetDecayArgs args = {};
         args.decay = s_frame.dt / std::max(DxvkDarkSoulsWet::dryTime(), 1e-3f);
-        args.reset = s_field.wetReset || DxvkDarkSoulsWet::clear() ? 1u : 0u;
+        // The proxy counts bonfire rests and warps up; a new count clears the body.
+        static int s_clearEvent = 0;
+        const bool clearEvent = DxvkDarkSoulsWet::clearEvent() != s_clearEvent;
+        s_clearEvent = DxvkDarkSoulsWet::clearEvent();
+        if (clearEvent) {
+          s_lastInWater = -1e9;
+          s_dripsRun = false;
+        }
+        args.reset = s_field.wetReset || DxvkDarkSoulsWet::clear() || clearEvent ? 1u : 0u;
         args.soak = DxvkDarkSoulsWet::soak() || DxvkDarkSoulsWet::fallStrength() > 0.0f ? 1u : 0u;
         args.mudDecay = s_frame.dt / std::max(DxvkDarkSoulsWet::mudDryTime(), 1e-3f);
         args.lavaDecay = s_frame.dt / std::max(DxvkDarkSoulsWet::lavaTime(), 1e-3f);
