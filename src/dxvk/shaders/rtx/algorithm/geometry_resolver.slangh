@@ -87,10 +87,13 @@ void geometryResolverDs1WaterRefraction(inout SurfaceMaterialInteractionPSRSampl
     return;
   }
 
+  // Down to the bed or kSmearBedSearch: the refraction saturates at fullDepth, but the smear's bend needs the real depth
+  // (assumed fullDepth, a bed 10 m down was smeared four times the game's shift).
+  const float kSmearBedSearch = 20.0f;
   Ray depthRay = (Ray) 0;
   depthRay.origin = position;
   depthRay.direction = -geometryNormal;
-  depthRay.tMax = fullDepth;
+  depthRay.tMax = max(fullDepth, kSmearBedSearch);
   RayQuery<0> rayQuery = RayQuery<0>();
   rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES,
                           OBJECT_MASK_OPAQUE, rayToRayDesc(depthRay));
@@ -104,7 +107,7 @@ void geometryResolverDs1WaterRefraction(inout SurfaceMaterialInteractionPSRSampl
       rayQuery.CommitNonOpaqueTriangleHit();
     }
   }
-  const float depth = rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? rayQuery.CommittedRayT() : fullDepth;
+  const float depth = rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? rayQuery.CommittedRayT() : depthRay.tMax;
   // The smear needs depth to work in too: none at the shore, in full from smearFullDepth.
   sample.ds1SmearedNormal *= saturate(depth / cb.ds1Ripple.smearFullDepth);
   const float flatDepth = cb.ds1Ripple.refractionFlatDepth;
