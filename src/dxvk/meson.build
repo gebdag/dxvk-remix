@@ -231,6 +231,8 @@ dxvk_src = files([
   'rtx_render/rtx_file_watch.cpp',
   'rtx_render/rtx_file_watch.h',
   'rtx_render/rtx_dark_souls_ambient.cpp',
+  'rtx_render/rtx_dark_souls_effect_particles.cpp',
+  'rtx_render/rtx_dark_souls_effect_particles.h',
   'rtx_render/rtx_dark_souls_ambient.h',
   'rtx_render/rtx_dark_souls_exposure.cpp',
   'rtx_render/rtx_dark_souls_exposure.h',

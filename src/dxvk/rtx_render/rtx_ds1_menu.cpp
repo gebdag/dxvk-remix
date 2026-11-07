@@ -21,6 +21,7 @@
 #include "rtx_dark_souls_swamp.h"
 #include "rtx_dark_souls_ripples.h"
 #include "rtx_dark_souls_specular.h"
+#include "rtx_dark_souls_effect_particles.h"
 #include "../dxvk_context.h"
 #include "../imgui/imgui.h"
 
@@ -144,6 +145,7 @@ namespace dxvk {
     postFx.darkSoulsHaze().showImguiSettings();
 
     showParticles();
+    DxvkDarkSoulsEffectParticles::showImguiSettings();
     DxvkDarkSoulsSwamp::showImguiSettings();
 
     if (ImGui::CollapsingHeader("Tonemapper", kOpen)) {

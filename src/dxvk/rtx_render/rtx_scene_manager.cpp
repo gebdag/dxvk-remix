@@ -35,6 +35,7 @@
 #include "rtx_preserved_object_picking.h"
 #include "rtx_terrain_baker.h"
 #include "rtx_dark_souls_ripples.h"
+#include "rtx_dark_souls_effect_particles.h"
 #include "rtx_texture_manager.h"
 #include "rtx_texture.h"
 #include "rtx_xess.h"
@@ -1624,6 +1625,11 @@ namespace dxvk {
     // Fork (DS1): drips off the wet player (rtx_dark_souls_ripples.h).
     if (instance && drawCallState.getMaterialData().isDs1WetBody && !drawCallState.getMaterialData().isDs1WetCovered) {
       DxvkDarkSoulsRipples::emitDrips(ctx.ptr(), instance->getVectorIdx());
+    }
+    // Fork (DS1): a sprite effect the particles replace: its draw only spawns them (rtx_dark_souls_effect_particles.h).
+    if (instance && drawCallState.getMaterialData().ds1EffectParticles != 0 &&
+        DxvkDarkSoulsEffectParticles::emit(ctx.ptr(), instance->getVectorIdx(), drawCallState, renderMaterialData)) {
+      instance->setHidden(true);
     }
     if (instance && pParticleSystemDesc) {
       RtxParticleSystemManager& particleSystem = device()->getCommon()->metaParticleSystem();

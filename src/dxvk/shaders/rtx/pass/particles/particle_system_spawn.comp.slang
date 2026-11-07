@@ -71,6 +71,8 @@ GpuParticle respawn(uint particleIdx, uint spawnCtxIdx, const GpuParticleSystem 
   float3 prevPositions[3];
   float4 color = (spawnCtx.spawnMeshColorsIdx != BINDING_INDEX_INVALID) ? 0.0f : 1.0f;
   float4 uvMinMax = float4(0..xx, 1..xx);
+  // Fork (DS1): each corner's texcoord, for the effect particles' own spawn (ds1Motes, ds1Sparks).
+  float2 ds1Texcoords[3];
   
   uint randomSeed = particleIdx;
     
@@ -119,6 +121,7 @@ GpuParticle respawn(uint particleIdx, uint spawnCtxIdx, const GpuParticleSystem 
       texcoord = float2(BUFFER_ARRAY(geometries, (uint)spawnCtx.spawnMeshTexcoordsIdx, baseSrcTexcoordOffset + 0),
                         BUFFER_ARRAY(geometries, (uint)spawnCtx.spawnMeshTexcoordsIdx, baseSrcTexcoordOffset + 1));
     }
+    ds1Texcoords[i] = texcoord;
     
     if (particleSystem.desc.useSpawnTexcoords && spawnCtx.spawnMeshTexcoordsIdx != BINDING_INDEX_INVALID)
     {
@@ -204,11 +207,65 @@ GpuParticle respawn(uint particleIdx, uint spawnCtxIdx, const GpuParticleSystem 
     color = 1.0f;
   }
 
+  // Fork (DS1): a bloodstain's motes (rtx_dark_souls_effect_particles.h). The game's quads show a texture that is a cluster of
+  // dots, densest in its middle: each particle is one dot, kept with that density. They drift off slowly, mostly upwards.
+  if (particleSystem.desc.ds1Motes != 0)
+  {
+    const float2 uv = ds1Texcoords[0] * randomBary.x + ds1Texcoords[1] * randomBary.y + ds1Texcoords[2] * randomBary.z;
+    const float r = length(uv * 2.0f - 1.0f);
+    const float density = saturate(1.0f - r);
+    ds1Spawns = color.a > 0.004f && randomFloat(uint2(randomSeed++, particleCb.frameIdx)) < density * density * density * 2.0f;
+    const float3 drift = sampleDirectionInCone(f16vec3(particleCb.upDirection), cos(radians(75.0f)),
+      float2(randomFloat(uint2(randomSeed++, particleCb.frameIdx)), randomFloat(uint2(randomSeed++, particleCb.frameIdx))));
+    initialVelocity = drift * lerp(0.3f, 1.0f, randomFloat(uint2(randomSeed++, particleCb.frameIdx))) *
+                      particleSystem.desc.initialVelocityFromNormal * particleCb.sceneScale;
+    spawnPosition = worldPosition;
+  }
+
+  // Fork (DS1): a hit's sparks. Each of the game's streaks is a thin quad crossing the hit's centre, its ends marked u = -1 and +1
+  // (the DS1 proxy): a spark flies from the streak's middle towards the end on its side, faster the further out it starts, as
+  // the burst would carry it.
+  if (particleSystem.desc.ds1Sparks != 0)
+  {
+    float3 minusEnd = 0.0f, plusEnd = 0.0f;
+    float minusCount = 0.0f, plusCount = 0.0f;
+    for (uint k = 0; k < 3; k++)
+    {
+      const float3 corner = mul(spawnCtx.spawnObjectToWorld, float4(positions[k], 1.f));
+      if (ds1Texcoords[k].x < 0.0f)
+      {
+        minusEnd += corner;
+        minusCount += 1.0f;
+      }
+      else
+      {
+        plusEnd += corner;
+        plusCount += 1.0f;
+      }
+    }
+    const float3 axis = minusCount > 0.0f && plusCount > 0.0f ? plusEnd / plusCount - minusEnd / minusCount : float3(0.0f, 0.0f, 0.0f);
+    const float len = length(axis);
+    const float side = ds1Texcoords[0].x * randomBary.x + ds1Texcoords[1].x * randomBary.y + ds1Texcoords[2].x * randomBary.z;
+    ds1Spawns = color.a > 0.004f && len > 1e-4f && abs(side) > 0.05f;
+    const float3 along = len > 1e-4f ? axis / len : float3(0.0f, 1.0f, 0.0f);
+    // Half the streak's length is the reach of its outer end: speed per metre of it, scaled by how far out the spark starts.
+    const float speed = 0.5f * len * abs(side) * particleSystem.desc.initialVelocityFromNormal *
+                        lerp(0.7f, 1.3f, randomFloat(uint2(randomSeed++, particleCb.frameIdx)));
+    initialVelocity = along * (side > 0.0f ? speed : -speed);
+    spawnPosition = worldPosition;
+  }
+
   // Spawn a particle
   newParticle.reset(particleSystem, spawnPosition, initialVelocity, uvMinMax, color, randSeed);
   if (!ds1Spawns)
   {
     newParticle.timeToLive = 0.0f;
+    // Fork (DS1): a refused mote or spark dies at the next step instead of holding its slot (counted until its life passes
+    // initial - max), which filled the pool at the motes' rate.
+    if (particleSystem.desc.ds1Motes != 0 || particleSystem.desc.ds1Sparks != 0)
+    {
+      newParticle.timeToLive = half(float(newParticle.initialTimeToLive(particleSystem)) - particleSystem.desc.maxTimeToLive - 1.0f);
+    }
   }
   
   return newParticle;

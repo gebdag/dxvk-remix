@@ -1,0 +1,190 @@
+#include "rtx_dark_souls_effect_particles.h"
+
+#include "rtx_imgui.h"
+#include "rtx_particle_system.h"
+#include "rtx_materials.h"
+#include "rtx_types.h"
+#include "../dxvk_context.h"
+#include "../imgui/imgui.h"
+
+namespace dxvk {
+
+  namespace {
+    // A soft round dot, white, in each mip: the particle's texture. Its colour is the particle's, from the game's
+    // vertex colour, so one texture serves both kinds.
+    Rc<DxvkImage> s_dotImage;
+    Rc<DxvkImageView> s_dotView;
+    constexpr size_t kDotHash = 0x44533146584454ull; // "DS1FXDT"
+
+    void createDot(DxvkContext* ctx) {
+      static const uint32_t kSize = 32, kMips = 6;
+      std::vector<uint8_t> pixels;
+      for (uint32_t mip = 0; mip < kMips; ++mip) {
+        const uint32_t size = kSize >> mip;
+        for (uint32_t y = 0; y < size; ++y) {
+          for (uint32_t x = 0; x < size; ++x) {
+            const float u = (float(x) + 0.5f) / float(size) * 2.0f - 1.0f;
+            const float v = (float(y) + 0.5f) / float(size) * 2.0f - 1.0f;
+            // A bright core with a soft rim, like the game's dots.
+            const float r = std::sqrt(u * u + v * v);
+            const float alpha = saturate(1.0f - r) * saturate(1.0f - r) * 1.6f;
+            pixels.insert(pixels.end(), { 255, 255, 255, uint8_t(saturate(alpha) * 255.0f + 0.5f) });
+          }
+        }
+      }
+      DxvkImageCreateInfo imageInfo = {};
+      imageInfo.type = VK_IMAGE_TYPE_2D;
+      imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+      imageInfo.sampleCount = VK_SAMPLE_COUNT_1_BIT;
+      imageInfo.extent = { kSize, kSize, 1 };
+      imageInfo.numLayers = 1;
+      imageInfo.mipLevels = kMips;
+      imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+      imageInfo.stages = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
+      imageInfo.access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+      imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+      imageInfo.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+      s_dotImage = ctx->getDevice()->createImage(imageInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, DxvkMemoryStats::Category::RTXMaterialTexture, "DS1 effect particle dot");
+
+      DxvkBufferCreateInfo stagingInfo = {};
+      stagingInfo.size = pixels.size();
+      stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+      stagingInfo.stages = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_HOST_BIT;
+      stagingInfo.access = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_HOST_WRITE_BIT;
+      Rc<DxvkBuffer> staging = ctx->getDevice()->createBuffer(stagingInfo, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, DxvkMemoryStats::Category::RTXBuffer, "DS1 effect particle dot staging");
+      std::memcpy(DxvkBufferSlice(staging).mapPtr(0), pixels.data(), pixels.size());
+
+      DxvkImageViewCreateInfo viewInfo = {};
+      viewInfo.type = VK_IMAGE_VIEW_TYPE_2D;
+      viewInfo.format = imageInfo.format;
+      viewInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+      viewInfo.aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+      viewInfo.numLevels = kMips;
+      viewInfo.numLayers = 1;
+      s_dotView = ctx->getDevice()->createImageView(s_dotImage, viewInfo);
+
+      ctx->changeImageLayout(s_dotImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+      VkDeviceSize offset = 0;
+      for (uint32_t mip = 0; mip < kMips; ++mip) {
+        VkImageSubresourceLayers subresource = {};
+        subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        subresource.mipLevel = mip;
+        subresource.layerCount = 1;
+        const VkExtent3D extent = util::computeMipLevelExtent(imageInfo.extent, mip);
+        ctx->copyBufferToImage(s_dotImage, subresource, VkOffset3D { 0, 0, 0 }, extent, staging, offset, 0, 0);
+        offset += util::computeImageDataSize(imageInfo.format, extent);
+      }
+      ctx->changeImageLayout(s_dotImage, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+      s_dotImage->setHash(kDotHash);
+    }
+  }
+
+  bool DxvkDarkSoulsEffectParticles::emit(DxvkContext* ctx, uint32_t instanceIdx, const DrawCallState& drawCallState, const MaterialData& renderMaterialData) {
+    const uint8_t kind = drawCallState.getMaterialData().ds1EffectParticles;
+    if ((kind == 1 && !motes()) || (kind == 2 && !sparks()) || kind == 0 || kind > 2) {
+      return false;
+    }
+    // The particles take the draw's own material (self-lit, its blend), with the dot for its texture.
+    if (renderMaterialData.getType() != MaterialDataType::Opaque) {
+      return false;
+    }
+    if (s_dotView == nullptr) {
+      createDot(ctx);
+    }
+    MaterialData material(renderMaterialData);
+    material.getOpaqueMaterialData().setAlbedoOpacityTexture(TextureRef(s_dotView, kDotHash));
+
+    // The particles' draws must not be emitters themselves.
+    DrawCallState state(drawCallState);
+    state.modifyMaterialData().ds1EffectParticles = 0;
+
+    RtxParticleSystemDesc desc;
+    desc.spriteSheetMode = UseMaterialSpriteSheet;
+    desc.spriteSheetRows = 1;
+    desc.spriteSheetCols = 1;
+    desc.enableCollisionDetection = 1;
+    desc.collisionMode = Bounce;
+    desc.minRotationSpeed = { 0.0f };
+    desc.maxRotationSpeed = { 0.0f };
+    desc.maxVelocity = { vec3(2000.0f, 2000.0f, 2000.0f) };
+
+    if (kind == 1) {
+      const float life = std::max(moteLife(), 0.1f);
+      const float size = std::max(moteSize(), 0.1f); // cm, as the particle system takes sizes
+      const float bright = std::max(moteBrightness(), 0.0f);
+      desc.ds1Motes = 1;
+      desc.maxNumParticles = 32768;
+      // Below the pool's size, or the first draw of a frame would take all of it (RtxParticleSystemManager::spawnParticles).
+      desc.spawnRatePerSecond = std::clamp(moteRate(), 0.0f, 30000.0f);
+      desc.minTimeToLive = life * 0.6f;
+      desc.maxTimeToLive = life * 1.4f;
+      // initialVelocityFromNormal carries the drift speed (cm/s) for the motes' own spawn (ds1Motes).
+      desc.initialVelocityFromNormal = std::max(moteDrift(), 0.0f);
+      desc.useTurbulence = moteTurbulence() > 0.0f ? 1 : 0;
+      desc.turbulenceForce = std::max(moteTurbulence(), 0.0f);
+      // Authored per cm and scaled by sceneScale like the force: 500 is swirls of about 20 cm that change about five times a second.
+      desc.turbulenceFrequency = 500.0f;
+      desc.dragCoefficient = 1.5f;
+      desc.gravityForce = 0.0f;
+      desc.collisionThickness = 12.0f;
+      desc.collisionRestitution = 0.5f;
+      desc.billboardType = FaceCamera_Spherical;
+      // Fade in, hold, fade out; the colour is the game's vertex colour times this.
+      desc.minColor = { vec4(bright, bright, bright, 0.0f), vec4(bright, bright, bright, 1.0f), vec4(bright, bright, bright, 1.0f), vec4(bright, bright, bright, 0.0f) };
+      desc.maxColor = desc.minColor;
+      desc.minSize = { vec2(size * 0.6f, size * 0.6f) };
+      desc.maxSize = { vec2(size * 1.3f, size * 1.3f) };
+    } else {
+      const float life = std::max(sparkLife(), 0.05f);
+      const float size = std::max(sparkSize(), 0.1f); // cm
+      const float bright = std::max(sparkBrightness(), 0.0f);
+      desc.ds1Sparks = 1;
+      desc.maxNumParticles = 8192;
+      desc.spawnRatePerSecond = std::clamp(sparkRate(), 0.0f, 6000.0f);
+      desc.minTimeToLive = life * 0.5f;
+      desc.maxTimeToLive = life * 1.5f;
+      // initialVelocityFromNormal carries the speed per metre of half streak (1/s) for the sparks' own spawn (ds1Sparks).
+      desc.initialVelocityFromNormal = std::max(sparkSpeed(), 0.0f);
+      desc.gravityForce = -981.0f;
+      desc.dragCoefficient = 0.4f;
+      desc.collisionThickness = 6.0f;
+      desc.collisionRestitution = std::clamp(sparkBounce(), 0.0f, 1.0f);
+      desc.billboardType = FaceCamera_Spherical;
+      desc.alignParticlesToVelocity = 1;
+      desc.enableMotionTrail = sparkTrail() > 0.0f ? 1 : 0;
+      desc.motionTrailMultiplier = std::max(sparkTrail(), 0.0f);
+      // Hot, then cooling to red as it fades.
+      desc.minColor = { vec4(bright, bright, bright, 1.0f), vec4(bright, bright * 0.85f, bright * 0.7f, 1.0f), vec4(bright, bright * 0.45f, bright * 0.25f, 0.0f) };
+      desc.maxColor = desc.minColor;
+      desc.minSize = { vec2(size * 0.7f, size * 0.7f), vec2(size * 0.5f, size * 0.5f) };
+      desc.maxSize = { vec2(size * 1.2f, size * 1.2f), vec2(size * 0.8f, size * 0.8f) };
+    }
+
+    ctx->getCommonObjects()->metaParticleSystem().spawnParticles(ctx, desc, instanceIdx, state, material);
+    return true;
+  }
+
+  void DxvkDarkSoulsEffectParticles::showImguiSettings() {
+    if (!ImGui::CollapsingHeader("Effect particles (motes, sparks)")) {
+      return;
+    }
+    ImGui::Indent();
+    RemixGui::Checkbox("Bloodstain Motes", &motesObject());
+    RemixGui::DragFloat("Mote Rate", &moteRateObject(), 50.0f, 0.0f, 30000.0f, "%.0f");
+    RemixGui::DragFloat("Mote Size (cm)", &moteSizeObject(), 0.05f, 0.1f, 10.0f, "%.2f");
+    RemixGui::DragFloat("Mote Life (s)", &moteLifeObject(), 0.05f, 0.1f, 10.0f, "%.2f");
+    RemixGui::DragFloat("Mote Drift (cm/s)", &moteDriftObject(), 0.5f, 0.0f, 200.0f, "%.1f");
+    RemixGui::DragFloat("Mote Turbulence", &moteTurbulenceObject(), 1.0f, 0.0f, 500.0f, "%.0f");
+    RemixGui::DragFloat("Mote Brightness", &moteBrightnessObject(), 0.01f, 0.0f, 8.0f, "%.2f");
+    RemixGui::Checkbox("Hit Sparks", &sparksObject());
+    RemixGui::DragFloat("Spark Rate", &sparkRateObject(), 5.0f, 0.0f, 6000.0f, "%.0f");
+    RemixGui::DragFloat("Spark Speed (1/s)", &sparkSpeedObject(), 0.5f, 0.0f, 200.0f, "%.1f");
+    RemixGui::DragFloat("Spark Size (cm)", &sparkSizeObject(), 0.05f, 0.1f, 10.0f, "%.2f");
+    RemixGui::DragFloat("Spark Life (s)", &sparkLifeObject(), 0.01f, 0.05f, 5.0f, "%.2f");
+    RemixGui::DragFloat("Spark Trail (frames)", &sparkTrailObject(), 0.05f, 0.0f, 10.0f, "%.2f");
+    RemixGui::DragFloat("Spark Bounce", &sparkBounceObject(), 0.01f, 0.0f, 1.0f, "%.2f");
+    RemixGui::DragFloat("Spark Brightness", &sparkBrightnessObject(), 0.01f, 0.0f, 8.0f, "%.2f");
+    ImGui::Unindent();
+  }
+
+} // namespace dxvk

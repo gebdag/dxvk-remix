@@ -109,6 +109,9 @@ struct GpuParticleSystemDesc {
   uint8_t ds1Drip : 1;
   // Fork (DS1): water bouncing off the player's body where falling water meets it (rtx_dark_souls_ripples.h).
   uint8_t ds1Splash : 1;
+  // Fork (DS1): a bloodstain's motes and a hit's sparks, from the game's own sprites (rtx_dark_souls_effect_particles.h).
+  uint8_t ds1Motes : 1;
+  uint8_t ds1Sparks : 1;
 
 // Note: Spatial fields (collisionThickness, attractorRadius, gravityForce,
   // initialVelocityFromNormal, attractorForce, turbulenceForce, turbulenceFrequency)
@@ -170,6 +173,8 @@ struct RtxParticleSystemDesc : GpuParticleSystemDesc {
     restrictVelocityZ = 0;
     ds1Drip = 0;
     ds1Splash = 0;
+    ds1Motes = 0;
+    ds1Sparks = 0;
   }
 
   XXH64_hash_t calcHash() const {
