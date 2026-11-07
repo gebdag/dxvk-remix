@@ -1184,6 +1184,7 @@ namespace dxvk {
     }
     args.shaftEnable = shafts ? 1u : 0u;
     args.shaftWeight = shaftWeight();
+    args.blackToe = std::clamp(blackToe(), 0.0f, 1.0f);
     // intensity below 1: the composite blends over Remix's own frame (m_blend[1], RtxContext), and the grade
     // eases toward identity with it.
     args.intensity = m_blend[1].isValid() ? intensityClamped() : 1.0f;

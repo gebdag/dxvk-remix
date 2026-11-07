@@ -295,7 +295,8 @@ struct PostFxDarkSoulsLookCompositeArgs {
   float shaftWeight;    // c56.y
   // rtx.ds1Look.intensity: the look over Remix's own frame (STOCK) in gamma space; 1 = the look alone.
   float intensity;
-  uint pad0;
+  // rtx.ds1Look.blackToe: 0 = the grade's hard clip at black, 1 = the full toe (post_fx_dark_souls_look_composite.comp.slang).
+  float blackToe;
 };
 
 // One stage of the light shaft chain in direction space (post_fx_dark_souls_look_shafts.comp.slang).

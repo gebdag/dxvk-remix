@@ -23,6 +23,29 @@ Sampler2D<float4> Shafts;
 layout(binding = POST_FX_DS_LOOK_COMPOSITE_STOCK)
 Texture2D<float4> Stock;
 
+// One graded channel, y = dot((col, 1), row), with the row's black offset b = row.w. Below b < 0 the game clips everything
+// darker than -b before the offset to black. The toe instead takes u = y - b, the value above the row's own black, and from
+// u = 0 to u = -2b follows u^2 / (-4b): black stays black, what clipped exactly at black comes out at -b/4, and at u = -2b it
+// meets the line with the same value and slope, so everything brighter is the game's grade unchanged.
+// Only for dark pixels: the grade's rows carry its saturation (negative off-diagonal terms), so a bright saturated colour can
+// put another channel in that range, which the game clips and a toe would grey. The toe fades out between the brightness of a
+// grey at the knee (its brightest channel, before the grade) and twice that.
+float toeChannel(float y, vec4 row, float brightest, float strength)
+{
+  const float b = row.w;
+  const float clipped = max(y, 0.0f);
+  if (b >= 0.0f || strength <= 0.0f)
+  {
+    return clipped;
+  }
+  const float kneeIn = -2.0f * b / max(row.x + row.y + row.z, 1e-3f);
+  strength *= 1.0f - smoothstep(kneeIn, 2.0f * kneeIn, brightest);
+  const float u = max(y - b, 0.0f);
+  const float knee = -2.0f * b;
+  const float toe = u < knee ? u * u / (2.0f * knee) : y;
+  return lerp(clipped, toe, strength);
+}
+
 [shader("compute")]
 [numthreads(16, 8, 1)]
 void main(uint2 pixel : SV_DispatchThreadID)
@@ -52,6 +75,9 @@ void main(uint2 pixel : SV_DispatchThreadID)
     col = lerp(stock, col, cb.intensity);
   }
   const vec4 c = vec4(col, 1.0f);
-  const vec3 graded = saturate(vec3(dot(c, cb.gradeRowR), dot(c, cb.gradeRowG), dot(c, cb.gradeRowB)));
+  const float brightest = max(col.r, max(col.g, col.b));
+  const vec3 graded = saturate(vec3(toeChannel(dot(c, cb.gradeRowR), cb.gradeRowR, brightest, cb.blackToe),
+                                    toeChannel(dot(c, cb.gradeRowG), cb.gradeRowG, brightest, cb.blackToe),
+                                    toeChannel(dot(c, cb.gradeRowB), cb.gradeRowB, brightest, cb.blackToe)));
   InOutColor[pixel] = vec4(pow(graded, vec3(2.2f)), frame.a);
 }
