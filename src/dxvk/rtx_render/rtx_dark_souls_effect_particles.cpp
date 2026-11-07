@@ -81,8 +81,12 @@ namespace dxvk {
 
   bool DxvkDarkSoulsEffectParticles::emit(DxvkContext* ctx, uint32_t instanceIdx, const DrawCallState& drawCallState, const MaterialData& renderMaterialData) {
     const uint8_t kind = drawCallState.getMaterialData().ds1EffectParticles;
-    if ((kind == 1 && !motes()) || (kind == 2 && !sparks()) || kind == 0 || kind > 2) {
+    if ((kind == 1 && !motes()) || ((kind == 2 || kind == 3) && !sparks()) || kind == 0 || kind > 3) {
       return false;
+    }
+    // A hit's later frames: its sparks fly already, the game's streaks only hide.
+    if (kind == 3) {
+      return true;
     }
     // The particles take the draw's own material (self-lit, its blend), with the dot for its texture.
     if (renderMaterialData.getType() != MaterialDataType::Opaque) {
@@ -122,15 +126,16 @@ namespace dxvk {
       desc.initialVelocityFromNormal = std::max(moteDrift(), 0.0f);
       desc.useTurbulence = moteTurbulence() > 0.0f ? 1 : 0;
       desc.turbulenceForce = std::max(moteTurbulence(), 0.0f);
-      // Authored per cm and scaled by sceneScale like the force: 500 is swirls of about 20 cm that change about five times a second.
-      desc.turbulenceFrequency = 500.0f;
-      desc.dragCoefficient = 1.5f;
+      // Per cm, scaled by sceneScale: 150 is swirls of about 70 cm, gentle against the rise.
+      desc.turbulenceFrequency = 150.0f;
+      desc.dragCoefficient = 0.4f;
       desc.gravityForce = 0.0f;
       desc.collisionThickness = 12.0f;
       desc.collisionRestitution = 0.5f;
       desc.billboardType = FaceCamera_Spherical;
-      // Fade in, hold, fade out; the colour is the game's vertex colour times this.
-      desc.minColor = { vec4(bright, bright, bright, 0.0f), vec4(bright, bright, bright, 1.0f), vec4(bright, bright, bright, 1.0f), vec4(bright, bright, bright, 0.0f) };
+      // Quickly in, full while rising, out over the last 40%: the game's cards fade as they climb.
+      desc.minColor = { vec4(bright, bright, bright, 0.0f), vec4(bright, bright, bright, 1.0f), vec4(bright, bright, bright, 1.0f),
+                        vec4(bright, bright, bright, 1.0f), vec4(bright, bright, bright, 0.6f), vec4(bright, bright, bright, 0.0f) };
       desc.maxColor = desc.minColor;
       desc.minSize = { vec2(size * 0.6f, size * 0.6f) };
       desc.maxSize = { vec2(size * 1.3f, size * 1.3f) };
@@ -140,7 +145,9 @@ namespace dxvk {
       const float bright = std::max(sparkBrightness(), 0.0f);
       desc.ds1Sparks = 1;
       desc.maxNumParticles = 8192;
-      desc.spawnRatePerSecond = std::clamp(sparkRate(), 0.0f, 6000.0f);
+      // A hit's sparks all spawn in its first frame: the rate carries sparks per streak, which the spawn count takes once per
+      // call (RtxParticleSystemManager::getNumberOfParticlesToSpawn, ds1Sparks). Constant, so every hit shares one system.
+      desc.spawnRatePerSecond = std::clamp(sparkCount(), 0.0f, 20.0f);
       desc.minTimeToLive = life * 0.5f;
       desc.maxTimeToLive = life * 1.5f;
       // initialVelocityFromNormal carries the speed per metre of half streak (1/s) for the sparks' own spawn (ds1Sparks).
@@ -174,10 +181,10 @@ namespace dxvk {
     RemixGui::DragFloat("Mote Size (cm)", &moteSizeObject(), 0.05f, 0.1f, 10.0f, "%.2f");
     RemixGui::DragFloat("Mote Life (s)", &moteLifeObject(), 0.05f, 0.1f, 10.0f, "%.2f");
     RemixGui::DragFloat("Mote Drift (cm/s)", &moteDriftObject(), 0.5f, 0.0f, 200.0f, "%.1f");
-    RemixGui::DragFloat("Mote Turbulence", &moteTurbulenceObject(), 1.0f, 0.0f, 500.0f, "%.0f");
+    RemixGui::DragFloat("Mote Turbulence", &moteTurbulenceObject(), 0.5f, 0.0f, 500.0f, "%.1f");
     RemixGui::DragFloat("Mote Brightness", &moteBrightnessObject(), 0.01f, 0.0f, 8.0f, "%.2f");
     RemixGui::Checkbox("Hit Sparks", &sparksObject());
-    RemixGui::DragFloat("Spark Rate", &sparkRateObject(), 5.0f, 0.0f, 6000.0f, "%.0f");
+    RemixGui::DragFloat("Sparks per Streak", &sparkCountObject(), 0.1f, 0.0f, 20.0f, "%.1f");
     RemixGui::DragFloat("Spark Speed (1/s)", &sparkSpeedObject(), 0.5f, 0.0f, 200.0f, "%.1f");
     RemixGui::DragFloat("Spark Size (cm)", &sparkSizeObject(), 0.05f, 0.1f, 10.0f, "%.2f");
     RemixGui::DragFloat("Spark Life (s)", &sparkLifeObject(), 0.01f, 0.05f, 5.0f, "%.2f");

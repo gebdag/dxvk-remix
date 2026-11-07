@@ -2160,7 +2160,8 @@ struct LegacyMaterialData {
   bool isDs1WetBody = false;
   // Fork: a body draw that armour covers: no drops come off it. Per draw, not part of the identity.
   bool isDs1WetCovered = false;
-  // Fork: a DS1 sprite effect replaced by particles (stage 4 0xD4000007 motes = 1, 0xD4000008 sparks = 2,
+  // Fork: a DS1 sprite effect replaced by particles (stage 4 0xD4000007 motes = 1, 0xD4000008 a hit's first frame of sparks = 2,
+  // 0xD4000009 its later frames = 3, hidden without spawning,
   // rtx_dark_souls_effect_particles.h). Per draw, not part of the identity.
   uint8_t ds1EffectParticles = 0;
   // Fork: drawn with the DS1 proxy's lamp marker (Surface::isDs1NoShadow). Per draw, not part of the identity.

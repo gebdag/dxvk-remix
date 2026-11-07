@@ -1294,7 +1294,8 @@ namespace dxvk {
         // Fork: DS1 sprite effects replaced by particles (rtx_dark_souls_effect_particles.h).
         {
           const uint32_t effectTag = d3d9State().textureStages[4][DXVK_TSS_CONSTANT];
-          m_activeDrawCallState.materialData.ds1EffectParticles = effectTag == 0xD4000007u ? 1 : effectTag == 0xD4000008u ? 2 : 0;
+          m_activeDrawCallState.materialData.ds1EffectParticles =
+            effectTag == 0xD4000007u ? 1 : effectTag == 0xD4000008u ? 2 : effectTag == 0xD4000009u ? 3 : 0;
         }
         m_activeDrawCallState.materialData.ds1SunLightmap =
           (lightmapTag >> 24) == 0xD1u ? lightmapTag : skinnedTag ? 0xD2000000u : 0;

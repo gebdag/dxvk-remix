@@ -207,24 +207,41 @@ GpuParticle respawn(uint particleIdx, uint spawnCtxIdx, const GpuParticleSystem 
     color = 1.0f;
   }
 
-  // Fork (DS1): a bloodstain's motes (rtx_dark_souls_effect_particles.h). The game's quads show a texture that is a cluster of
-  // dots, densest in its middle: each particle is one dot, kept with that density. They drift off slowly, mostly upwards.
+  // Fork (DS1): a bloodstain's motes (rtx_dark_souls_effect_particles.h). Each of the game's cards is a picture of a ball of
+  // dots, dense in its middle: each particle is one dot, spawned across the card with that density and in depth within the
+  // sphere of the card's radius, so the cards become balls. A card spawns by its alpha (fading cards add few dots); a dot
+  // keeps the card's colour at full alpha and fades over its own life. The dots rise nearly straight up.
   if (particleSystem.desc.ds1Motes != 0)
   {
     const float2 uv = ds1Texcoords[0] * randomBary.x + ds1Texcoords[1] * randomBary.y + ds1Texcoords[2] * randomBary.z;
     const float r = length(uv * 2.0f - 1.0f);
     const float density = saturate(1.0f - r);
-    ds1Spawns = color.a > 0.004f && randomFloat(uint2(randomSeed++, particleCb.frameIdx)) < density * density * density * 2.0f;
-    const float3 drift = sampleDirectionInCone(f16vec3(particleCb.upDirection), cos(radians(75.0f)),
+    ds1Spawns = color.a > 0.004f &&
+                randomFloat(uint2(randomSeed++, particleCb.frameIdx)) < density * density * density * 2.0f * color.a;
+    float3 corners[3];
+    for (uint k = 0; k < 3; k++)
+    {
+      corners[k] = mul(spawnCtx.spawnObjectToWorld, float4(positions[k], 1.f));
+    }
+    // The card's radius: world length per texcoord unit (a whole card spans 1), halved.
+    const float uvSpan = max(length(ds1Texcoords[1] - ds1Texcoords[0]), length(ds1Texcoords[2] - ds1Texcoords[0]));
+    const float worldSpan = length(ds1Texcoords[1] - ds1Texcoords[0]) >= length(ds1Texcoords[2] - ds1Texcoords[0]) ?
+                            length(corners[1] - corners[0]) : length(corners[2] - corners[0]);
+    const float cardRadius = uvSpan > 1e-4f ? 0.5f * worldSpan / uvSpan : 0.0f;
+    const float3 cardNormal = cross(corners[1] - corners[0], corners[2] - corners[0]);
+    const float3 depthAxis = dot(cardNormal, cardNormal) > 1e-12f ? normalize(cardNormal) : float3(0.0f, 0.0f, 0.0f);
+    const float depth = cardRadius * sqrt(saturate(1.0f - r * r)) * (randomFloat(uint2(randomSeed++, particleCb.frameIdx)) * 2.0f - 1.0f);
+    spawnPosition = worldPosition + depthAxis * depth;
+    const float3 rise = sampleDirectionInCone(f16vec3(particleCb.upDirection), cos(radians(20.0f)),
       float2(randomFloat(uint2(randomSeed++, particleCb.frameIdx)), randomFloat(uint2(randomSeed++, particleCb.frameIdx))));
-    initialVelocity = drift * lerp(0.3f, 1.0f, randomFloat(uint2(randomSeed++, particleCb.frameIdx))) *
+    initialVelocity = rise * lerp(0.6f, 1.0f, randomFloat(uint2(randomSeed++, particleCb.frameIdx))) *
                       particleSystem.desc.initialVelocityFromNormal * particleCb.sceneScale;
-    spawnPosition = worldPosition;
+    color.a = 1.0f;
   }
 
-  // Fork (DS1): a hit's sparks. Each of the game's streaks is a thin quad crossing the hit's centre, its ends marked u = -1 and +1
-  // (the DS1 proxy): a spark flies from the streak's middle towards the end on its side, faster the further out it starts, as
-  // the burst would carry it.
+  // Fork (DS1): a hit's sparks, spawned in its first frame only. Each of the game's streaks runs along one spark's flight; the DS1
+  // proxy moved every streak's middle to the burst's centre and marked its ends u = -1 and +1. A spark starts at that centre and
+  // flies towards the end on its side of the spawn point, at a speed from the streak's length.
   if (particleSystem.desc.ds1Sparks != 0)
   {
     float3 minusEnd = 0.0f, plusEnd = 0.0f;
@@ -248,11 +265,11 @@ GpuParticle respawn(uint particleIdx, uint spawnCtxIdx, const GpuParticleSystem 
     const float side = ds1Texcoords[0].x * randomBary.x + ds1Texcoords[1].x * randomBary.y + ds1Texcoords[2].x * randomBary.z;
     ds1Spawns = color.a > 0.004f && len > 1e-4f && abs(side) > 0.05f;
     const float3 along = len > 1e-4f ? axis / len : float3(0.0f, 1.0f, 0.0f);
-    // Half the streak's length is the reach of its outer end: speed per metre of it, scaled by how far out the spark starts.
-    const float speed = 0.5f * len * abs(side) * particleSystem.desc.initialVelocityFromNormal *
-                        lerp(0.7f, 1.3f, randomFloat(uint2(randomSeed++, particleCb.frameIdx)));
+    // Speed per metre of half the streak.
+    const float speed = 0.5f * len * particleSystem.desc.initialVelocityFromNormal *
+                        lerp(0.6f, 1.2f, randomFloat(uint2(randomSeed++, particleCb.frameIdx)));
     initialVelocity = along * (side > 0.0f ? speed : -speed);
-    spawnPosition = worldPosition;
+    spawnPosition = minusCount > 0.0f && plusCount > 0.0f ? 0.5f * (minusEnd / minusCount + plusEnd / plusCount) : worldPosition;
   }
 
   // Spawn a particle
