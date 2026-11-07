@@ -535,7 +535,7 @@ struct Surface
   // from outside meet a back face or a front not turned towards their origin, and stop.
   property bool isDs1ThinWall
   {
-    get { return packedFlagGet(data13.x, 1u << 31) && (data13.x >> 24) < 0xFEu; }
+    get { return packedFlagGet(data13.x, 1u << 31) && (data13.x >> 24) < 0xFDu; }
   }
 
   // Fork: the opaque quad that closes a DS1 fog gate's door, where the gate is a volume now (game/fog_gates in the proxy). The camera's rays pass it, so the door shows the
@@ -550,6 +550,16 @@ struct Surface
   property bool isDs1NoShadow
   {
     get { return (data13.x >> 24) == 0xFFu; }
+  }
+
+  // Fork: DS1 foliage (the proxy's foliage marker, game/texture_names is_foliage): alpha-tested leaf cards the game
+  // lights by its ambient alone, with no occlusion. Opaque in Remix, a dense plant shut the sky out of its own heart and
+  // printed hard leaf shadows over itself. Indirect paths after a diffuse bounce pass it with rtx.ds1Foliage.transmission
+  // (ds1IsFoliagePass, resolve); camera rays, specular/glossy-only paths and shadow rays meet it. The thin wall byte value 0xFD
+  // (a thin wall's sort order is kept below it, RtSurface).
+  property bool isDs1Foliage
+  {
+    get { return (data13.x >> 24) == 0xFDu; }
   }
 
   // Fork: the DS1 haze set the draw was tagged with (1-14, 0 = none; 15: isDs1Unhazed): the slot of its own fog and

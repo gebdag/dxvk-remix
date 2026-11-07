@@ -17,6 +17,9 @@ namespace dxvk {
                "Bounce rays that escape to the sky take the game's ambient light for the area (its irradiance probe and "
                "hemisphere ambient, set each frame by the DS1 proxy) instead of the sky texture.");
     RTX_OPTION("rtx.ds1Ambient", float, gain, 1.0f, "Scale on the game's ambient light.");
+    RTX_OPTION("rtx.ds1Foliage", float, transmission, 0.5f,
+               "Share of the indirect rays (after a diffuse bounce) that pass a DS1 foliage card (the proxy's foliage marker: "
+               "plants the game lights without occlusion). Camera, mirror and shadow rays always meet it. 0 makes it opaque.");
     RTX_OPTION("rtx.ds1Ambient", bool, sunFollowsLightmap, true,
                "Scale the sun on lightmapped map surfaces by their lightmap, as the game's lightmapped shaders do "
                "(the DS1 proxy tags each lightmapped draw with its lightmap's level).");

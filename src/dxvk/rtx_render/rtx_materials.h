@@ -338,12 +338,18 @@ struct RtSurface {
     textureSpritesheetData |= (static_cast<uint32_t>(spriteSheetFPS) << 16);
     // pack decalSortOrder into data13.x's last 8 bits.
     // Fork: bit 31, a DS1 thin wall (Surface::isDs1ThinWall); the sort order keeps the 7 bits below it.
-    textureSpritesheetData |= (static_cast<uint32_t>(decalSortOrder & 0x7F) << 24) | (isDs1ThinWall ? (1u << 31) : 0);
+    // A thin wall's sort order stays below 0x7D: 0xFD-0xFF in the top byte are the foliage, fog gate and lamp markers.
+    const uint32_t ds1SortOrder = isDs1ThinWall ? std::min<uint32_t>(decalSortOrder & 0x7F, 0x7C) : (decalSortOrder & 0x7F);
+    textureSpritesheetData |= (ds1SortOrder << 24) | (isDs1ThinWall ? (1u << 31) : 0);
     // Fork: all eight, a DS1 lamp lighting rays pass (Surface::isDs1NoShadow).
     textureSpritesheetData |= isDs1NoShadow ? 0xFF000000u : 0u;
     // Fork: 0xFE, a DS1 fog gate's quad the camera's rays pass (Surface::isDs1CameraPasses).
     if (isDs1CameraPasses) {
       textureSpritesheetData = (textureSpritesheetData & 0x00FFFFFFu) | 0xFE000000u;
+    }
+    // Fork: 0xFD, DS1 foliage lighting rays pass in part (Surface::isDs1Foliage).
+    if (isDs1Foliage) {
+      textureSpritesheetData = (textureSpritesheetData & 0x00FFFFFFu) | 0xFD000000u;
     }
 
     writeGPUHelper(data, offset, textureSpritesheetData);
@@ -491,6 +497,8 @@ struct RtSurface {
   bool isDs1CameraPasses = false;
   // Fork: a DS1 lamp, passed by all lighting rays (Surface::isDs1NoShadow).
   bool isDs1NoShadow = false;
+  // Fork: DS1 foliage, passed by lighting rays in part (Surface::isDs1Foliage).
+  bool isDs1Foliage = false;
   // Fork: a draw of the DS1 player's body: its vertices wet the body against the water (rtx_dark_souls_ripples.h).
   bool isDs1WetBody = false;
   // Fork: DS1 haze set slot (1-14, 0 = none, 15 = unhazed), see post_fx_dark_souls_haze.h.
@@ -2158,6 +2166,8 @@ struct LegacyMaterialData {
   bool isDs1ThinWall = false;
   // Fork: drawn with the DS1 proxy's fog gate marker (Surface::isDs1CameraPasses). Per draw, not part of the identity.
   bool isDs1CameraPasses = false;
+  // Fork: drawn with the DS1 proxy's foliage marker (Surface::isDs1Foliage). Per draw, not part of the identity.
+  bool isDs1Foliage = false;
   // Fork: DS1 haze set slot from the haze marker (not part of the material's identity: the same
   // material is drawn in several regions).
   uint8_t ds1HazeSet = 0;

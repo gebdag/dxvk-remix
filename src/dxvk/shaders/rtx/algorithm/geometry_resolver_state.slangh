@@ -33,6 +33,7 @@ struct GeometryResolverState : IBasePayloadState
   // Fork (DS1): view rays show what the game shows: they stop at thin walls.
   property uint ds1OriginNormal { get { return 0; } }
   property bool ds1CameraRay { get { return true; } }
+  property bool ds1PassesFoliage { get { return false; } }
 
   // Note: These ray properties are passed into the function with the state of the
   // ray being cast as an input, and then set to the new state of the sampled ray
@@ -265,6 +266,7 @@ struct GeometryPSRResolverState : IBasePayloadState
   // Fork (DS1): see GeometryResolverState.
   property uint ds1OriginNormal { get { return 0; } }
   property bool ds1CameraRay { get { return false; } }
+  property bool ds1PassesFoliage { get { return false; } }
 
   // Note: These ray properties are passed into the function with the state of the
   // ray being cast as an input, and then set to the new state of the sampled ray

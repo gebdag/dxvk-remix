@@ -1140,6 +1140,7 @@ namespace dxvk {
         currentInstance.surface.isDs1ThinWall = drawCall.getMaterialData().isDs1ThinWall;
         currentInstance.surface.isDs1CameraPasses = drawCall.getMaterialData().isDs1CameraPasses && DxvkDarkSoulsLook::isActive();
         currentInstance.surface.isDs1NoShadow = drawCall.getMaterialData().isDs1NoShadow;
+        currentInstance.surface.isDs1Foliage = drawCall.getMaterialData().isDs1Foliage;
         currentInstance.surface.isDs1WetBody = drawCall.getMaterialData().isDs1WetBody;
         currentInstance.surface.ds1HazeSet = drawCall.getMaterialData().ds1HazeSet;
         currentInstance.surface.ds1UnlitExposurePower = drawCall.getMaterialData().ds1UnlitExposurePower;

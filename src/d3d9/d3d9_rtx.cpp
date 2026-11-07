@@ -1306,6 +1306,8 @@ namespace dxvk {
         m_activeDrawCallState.materialData.isDs1CameraPasses = d3d9State().textureStages[4][DXVK_TSS_CONSTANT] == 0xD4000005u;
         // Fork: DS1 thin wall (stage 4 0xD4000003), see Surface::isDs1ThinWall.
         m_activeDrawCallState.materialData.isDs1ThinWall = d3d9State().textureStages[4][DXVK_TSS_CONSTANT] == 0xD4000003u;
+        // Fork: DS1 foliage (stage 4 0xD4000006), see Surface::isDs1Foliage.
+        m_activeDrawCallState.materialData.isDs1Foliage = d3d9State().textureStages[4][DXVK_TSS_CONSTANT] == 0xD4000006u;
         // Fork: DS1 albedo offset in stage 5's D3DTSS_CONSTANT (0xD3rrggbb, signed bytes / 255): the
         // character creator's skin tone, which the game's character shaders add to the diffuse
         // texture (PS c156). See Surface::ds1AlbedoOffset.

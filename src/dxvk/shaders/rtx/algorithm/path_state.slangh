@@ -474,6 +474,11 @@ struct PathState : IBasePayloadState
     get { return false; }
   }
 
+  property bool ds1PassesFoliage
+  {
+    get { return !isSpecularVisibilityPath; }
+  }
+
   property uint ds1OriginNormal
   {
     get { return _ds1OriginNormal; }

@@ -80,6 +80,9 @@ interface IBasePayloadState
   property uint ds1OriginNormal { get; }
   // Fork (DS1): a ray from the camera, no reflection: it passes a fog gate's quad (Surface::isDs1CameraPasses).
   property bool ds1CameraRay { get; }
+  // Fork (DS1): an indirect path after a diffuse bounce: it passes foliage in part (Surface::isDs1Foliage). Camera rays and
+  // paths the camera still sees through (specular or glossy bounces only) see the leaves.
+  property bool ds1PassesFoliage { get; }
 
 #ifdef RAY_PIPELINE
   // Returns if the caller should reorder before invokeHitObject, along with coherence hints to use

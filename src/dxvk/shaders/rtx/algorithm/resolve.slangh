@@ -386,6 +386,14 @@ float resolveVertex<T: IBasePayloadState>(
     return 1.0f;
   }
 
+  // Fork (DS1): foliage lets a share of the lighting rays through (Surface::isDs1Foliage).
+  if (resolveVertexState.continueResolving && resolveVertexState.ds1PassesFoliage &&
+      ds1IsFoliagePass(surface, surfaceInteraction.position))
+  {
+    resolveVertexFinalContinue(ray, surfaceInteraction, teleport, teleportMatrix, resolveVertexState);
+    return 1.0f;
+  }
+
   // Fork (DS1): a fog gate's quad, to the camera's rays. Surface::isDs1CameraPasses.
   if (resolveVertexState.continueResolving && resolveVertexState.ds1CameraRay && surface.isDs1CameraPasses)
   {

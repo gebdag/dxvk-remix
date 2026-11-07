@@ -29,6 +29,12 @@ struct Ds1AmbientArgs {
   // (rgb) and its colour (rgb). Its radiance is (sunBase + sunLobe)^2.2 - sunBase^2.2.
   vec4 sunBase;
   vec4 sunLobe;
+
+  // DS1 foliage (Surface::isDs1Foliage): the share of lighting rays that pass a leaf (rtx.ds1Foliage.transmission).
+  float foliageTransmission;
+  uint foliagePad0;
+  uint foliagePad1;
+  uint foliagePad2;
 };
 
 #ifndef __cplusplus

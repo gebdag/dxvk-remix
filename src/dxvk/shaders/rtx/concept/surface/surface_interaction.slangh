@@ -113,6 +113,24 @@ bool ds1IsThinWallPass(Surface surface, vec3 hitFrontNormal, vec3 rayDirection, 
     hitDistance * abs(dot(hitFrontNormal, rayDirection)) < 0.5f;
 }
 
+// Fork (DS1): whether a lighting ray passes this hit on foliage (Surface::isDs1Foliage): a share
+// rtx.ds1Foliage.transmission of them, chosen by a hash of the hit point and the frame.
+bool ds1IsFoliagePass(Surface surface, vec3 hitPosition)
+{
+  if (!surface.isDs1Foliage || cb.ds1Ambient.foliageTransmission <= 0.0f)
+  {
+    return false;
+  }
+  uint h = asuint(hitPosition.x) * 0x8DA6B343u ^ asuint(hitPosition.y) * 0xD8163841u ^
+           asuint(hitPosition.z) * 0xCB1AB31Fu ^ cb.frameIdx * 0x9E3779B9u;
+  h ^= h >> 16;
+  h *= 0x7FEB352Du;
+  h ^= h >> 15;
+  h *= 0x846CA68Bu;
+  h ^= h >> 16;
+  return float(h >> 8) * (1.0f / 16777216.0f) < cb.ds1Ambient.foliageTransmission;
+}
+
 // <0, 1> -> <-0.5, 0.5>
 vec2 texcoordToOffsetFromTextureCenter(vec2 texcoord)
 {

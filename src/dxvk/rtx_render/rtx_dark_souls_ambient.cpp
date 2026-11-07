@@ -10,6 +10,8 @@ namespace dxvk {
     args.sunFollowsLightmap = sunFollowsLightmap() ? 1u : 0u;
     args.sunBase = vec4 { sunBase().x, sunBase().y, sunBase().z, 0.0f };
     args.sunLobe = vec4 { sunLobe().x, sunLobe().y, sunLobe().z, 0.0f };
+    // Foliage passes whether or not the ambient is the sky.
+    args.foliageTransmission = std::clamp(transmission(), 0.0f, 1.0f);
     if (!enable() || !active()) {
       return;
     }
@@ -28,6 +30,7 @@ namespace dxvk {
     RemixGui::Checkbox("Game Ambient as Sky Light", &enableObject());
     RemixGui::DragFloat("Ambient Gain", &gainObject(), 0.01f, 0.0f, 8.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
     RemixGui::Checkbox("Sun Follows the Lightmap", &sunFollowsLightmapObject());
+    RemixGui::DragFloat("Foliage Transmission", &transmissionObject(), 0.01f, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
     if (!active()) {
       ImGui::TextDisabled("No ambient from the game yet (needs the DS1 proxy and a probe-lit draw).");
     } else {
