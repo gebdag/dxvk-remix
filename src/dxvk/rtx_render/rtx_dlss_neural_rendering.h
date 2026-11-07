@@ -116,6 +116,14 @@ namespace dxvk {
                "With Dark Souls' image pipeline on: map the frame to SDR for DLSS-NR with the game's curve (linear, soft shoulder) "
                "instead of ACES. ACES's toe amplified the network's changes in dark areas about fivefold (boiling in dim interiors).");
 
+    // Fork (DS1): with an upscaler on, Remix's depth and motion vectors are at render resolution while the network works on
+    // the upscaled colour. It accepts guides on another grid but does not reproject across it: its history lags in motion
+    // and it does not accumulate (the full network shows it; the lightweight one leans less on history). The guides are
+    // resampled onto the colour grid first (ds1_nr_guides), motion vectors scaled by the grid ratio.
+    RTX_OPTION("rtx.dlssNeuralRendering", bool, resampleGuides, true,
+               "With an upscaler on: resample the depth and motion vector guides onto DLSS-NR's colour (output) grid before the "
+               "network. Off: the render-resolution guides as they are, which the network does not reproject across in motion.");
+
     RTX_OPTION("rtx.dlssNeuralRendering", bool, enableVolumetricControlMask, true, "Modulate the DLSS 3D-Guided Neural Rendering control mask with fog, volumetric, and alpha-blended transmittance.");
 
     RTX_OPTION("rtx.dlssNeuralRendering", bool, showVramUsage, false,
@@ -131,6 +139,10 @@ namespace dxvk {
     void disableAfterFailure(const char* pReason);
 
     uint32_t m_displaySize[2] = {};
+    // Fork (DS1): the guides on the colour grid (resampleGuides), made when the grids differ.
+    Resources::Resource m_ds1GuideDepth;
+    Resources::Resource m_ds1GuideMotionVector;
+    bool m_ds1ResampledGuides = true;
     // Fork (DS1): the preset the live feature was created with.
     RenderPreset m_createdPreset = RenderPreset::Default;
 
