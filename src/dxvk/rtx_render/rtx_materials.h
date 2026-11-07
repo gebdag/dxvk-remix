@@ -493,7 +493,7 @@ struct RtSurface {
   bool isDs1NoShadow = false;
   // Fork: a draw of the DS1 player's body: its vertices wet the body against the water (rtx_dark_souls_ripples.h).
   bool isDs1WetBody = false;
-  // Fork: DS1 haze set slot (1-15, 0 = none), see post_fx_dark_souls_haze.h.
+  // Fork: DS1 haze set slot (1-14, 0 = none, 15 = unhazed), see post_fx_dark_souls_haze.h.
   uint8_t ds1HazeSet = 0;
   // Fork: exposure power of a DS1 unlit sprite (0-2), see Surface::ds1UnlitExposurePower.
   uint8_t ds1UnlitExposurePower = 0;

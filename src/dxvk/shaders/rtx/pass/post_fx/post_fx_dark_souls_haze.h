@@ -8,9 +8,10 @@
 #include "rtx/concept/camera/camera.h"
 
 // DS1 applies its per-region DrawParams per draw: every lit draw carries its own fog and
-// scattering constants. The proxy tags each draw with a slot (Surface::ds1HazeSet, 1-15) and sends
+// scattering constants. The proxy tags each draw with a slot (Surface::ds1HazeSet, 1-14) and sends
 // the slots' constants (rtx.ds1Haze.sets); a pixel is hazed with its primary surface's set. Slot 0
-// (untagged surfaces) uses the single set below (the one most of the frame uses).
+// (untagged surfaces) uses the single set below (the one most of the frame uses). Slot 15 is no set: a layer the
+// haze leaves alone (Surface::isDs1Unhazed); the proxy hands out slots 1-14.
 #define DS1_HAZE_SET_COUNT 16
 
 // vec3 + float pairs, not vec4: C++'s vec4 is alignas(16) while the shaders use scalar block

@@ -552,7 +552,7 @@ struct Surface
     get { return (data13.x >> 24) == 0xFFu; }
   }
 
-  // Fork: the DS1 haze set the draw was tagged with (1-15, 0 = none): the slot of its own fog and
+  // Fork: the DS1 haze set the draw was tagged with (1-14, 0 = none; 15: isDs1Unhazed): the slot of its own fog and
   // scattering constants in the DS1 look's scene pass (post_fx_dark_souls_haze.h).
   property uint ds1HazeSet
   {
@@ -563,9 +563,11 @@ struct Surface
   // Fork: how many times the game's sprite shaders apply the exposure (c135.x / c135.y) to this
   // unlit sprite's colour (0-2): Remix applies its own exposure that many times.
   // Power 3 is no power: the proxy's unhazed marker, a sprite the DS1 look's haze leaves alone (a fog wall).
+  // Haze set 15 is the same for a draw that keeps its exposure power: a light shaft, which the game hazes with
+  // its own set, not the set of the wall behind it that the look's haze would use (Bed of Chaos, frame_20261106_153141).
   property bool isDs1Unhazed
   {
-    get { return ds1UnlitExposurePower == 3; }
+    get { return ds1UnlitExposurePower == 3 || ds1HazeSet == 15; }
   }
 
   property uint ds1UnlitExposurePower

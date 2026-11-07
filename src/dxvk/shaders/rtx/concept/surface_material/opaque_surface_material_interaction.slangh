@@ -1509,7 +1509,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     // (Surface::ds1UnlitExposurePower): those sprites take the frame's exposure that many times.
     if (surface.isUnlit)
     {
-      emissiveBlendOverrideInfluence *= pow(cb.opaqueMaterialArgs.unlitExposureCompensation, 1.0f - (surface.isDs1Unhazed ? 0.0f : float(surface.ds1UnlitExposurePower)));
+      emissiveBlendOverrideInfluence *= pow(cb.opaqueMaterialArgs.unlitExposureCompensation, 1.0f - (surface.ds1UnlitExposurePower == 3 ? 0.0f : float(surface.ds1UnlitExposurePower)));
     }
     emissiveRadiance = emissiveBlendOverrideInfluence * emissiveColor * opaqueSurfaceMaterial.emissiveIntensity;
   }
