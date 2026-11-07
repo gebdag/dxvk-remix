@@ -521,16 +521,18 @@ namespace dxvk {
       }
     }
 
-    // DS1: a menu's character view, converted to fixed function by the proxy, is the frame's scene. Its render target,
-    // square or for a row of views wide (no other target has either shape), is what the path traced frame is written
-    // into, once the game moves on to another target.
+    // DS1: a menu's character view, converted to fixed function by the proxy, is the frame's scene. Its render target (the
+    // proxy's private one, the back buffer's size so the frame never resizes) is what the path traced frame is written into,
+    // once the game moves on to another target. The proxy marks it while bound: sampler 15's border colour (no fixed-function
+    // draw samples stage 15). Shader draws into it stay raster, as they did while the target was smaller than the back buffer:
+    // only the proxy's converted draws are the scene (a UI-looking shader draw would otherwise start the inject early).
     bool isDs1MenuScene = false;
-    if (!m_parent->UseProgrammableVS()) {
-      const auto& rtExtent = d3d9State().renderTargets[kRenderTargetIndex]->GetSurfaceExtent();
-      if ((rtExtent.width == rtExtent.height || rtExtent.width >= 3 * rtExtent.height) && rtExtent.width <= 4096) {
-        isDs1MenuScene = true;
-        m_ds1MenuSceneTarget = d3d9State().renderTargets[kRenderTargetIndex]->GetCommonTexture()->GetImage();
+    if (d3d9State().samplerStates[15][D3DSAMP_BORDERCOLOR] == 0xD7E05CE5u) {
+      if (m_parent->UseProgrammableVS()) {
+        return { RtxGeometryStatus::Rasterized, false };
       }
+      isDs1MenuScene = true;
+      m_ds1MenuSceneTarget = d3d9State().renderTargets[kRenderTargetIndex]->GetCommonTexture()->GetImage();
     }
 
     if (!s_isDxvkResolutionEnvVarSet && !isDs1MenuScene) {
