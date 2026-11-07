@@ -20,6 +20,7 @@
 * DEALINGS IN THE SOFTWARE.
 */
 #include <vector>
+#include <chrono>
 
 #include "../../util/log/log.h"
 #include "dxvk_device.h"
@@ -309,8 +310,12 @@ namespace dxvk {
     }
 
     m_createdPreset = DlssNeuralRendering::renderPreset();
+    const auto start = std::chrono::steady_clock::now();
     m_dlssNeuralRenderingContext->initialize(renderContext, m_displaySize, DlssNeuralRendering::showVramUsage(),
       static_cast<uint32_t>(m_createdPreset));
+    // Fork (DS1): feature creation is a hitch (it waits for the GPU and loads the network); logged with its time.
+    Logger::info(str::format("[DS1 DLSS-NR] feature created at ", m_displaySize[0], "x", m_displaySize[1], ": ",
+                             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count(), " ms"));
     return m_dlssNeuralRenderingContext->isNeuralRenderingInitialized();
   }
 

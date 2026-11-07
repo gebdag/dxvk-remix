@@ -19,6 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
+#include <chrono>
 #include <cstring>
 #include <cmath>
 #include <cassert>
@@ -520,6 +521,21 @@ namespace dxvk {
   // Hooked into D3D9 presentImage (same place HUD rendering is)
   void RtxContext::injectRTX(std::uint64_t cachedReflexFrameId, Rc<DxvkImage> targetImage) {
     ScopedCpuProfileZone();
+    // Fork (DS1): a path traced frame arriving over 300 ms after the last one is a hitch the player sees; logged with its
+    // length, so it can be matched with the resize, feature creation and loading lines around it.
+    {
+      static std::chrono::steady_clock::time_point s_lastFrame {};
+      const auto now = std::chrono::steady_clock::now();
+      if (s_lastFrame.time_since_epoch().count() != 0) {
+        const double gapMs = std::chrono::duration<double, std::milli>(now - s_lastFrame).count();
+        if (gapMs > 300.0) {
+          const VkExtent3D target = targetImage != nullptr ? targetImage->info().extent : VkExtent3D { 0, 0, 0 };
+          Logger::info(str::format("[DS1 hitch] ", gapMs, " ms since the last path traced frame (target ",
+                                   target.width, "x", target.height, ")"));
+        }
+      }
+      s_lastFrame = now;
+    }
 #ifdef REMIX_DEVELOPMENT
     m_currentPassStage = RtxFramePassStage::FrameBegin;
 #endif

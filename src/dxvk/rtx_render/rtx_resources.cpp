@@ -20,6 +20,7 @@
 * DEALINGS IN THE SOFTWARE.
 */
 #include <random>
+#include <chrono>
 #include "rtx_resources.h"
 #include "dxvk_device.h"
 #include "dxvk_context.h"
@@ -756,9 +757,15 @@ namespace dxvk {
 
   void Resources::onResize(Rc<DxvkContext> ctx, const VkExtent3D& downscaledExtent, const VkExtent3D& targetExtent) {
     if (!validateRaytracingOutput(downscaledExtent, targetExtent)) {
+      // Fork (DS1): every resize waits for the GPU and recreates the frame's buffers (and later the upscaler's features), a
+      // hitch; logged with its time so loading stalls can be told apart.
+      const auto start = std::chrono::steady_clock::now();
       ctx->getDevice()->waitForIdle();
 
       createRaytracingOutput(ctx, downscaledExtent, targetExtent);
+      const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+      Logger::info(str::format("[DS1 resize] render ", downscaledExtent.width, "x", downscaledExtent.height, ", output ",
+                               targetExtent.width, "x", targetExtent.height, ": ", ms, " ms"));
     }
   }
 

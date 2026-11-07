@@ -22,6 +22,7 @@
 #include <locale>
 #include <codecvt>
 #include <cassert>
+#include <chrono>
 
 #include "rtx.h"
 #include "rtx_context.h"
@@ -140,7 +141,11 @@ namespace dxvk {
     m_prevPreset = preset();
 
     if (mRecreate) {
+      // Fork (DS1): feature creation is a hitch; logged with its time.
+      const auto start = std::chrono::steady_clock::now();
       initializeRayReconstruction(ctx);
+      Logger::info(str::format("[DS1 DLSS-RR] feature created: ",
+                               std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count(), " ms"));
       mRecreate = false;
     }
 
