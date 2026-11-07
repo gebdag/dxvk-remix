@@ -62,6 +62,19 @@ struct GpuParticle {
     timeToLive = reinterpret<half>(kDeadTimeToLiveSentinel);
   }
 
+  // Fork (DS1): a mote's distance travelled, an fp32 over pad0 (low half) and pad1 (high half): a half alone loses the
+  // small steps a slow mote makes per frame.
+  float ds1Travel() {
+    return asfloat((uint(asuint16(pad1)) << 16) | uint(asuint16(pad0)));
+  }
+
+  [mutating]
+  void setDs1Travel(float travel) {
+    const uint bits = asuint(travel);
+    pad0 = asfloat16(uint16_t(bits & 0xFFFFu));
+    pad1 = asfloat16(uint16_t(bits >> 16));
+  }
+
   bool isDead() {
     return timeToLive == reinterpret<half>(kDeadTimeToLiveSentinel);
   }

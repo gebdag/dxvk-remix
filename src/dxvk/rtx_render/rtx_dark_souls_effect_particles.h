@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rtx_option.h"
+#include "rtx/pass/particles/particle_system_common.h"
 
 namespace dxvk {
 
@@ -28,17 +29,24 @@ namespace dxvk {
     // replaces the draw (the kind is off), so it stays visible.
     static bool emit(DxvkContext* ctx, uint32_t instanceIdx, const DrawCallState& drawCallState, const MaterialData& renderMaterialData);
     static void showImguiSettings();
+    // The motes' shape and the player's push, into the particle constants (once a frame).
+    static void fillParticleArgs(ParticleSystemConstants& constants);
 
     RTX_OPTION("rtx.ds1EffectParticles", bool, motes, true, "Replace the green dots over a bloodstain with Remix particles.");
     RTX_OPTION("rtx.ds1EffectParticles", float, moteRate, 24000.0f, "Mote spawn attempts per second per bloodstain (kept by the texture's density and the card's alpha).");
     RTX_OPTION("rtx.ds1EffectParticles", float, moteSize, 1.5f, "Mote diameter, cm.");
     RTX_OPTION("rtx.ds1EffectParticles", float, moteLife, 1.8f, "Mean mote life, seconds.");
-    RTX_OPTION("rtx.ds1EffectParticles", float, moteDrift, 30.0f, "Mote rise speed at spawn, cm/s, nearly straight up.");
+    RTX_OPTION("rtx.ds1EffectParticles", float, moteDrift, 18.0f, "Mote rise speed at spawn, cm/s, nearly straight up.");
+    RTX_OPTION("rtx.ds1EffectParticles", float, moteCore, 5.0f, "How strongly the motes gather in each card's middle: the density exponent (3: the texture's own falloff, higher: a tighter ball).");
+    RTX_OPTION("rtx.ds1EffectParticles", float, moteReach, 50.0f, "Motes fade out once they have travelled half to all of this far, cm: they stay near the shape or fade away.");
+    RTX_OPTION("rtx.ds1EffectParticles", float, motePush, 1.5f, "How fast the player's body pushes motes out of its way, m/s at its middle; they also move with the player. 0: no push.");
+    RTX_OPTION("rtx.ds1EffectParticles", float, motePushRadius, 45.0f, "Radius of the body that pushes the motes, cm (a capsule from the feet to 1.8 m).");
     RTX_OPTION("rtx.ds1EffectParticles", float, moteTurbulence, 6.0f, "Mote turbulence force, cm/s^2 (slow swirls of about 70 cm).");
     RTX_OPTION("rtx.ds1EffectParticles", float, moteBrightness, 1.0f, "Scale on the motes' colour (the game's own). Above 1 clips the green's channels and turns it pale.");
 
     RTX_OPTION("rtx.ds1EffectParticles", bool, sparks, true, "Replace the streaks of a weapon striking stone with Remix particles.");
     RTX_OPTION("rtx.ds1EffectParticles", float, sparkCount, 2.0f, "Sparks spawned per streak in a hit's first frame.");
+    RTX_OPTION("rtx.ds1EffectParticles", float, sparkSpread, 12.0f, "Sparks leave within this angle of their streak, degrees, so those of one streak do not fly along one line.");
     RTX_OPTION("rtx.ds1EffectParticles", float, sparkSpeed, 35.0f, "Speed of a spark per metre of half its streak in the burst's first frame, 1/s (each spark varies by -40% to +20%).");
     RTX_OPTION("rtx.ds1EffectParticles", float, sparkSize, 2.0f, "Spark width, cm.");
     RTX_OPTION("rtx.ds1EffectParticles", float, sparkLife, 0.6f, "Mean spark life, seconds.");

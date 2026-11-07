@@ -154,6 +154,30 @@ void evolve(inout GpuParticle particle, const GpuParticleSystem particleSystem)
   
   // Drag
   particle.velocity *= max(1.f - particleSystem.desc.dragCoefficient * particleCb.deltaTimeSecs, 0.f);
+
+  // Fork (DS1): the player's body pushes the bloodstain's motes: inside a capsule around the player (feet up to the body's
+  // height), a mote is drawn towards the player's own velocity plus a push straight out of the body, harder the deeper it
+  // is. The screen-space collision below cannot do this: it sees the body only where the mote is behind its visible surface,
+  // and its scene velocity is not the body's motion.
+  bool ds1Carried = false;
+  if (particleSystem.desc.ds1Motes != 0 && particleCb.ds1PlayerPosition.w > 0.0f)
+  {
+    const float radius = particleCb.ds1PlayerPosition.w;
+    const float3 up = particleCb.upDirection;
+    const float3 feet = particleCb.ds1PlayerPosition.xyz;
+    const float along = clamp(dot(particle.position - feet, up), radius, max(particleCb.ds1MoteShape.z - radius, radius));
+    const float3 away = particle.position - (feet + up * along);
+    const float dist = length(away);
+    if (dist < radius)
+    {
+      const float depth = 1.0f - dist / radius;
+      const float3 sideways = away - up * dot(away, up);
+      const float3 outward = dot(sideways, sideways) > 1e-8f ? normalize(sideways) : normalize(cross(up, float3(0.0f, 0.0f, 1.0f)) + 1e-4f);
+      const float3 target = particleCb.ds1PlayerVelocity.xyz + outward * particleCb.ds1PlayerVelocity.w * depth;
+      particle.velocity = lerp(particle.velocity, target, 1.0f - exp(-12.0f * depth * particleCb.deltaTimeSecs));
+      ds1Carried = true;
+    }
+  }
   
   if (particleSystem.desc.enableCollisionDetection)
   {
@@ -168,6 +192,12 @@ void evolve(inout GpuParticle particle, const GpuParticleSystem particleSystem)
   particle.velocity = select(maxVelocity > 0.h, clamp(particle.velocity, -maxVelocity, maxVelocity), particle.velocity);
   
   particle.position += particle.velocity * particleCb.deltaTimeSecs;
+  // Fork (DS1): how far a mote has travelled on its own, for its fade with distance (particle_system_generate_geometry). Not
+  // while the body carries it: a mote swept along by the player stays visible beside them.
+  if (particleSystem.desc.ds1Motes != 0 && !ds1Carried)
+  {
+    particle.setDs1Travel(min(particle.ds1Travel() + length(particle.velocity) * particleCb.deltaTimeSecs, 1.0e6f));
+  }
   
   if (!particleSystem.desc.enableMotionTrail)
   {

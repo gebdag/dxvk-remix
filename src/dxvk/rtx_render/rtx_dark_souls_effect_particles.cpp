@@ -1,10 +1,12 @@
 #include "rtx_dark_souls_effect_particles.h"
+#include "rtx_dark_souls_ripples.h"
 
 #include "rtx_imgui.h"
 #include "rtx_particle_system.h"
 #include "rtx_materials.h"
 #include "rtx_types.h"
 #include "../dxvk_context.h"
+#include "../../util/util_global_time.h"
 #include "../imgui/imgui.h"
 
 namespace dxvk {
@@ -152,6 +154,7 @@ namespace dxvk {
       desc.maxTimeToLive = life * 1.5f;
       // initialVelocityFromNormal carries the speed per metre of half streak (1/s) for the sparks' own spawn (ds1Sparks).
       desc.initialVelocityFromNormal = std::max(sparkSpeed(), 0.0f);
+      desc.initialVelocityConeAngleDegrees = std::clamp(sparkSpread(), 0.0f, 90.0f);
       desc.gravityForce = -981.0f;
       desc.dragCoefficient = 0.4f;
       desc.collisionThickness = 6.0f;
@@ -171,6 +174,32 @@ namespace dxvk {
     return true;
   }
 
+  void DxvkDarkSoulsEffectParticles::fillParticleArgs(ParticleSystemConstants& constants) {
+    // The player's velocity from rtx.ds1Ripple.playerPosition, which the proxy sends while the player moves: the step over the
+    // time since the last change, eased; none after 0.15 s without a change, and none across a jump (a warp).
+    static Vector3 s_lastPosition(0.0f);
+    static uint64_t s_lastChangeMs = 0;
+    static Vector3 s_velocity(0.0f);
+    const Vector3 position = DxvkDarkSoulsRipples::playerPosition();
+    const uint64_t nowMs = GlobalTime::get().absoluteTimeMs();
+    if (position != s_lastPosition) {
+      const float secs = std::max(float(nowMs - s_lastChangeMs) * 0.001f, 1e-3f);
+      const Vector3 step = (position - s_lastPosition) / secs;
+      // A step over a long gap (no frames ran this, or the player stood) is no speed: start from rest.
+      const bool fresh = s_lastChangeMs != 0 && nowMs - s_lastChangeMs <= 500;
+      s_velocity = fresh && length(step) < 15.0f ? s_velocity * 0.5f + step * 0.5f : Vector3(0.0f);
+      s_lastPosition = position;
+      s_lastChangeMs = nowMs;
+    } else if (nowMs - s_lastChangeMs > 150) {
+      s_velocity = Vector3(0.0f);
+    }
+    const bool push = motes() && motePush() > 0.0f && position != Vector3(0.0f);
+    const float cm = 0.01f; // the options are cm; the world is in metres (DS1)
+    constants.ds1PlayerPosition = vec4 { position.x, position.y, position.z, push ? std::max(motePushRadius(), 1.0f) * cm : 0.0f };
+    constants.ds1PlayerVelocity = vec4 { s_velocity.x, s_velocity.y, s_velocity.z, std::max(motePush(), 0.0f) };
+    constants.ds1MoteShape = vec4 { std::clamp(moteCore(), 0.5f, 16.0f), std::max(moteReach(), 0.0f) * cm, 1.8f, 0.0f };
+  }
+
   void DxvkDarkSoulsEffectParticles::showImguiSettings() {
     if (!ImGui::CollapsingHeader("Effect particles (motes, sparks)")) {
       return;
@@ -182,9 +211,14 @@ namespace dxvk {
     RemixGui::DragFloat("Mote Life (s)", &moteLifeObject(), 0.05f, 0.1f, 10.0f, "%.2f");
     RemixGui::DragFloat("Mote Drift (cm/s)", &moteDriftObject(), 0.5f, 0.0f, 200.0f, "%.1f");
     RemixGui::DragFloat("Mote Turbulence", &moteTurbulenceObject(), 0.5f, 0.0f, 500.0f, "%.1f");
+    RemixGui::DragFloat("Mote Core", &moteCoreObject(), 0.1f, 0.5f, 16.0f, "%.1f");
+    RemixGui::DragFloat("Mote Reach (cm)", &moteReachObject(), 1.0f, 0.0f, 300.0f, "%.0f");
+    RemixGui::DragFloat("Mote Push (m/s)", &motePushObject(), 0.05f, 0.0f, 10.0f, "%.2f");
+    RemixGui::DragFloat("Mote Push Radius (cm)", &motePushRadiusObject(), 1.0f, 5.0f, 150.0f, "%.0f");
     RemixGui::DragFloat("Mote Brightness", &moteBrightnessObject(), 0.01f, 0.0f, 8.0f, "%.2f");
     RemixGui::Checkbox("Hit Sparks", &sparksObject());
     RemixGui::DragFloat("Sparks per Streak", &sparkCountObject(), 0.1f, 0.0f, 20.0f, "%.1f");
+    RemixGui::DragFloat("Spark Spread (deg)", &sparkSpreadObject(), 0.5f, 0.0f, 90.0f, "%.1f");
     RemixGui::DragFloat("Spark Speed (1/s)", &sparkSpeedObject(), 0.5f, 0.0f, 200.0f, "%.1f");
     RemixGui::DragFloat("Spark Size (cm)", &sparkSizeObject(), 0.05f, 0.1f, 10.0f, "%.2f");
     RemixGui::DragFloat("Spark Life (s)", &sparkLifeObject(), 0.01f, 0.05f, 5.0f, "%.2f");

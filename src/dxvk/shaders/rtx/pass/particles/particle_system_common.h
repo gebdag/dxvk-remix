@@ -267,4 +267,12 @@ struct ParticleSystemConstants {
   vec2 ds1BodyTopCentre;
   uint ds1BodyTopIndex;
   uint ds1Pad0;
+
+  // Fork (DS1): the player's body for the bloodstain's motes (rtx_dark_souls_effect_particles.h): feet (xyz) and the radius of
+  // the capsule that pushes (w, 0: no push); the player's velocity (xyz, world units per second) and the sideways push speed (w).
+  vec4 ds1PlayerPosition;
+  vec4 ds1PlayerVelocity;
+  // The motes' shape: x the density exponent towards a card's middle, y the distance (world units) over which a mote fades out
+  // once it has travelled that far, z the capsule's height.
+  vec4 ds1MoteShape;
 };

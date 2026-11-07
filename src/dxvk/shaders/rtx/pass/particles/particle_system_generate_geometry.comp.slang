@@ -139,7 +139,13 @@ void main(uint2 threadIdx : SV_DispatchThreadID)
   
   // precache some values
   const float2 size = particle.size(particleSystem, animationDataTex) * particleCb.sceneScale;
-  const float4 color = particle.color(particleSystem, animationDataTex);
+  float4 color = particle.color(particleSystem, animationDataTex);
+  // Fork (DS1): the bloodstain's motes fade out once they have travelled half to all of their reach: they stay near the shape
+  // or fade away.
+  if (particleSystem.desc.ds1Motes != 0 && particleCb.ds1MoteShape.y > 0.0f)
+  {
+    color.w *= 1.0f - smoothstep(0.5f * particleCb.ds1MoteShape.y, particleCb.ds1MoteShape.y, particle.ds1Travel());
+  }
   
   if(particle.isDead() || particle.isSleeping() || color.w < particleCb.resolveTransparencyThreshold || max(size.x, size.y) < 0.1f * particleCb.sceneScale)
   {

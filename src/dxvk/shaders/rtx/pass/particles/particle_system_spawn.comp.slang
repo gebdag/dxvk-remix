@@ -217,7 +217,7 @@ GpuParticle respawn(uint particleIdx, uint spawnCtxIdx, const GpuParticleSystem 
     const float r = length(uv * 2.0f - 1.0f);
     const float density = saturate(1.0f - r);
     ds1Spawns = color.a > 0.004f &&
-                randomFloat(uint2(randomSeed++, particleCb.frameIdx)) < density * density * density * 2.0f * color.a;
+                randomFloat(uint2(randomSeed++, particleCb.frameIdx)) < pow(density, particleCb.ds1MoteShape.x) * 2.0f * color.a;
     float3 corners[3];
     for (uint k = 0; k < 3; k++)
     {
@@ -264,16 +264,22 @@ GpuParticle respawn(uint particleIdx, uint spawnCtxIdx, const GpuParticleSystem 
     const float len = length(axis);
     const float side = ds1Texcoords[0].x * randomBary.x + ds1Texcoords[1].x * randomBary.y + ds1Texcoords[2].x * randomBary.z;
     ds1Spawns = color.a > 0.004f && len > 1e-4f && abs(side) > 0.05f;
-    const float3 along = len > 1e-4f ? axis / len : float3(0.0f, 1.0f, 0.0f);
+    const float3 along = (len > 1e-4f ? axis / len : float3(0.0f, 1.0f, 0.0f)) * (side > 0.0f ? 1.0f : -1.0f);
+    // Each spark leaves within a cone around its streak (initialVelocityConeAngleDegrees, the spread), so the sparks of one
+    // streak do not fly along one line.
+    const float3 heading = sampleDirectionInCone(f16vec3(along), cos(radians(particleSystem.desc.initialVelocityConeAngleDegrees)),
+      float2(randomFloat(uint2(randomSeed++, particleCb.frameIdx)), randomFloat(uint2(randomSeed++, particleCb.frameIdx))));
     // Speed per metre of half the streak.
     const float speed = 0.5f * len * particleSystem.desc.initialVelocityFromNormal *
                         lerp(0.6f, 1.2f, randomFloat(uint2(randomSeed++, particleCb.frameIdx)));
-    initialVelocity = along * (side > 0.0f ? speed : -speed);
+    initialVelocity = heading * speed;
     spawnPosition = minusCount > 0.0f && plusCount > 0.0f ? 0.5f * (minusEnd / minusCount + plusEnd / plusCount) : worldPosition;
   }
 
   // Spawn a particle
   newParticle.reset(particleSystem, spawnPosition, initialVelocity, uvMinMax, color, randSeed);
+  // Fork (DS1): a mote's distance travelled (particle_system_evolve), for its fade with distance.
+  newParticle.setDs1Travel(0.0f);
   if (!ds1Spawns)
   {
     newParticle.timeToLive = 0.0f;
