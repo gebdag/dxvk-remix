@@ -96,6 +96,12 @@ namespace dxvk {
         RW_STRUCTURED_BUFFER(PARTICLE_SYSTEM_BINDING_VERTEX_BUFFER_OUTPUT)
         END_PARAMETER()
     };
+
+    // Fork (DS1): compiled at launch, not when the first particle system spawns (a drip or splash at the first water
+    // contact, the first hit's sparks), which stalled the game for the compile.
+    PREWARM_SHADER_PIPELINE(ParticleSystemSpawn);
+    PREWARM_SHADER_PIPELINE(ParticleSystemEvolve);
+    PREWARM_SHADER_PIPELINE(ParticleSystemGenerateGeometry);
   }
 
 
