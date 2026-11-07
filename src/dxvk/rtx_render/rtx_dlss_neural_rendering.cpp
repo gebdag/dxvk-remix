@@ -28,30 +28,8 @@
 #include "rtx_dlss_neural_rendering.h"
 #include "rtx_imgui.h"
 #include "rtx_ngx_wrapper.h"
-#include "rtx_shader_manager.h"
-#include "rtx/pass/ds1_nr_guides.h"
-
-#include <rtx_shaders/ds1_nr_guides.h>
 
 namespace dxvk {
-  namespace {
-    // Fork (DS1): the guides onto DLSS-NR's colour grid (DlssNeuralRendering::resampleGuides).
-    class Ds1NrGuidesShader : public ManagedShader {
-      SHADER_SOURCE(Ds1NrGuidesShader, VK_SHADER_STAGE_COMPUTE_BIT, ds1_nr_guides)
-
-      PUSH_CONSTANTS(Ds1NrGuidesArgs)
-
-      BEGIN_PARAMETER()
-        TEXTURE2D(DS1_NR_GUIDES_BINDING_DEPTH_INPUT)
-        TEXTURE2D(DS1_NR_GUIDES_BINDING_MOTION_VECTOR_INPUT)
-        RW_TEXTURE2D(DS1_NR_GUIDES_BINDING_DEPTH_OUTPUT)
-        RW_TEXTURE2D(DS1_NR_GUIDES_BINDING_MOTION_VECTOR_OUTPUT)
-      END_PARAMETER()
-    };
-
-    PREWARM_SHADER_PIPELINE(Ds1NrGuidesShader);
-  }
-
 
   DlssNeuralRendering::DlssNeuralRendering(DxvkDevice* device)
     : DxvkDLSS(device) {
@@ -63,8 +41,6 @@ namespace dxvk {
 
   void DlssNeuralRendering::release() {
     m_dlssNeuralRenderingContext = {};
-    m_ds1GuideDepth.reset();
-    m_ds1GuideMotionVector.reset();
     mRecreate = true;
   }
 
@@ -138,39 +114,6 @@ namespace dxvk {
     const Resources::Resource* pDepthInput = useRayReconstructionGuides
       ? &rtOutput.m_primaryDepthDLSSRR.resource(Resources::AccessType::Read)
       : &rtOutput.m_primaryDepth;
-
-    // Fork (DS1): the guides onto the colour grid (resampleGuides).
-    {
-      const VkExtent3D colorExtent = rtOutput.m_neuralRenderingInput.resource(Resources::AccessType::Read).image->info().extent;
-      const VkExtent3D guideExtent = pDepthInput->image->info().extent;
-      const VkExtent3D mvExtent = pMotionVectorInput->image->info().extent;
-      if (resampleGuides() && (guideExtent.width != colorExtent.width || guideExtent.height != colorExtent.height) &&
-          mvExtent.width == guideExtent.width && mvExtent.height == guideExtent.height) {
-        const auto sizeIs = [&](const Resources::Resource& r) {
-          return r.isValid() && r.image->info().extent.width == colorExtent.width && r.image->info().extent.height == colorExtent.height;
-        };
-        Rc<DxvkContext> dxvkCtx = ctx;
-        if (!sizeIs(m_ds1GuideDepth)) {
-          m_ds1GuideDepth = Resources::createImageResource(dxvkCtx, "DS1 DLSS-NR depth guide", colorExtent, VK_FORMAT_R32_SFLOAT);
-        }
-        if (!sizeIs(m_ds1GuideMotionVector)) {
-          m_ds1GuideMotionVector = Resources::createImageResource(dxvkCtx, "DS1 DLSS-NR motion vector guide", colorExtent, VK_FORMAT_R16G16_SFLOAT);
-        }
-        Ds1NrGuidesArgs args = {};
-        args.colorSize = { colorExtent.width, colorExtent.height };
-        args.guideSize = { guideExtent.width, guideExtent.height };
-        args.motionVectorScale = { float(colorExtent.width) / float(guideExtent.width), float(colorExtent.height) / float(guideExtent.height) };
-        ctx->bindResourceView(DS1_NR_GUIDES_BINDING_DEPTH_INPUT, pDepthInput->view, nullptr);
-        ctx->bindResourceView(DS1_NR_GUIDES_BINDING_MOTION_VECTOR_INPUT, pMotionVectorInput->view, nullptr);
-        ctx->bindResourceView(DS1_NR_GUIDES_BINDING_DEPTH_OUTPUT, m_ds1GuideDepth.view, nullptr);
-        ctx->bindResourceView(DS1_NR_GUIDES_BINDING_MOTION_VECTOR_OUTPUT, m_ds1GuideMotionVector.view, nullptr);
-        ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, Ds1NrGuidesShader::getShader());
-        ctx->pushConstants(0, sizeof(args), &args);
-        ctx->dispatch((colorExtent.width + 15) / 16, (colorExtent.height + 15) / 16, 1);
-        pDepthInput = &m_ds1GuideDepth;
-        pMotionVectorInput = &m_ds1GuideMotionVector;
-      }
-    }
     {
       float jitterOffset[2];
       device()->getCommon()->getSceneManager().getCamera().getJittering(jitterOffset);
@@ -240,9 +183,7 @@ namespace dxvk {
       settings.jitterOffset[1] = jitterOffset[1];
       settings.motionVectorScale[0] = motionVectorScale[0];
       settings.motionVectorScale[1] = motionVectorScale[1];
-      // Fork (DS1): switching resampleGuides changes what the motion vectors mean to the network's history.
-      settings.resetAccumulation = resetHistory || m_ds1ResampledGuides != resampleGuides();
-      m_ds1ResampledGuides = resampleGuides();
+      settings.resetAccumulation = resetHistory;
       settings.intensity             = DlssNeuralRendering::intensity();
       settings.toneStrength          = DlssNeuralRendering::toneStrength();
       settings.structuralStrength    = DlssNeuralRendering::structuralStrength();
