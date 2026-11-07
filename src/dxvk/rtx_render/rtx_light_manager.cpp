@@ -92,6 +92,7 @@ namespace dxvk {
     }
     m_lights.clear();
     m_linearizedLights.clear();
+    m_ds1ApiLights.clear();
     m_lightDebugUILock.unlock();
   }
 
@@ -101,6 +102,7 @@ namespace dxvk {
     std::lock_guard<std::mutex> lock(m_lightUIMutex);
     m_lights.clear();
     m_linearizedLights.clear();
+    m_ds1ApiLights.clear();
 
     // Note: Fallback light reset here so that changes to its settings will take effect, does not need to be part
     // of usual light clearing logic though.
@@ -354,6 +356,7 @@ namespace dxvk {
     // may be more expensive than simple vector traversal on the linearized list.
     
     m_linearizedLights.clear();
+    m_ds1ApiLights.clear();
 
     if (m_fallbackLight) {
       m_linearizedLights.emplace_back(&*m_fallbackLight);
@@ -376,7 +379,13 @@ namespace dxvk {
         // Fork (DS1): the game's falloff for the lights the proxy lists (by API hash = handle).
         DxvkDarkSoulsLightFalloff::apply(reinterpret_cast<uint64_t>(handle), found->second);
         m_linearizedLights.emplace_back(&found->second);
+        m_ds1ApiLights.emplace_back(&found->second, reinterpret_cast<uint64_t>(handle));
      }
+    }
+
+    // Fork (DS1): the DS1 light view's copy, while it is shown.
+    if (m_ds1SnapshotWanted.exchange(false)) {
+      ds1BuildSnapshot();
     }
 
     // Count the active light of each type

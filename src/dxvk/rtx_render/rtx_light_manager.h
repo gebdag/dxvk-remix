@@ -24,6 +24,9 @@
 #include <array>
 #include <vector>
 #include <unordered_map>
+#include <mutex>
+#include <atomic>
+#include <string>
 #include "../util/rc/util_rc_ptr.h"
 #include "rtx_types.h"
 #include "rtx/utility/shader_types.h"
@@ -77,6 +80,21 @@ public:
   void showImguiSettings();
   void showImguiLightOverview();
   void showImguiDebugVisualization() const;
+  // Fork (DS1): every light Remix renders, coloured and named by where it comes from (the proxy's labels,
+  // rtx.ds1Lights.labels): in the world (the view) and as a list in Alt+X > DS1 > Lights. Both draw on the present
+  // thread from a copy the CS thread makes in prepareSceneData (ds1BuildSnapshot), never from the lights themselves.
+  struct Ds1LightSnapshotEntry {
+    uint64_t hash = 0;
+    RtLightType type = RtLightType::Sphere;
+    Vector3 position {};
+    Vector3 direction {};
+    Vector3 radiance {};
+    float radius = 0.0f;   // a sphere's, else 0
+    char provenance = '?'; // the proxy's label, '?' for a light the proxy did not send
+    std::string kind, name, origin;
+  };
+  void showDs1LightView() const;
+  void showDs1LightList();
 
   const std::unordered_map<XXH64_hash_t, RtLight>& getLightTable() const { return m_lights; }
   const std::unordered_map<uint64_t, RtLight>& getExternallyTrackedLightTable() const { return m_externallyTrackedLights; }
@@ -148,6 +166,15 @@ private:
   // of the memory behind these buffers between each call (at the cost of slightly more persistent
   // memory usage, but these buffers are fairly small at only 4 MiB or so max with 2^16 lights present).
   std::vector<RtLight*> m_linearizedLights{};
+  // Fork (DS1): the API lights among them, with their hash (= handle), for the DS1 light view's snapshot (CS thread only).
+  std::vector<std::pair<const RtLight*, uint64_t>> m_ds1ApiLights{};
+  // Fork (DS1): the DS1 light view's copy of the lights and their labels, made on the CS thread while the view or list
+  // asked for it in the last frame (m_ds1SnapshotWanted), read by the GUI under m_ds1SnapshotMutex.
+  void ds1BuildSnapshot();
+  mutable std::mutex m_ds1SnapshotMutex;
+  std::vector<Ds1LightSnapshotEntry> m_ds1Snapshot;
+  mutable std::atomic<bool> m_ds1SnapshotWanted { false };
+  std::string m_ds1LabelText;
   std::vector<unsigned char> m_lightsGPUData{};
   std::vector<uint16_t> m_lightMappingData{};
   std::vector<LightIdentityGpuEntry> m_lightIdentityData{};

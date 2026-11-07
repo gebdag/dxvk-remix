@@ -1062,6 +1062,8 @@ namespace dxvk {
   void ImGUI::showDebugVisualizations(const Rc<DxvkContext>& ctx) {
     auto common = ctx->getCommonObjects();
     common->getSceneManager().getLightManager().showImguiDebugVisualization();
+    // Fork (DS1): the DS1 light view (Alt+X > DS1 > Lights).
+    common->getSceneManager().getLightManager().showDs1LightView();
   }
 
   void ImGUI::showMainMenu(const Rc<DxvkContext>& ctx) {

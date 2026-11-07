@@ -36,6 +36,10 @@
 #include "rtx_imgui.h"
 #include "../util/util_vector.h"
 #include "rtx_intersection_test_helpers.h"
+#include "rtx_dark_souls_light_falloff.h"
+#include <unordered_map>
+#include <atomic>
+#include <algorithm>
 
 
 namespace dxvk {
@@ -510,6 +514,371 @@ namespace dxvk {
     }
     ImGui::End();
     ImGui::PopStyleColor();
+  }
+
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Fork (DS1): the light view. Every light Remix renders, coloured by where its values come from and named after
+  // the proxy's labels (rtx.ds1Lights.labels, game_lights::send_labels in the DS1 proxy).
+
+  struct Ds1LightViewSettings {
+    RTX_OPTION_FLAG("rtx.ds1Lights", bool, showView, false, RtxOptionFlags::NoSave,
+                    "DS1: draw every light Remix renders in the world, coloured by where its values come from.");
+    RTX_OPTION_FLAG("rtx.ds1Lights", bool, showViewNames, true, RtxOptionFlags::NoSave, "DS1 light view: name each light beside it.");
+    RTX_OPTION_FLAG("rtx.ds1Lights", float, viewDistance, 40.0f, RtxOptionFlags::NoSave,
+                    "DS1 light view: lights up to this far from the camera, in metres.");
+  };
+
+  namespace {
+    struct Ds1Provenance {
+      char code;
+      const char* name;
+      const char* detail;
+      ImU32 colour;
+    };
+
+    const Ds1Provenance kDs1Provenance[] = {
+      { 'G', "Game", "the game's own light, read live from the engine (map, character, FX and player lights, the sun)", IM_COL32(90, 220, 90, 255) },
+      { 'D', "Derived", "the developers' effect-light rule applied to an effect the game draws without a light (effect table)", IM_COL32(80, 200, 255, 255) },
+      { 'T', "Table", "a table of ours from the game's placements (map flames, lamp meshes)", IM_COL32(255, 220, 60, 255) },
+      { 'H', "By hand", "placed or set by hand (custom lights, a sun set in area_overrides.ini)", IM_COL32(230, 90, 230, 255) },
+      { 'X', "Guess", "guessed from what is drawn (particle stand-ins)", IM_COL32(255, 90, 60, 255) },
+      { 'M', "Proxy", "the proxy's own (menu key light, debug probe)", IM_COL32(170, 170, 170, 255) },
+      { '?', "Not DS1", "not sent by the DS1 proxy (Remix's fallback light, a D3D9 light or a replacement asset's light)", IM_COL32(255, 255, 255, 255) },
+    };
+    constexpr int kDs1ProvenanceCount = int(std::size(kDs1Provenance));
+    bool s_ds1ShowProvenance[kDs1ProvenanceCount] = { true, true, true, true, true, true, true };
+    bool s_ds1OnlyOnScreen = true;
+    uint64_t s_ds1Selected = 0;
+
+    int ds1ProvenanceIndex(char code) {
+      for (int i = 0; i < kDs1ProvenanceCount; ++i) {
+        if (kDs1Provenance[i].code == code) {
+          return i;
+        }
+      }
+      return kDs1ProvenanceCount - 1;
+    }
+
+    struct Ds1LightEntry {
+      const LightManager::Ds1LightSnapshotEntry* light = nullptr;
+      int provenance = 0;
+      float distance = 0.0f;
+      bool onScreen = false;
+      ImVec2 screen {};
+    };
+
+    const char* ds1LightType(RtLightType type) {
+      switch (type) {
+      case RtLightType::Sphere: return "Sphere";
+      case RtLightType::Rect: return "Rect";
+      case RtLightType::Disk: return "Disk";
+      case RtLightType::Cylinder: return "Cylinder";
+      case RtLightType::Distant: return "Distant";
+      default: return "?";
+      }
+    }
+
+    // The snapshot's lights as seen from the camera now, nearest first.
+    std::vector<Ds1LightEntry> ds1ViewLights(const std::vector<LightManager::Ds1LightSnapshotEntry>& snapshot, const Matrix4& worldToProj,
+                                             const Vector3& cameraPosition) {
+      const ImGuiViewport* viewport = ImGui::GetMainViewport();
+      std::vector<Ds1LightEntry> entries;
+      entries.reserve(snapshot.size());
+      for (const auto& light : snapshot) {
+        Ds1LightEntry entry;
+        entry.light = &light;
+        entry.provenance = ds1ProvenanceIndex(light.provenance);
+        if (light.type == RtLightType::Distant) {
+          entry.onScreen = true;
+        } else {
+          entry.distance = length(light.position - cameraPosition);
+          entry.onScreen = transformToScreen(worldToProj, Vector2 { viewport->Size.x, viewport->Size.y }, light.position, entry.screen) &&
+                           std::isfinite(entry.screen.x) && std::isfinite(entry.screen.y);
+        }
+        entries.push_back(entry);
+      }
+      std::sort(entries.begin(), entries.end(), [](const Ds1LightEntry& a, const Ds1LightEntry& b) { return a.distance < b.distance; });
+      return entries;
+    }
+
+    std::string ds1LightName(const LightManager::Ds1LightSnapshotEntry& light) {
+      return light.name.empty() ? std::string("Light ") + hashToString(light.hash) : light.name;
+    }
+
+    void ds1LightDetails(const Ds1LightEntry& entry) {
+      const Ds1Provenance& provenance = kDs1Provenance[entry.provenance];
+      const auto& light = *entry.light;
+      ImGui::TextColored(ImColor(provenance.colour), "%s", ds1LightName(light).c_str());
+      ImGui::Text("Source: %s, %s", light.kind.empty() ? "Remix" : light.kind.c_str(), provenance.name);
+      ImGui::TextWrapped("%s", provenance.detail);
+      if (!light.origin.empty()) {
+        ImGui::TextWrapped("From: %s", light.origin.c_str());
+      }
+      if (light.type == RtLightType::Distant) {
+        ImGui::Text("Direction: %.2f %.2f %.2f", light.direction.x, light.direction.y, light.direction.z);
+      } else {
+        ImGui::Text("Position: %.2f %.2f %.2f (%.1f m away)", light.position.x, light.position.y, light.position.z, entry.distance);
+      }
+      ImGui::Text("Radiance: %.3f %.3f %.3f", light.radiance.x, light.radiance.y, light.radiance.z);
+      if (light.type == RtLightType::Sphere) {
+        ImGui::Text("Type: Sphere, radius %.3f m", light.radius);
+      } else {
+        ImGui::Text("Type: %s", ds1LightType(light.type));
+      }
+      ImGui::Text("Hash: %s", hashToString(light.hash).c_str());
+    }
+  }
+
+  void LightManager::ds1BuildSnapshot() {
+    // On the CS thread, where rtx.ds1Lights.labels is applied, so it is read here and nowhere else.
+    struct Label {
+      char provenance = '?';
+      std::string kind, name, origin;
+    };
+    static std::unordered_map<uint64_t, Label> s_labels;
+    const std::string& text = DxvkDarkSoulsLightFalloff::labels();
+    if (text != m_ds1LabelText) {
+      m_ds1LabelText = text;
+      s_labels.clear();
+      size_t start = 0;
+      while (start < text.size()) {
+        size_t end = text.find(';', start);
+        if (end == std::string::npos) {
+          end = text.size();
+        }
+        const std::string entry = text.substr(start, end - start);
+        start = end + 1;
+        std::string fields[5];
+        size_t at = 0;
+        int count = 0;
+        while (count < 5) {
+          const size_t bar = count < 4 ? entry.find('|', at) : std::string::npos;
+          fields[count++] = entry.substr(at, bar == std::string::npos ? std::string::npos : bar - at);
+          if (bar == std::string::npos) {
+            break;
+          }
+          at = bar + 1;
+        }
+        if (count < 5 || fields[0].empty()) {
+          continue;
+        }
+        Label label;
+        label.provenance = fields[1].empty() ? '?' : fields[1][0];
+        label.kind = std::move(fields[2]);
+        label.name = std::move(fields[3]);
+        label.origin = std::move(fields[4]);
+        s_labels[std::strtoull(fields[0].c_str(), nullptr, 16)] = std::move(label);
+      }
+    }
+
+    std::unordered_map<const RtLight*, uint64_t> apiHashes;
+    for (const auto& [light, hash] : m_ds1ApiLights) {
+      apiHashes[light] = hash;
+    }
+    std::vector<Ds1LightSnapshotEntry> snapshot;
+    snapshot.reserve(m_linearizedLights.size());
+    for (const RtLight* light : m_linearizedLights) {
+      if (!light || light->getType() > RtLightType::Distant) {
+        continue;
+      }
+      Ds1LightSnapshotEntry entry;
+      entry.type = light->getType();
+      entry.position = light->getPosition();
+      entry.direction = light->getDirection();
+      entry.radiance = light->getRadiance();
+      entry.radius = entry.type == RtLightType::Sphere ? light->getSphereLight().getRadius() : 0.0f;
+      if (const auto found = apiHashes.find(light); found != apiHashes.end()) {
+        entry.hash = found->second;
+        if (const auto label = s_labels.find(found->second); label != s_labels.end()) {
+          entry.provenance = label->second.provenance;
+          entry.kind = label->second.kind;
+          entry.name = label->second.name;
+          entry.origin = label->second.origin;
+        }
+      } else {
+        entry.hash = light->getInitialHash();
+      }
+      snapshot.push_back(std::move(entry));
+    }
+    std::lock_guard<std::mutex> lock(m_ds1SnapshotMutex);
+    m_ds1Snapshot = std::move(snapshot);
+  }
+
+  void LightManager::showDs1LightView() const {
+    if (!Ds1LightViewSettings::showView()) {
+      return;
+    }
+    m_ds1SnapshotWanted = true;
+    std::vector<Ds1LightSnapshotEntry> snapshot;
+    {
+      std::lock_guard<std::mutex> lock(m_ds1SnapshotMutex);
+      snapshot = m_ds1Snapshot;
+    }
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->Pos);
+    ImGui::SetNextWindowSize(viewport->Size);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.f, 0.f, 0.f, 0.0f));
+    if (ImGui::Begin("DS1 Light View", nullptr, ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                                                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus)) {
+      ImDrawList* drawList = ImGui::GetWindowDrawList();
+      drawList->PushClipRectFullScreen();
+      const RtCamera& camera = device()->getCommon()->getSceneManager().getCamera();
+      const Matrix4 worldToProj = camera.getViewToProjection() * camera.getWorldToView(true);
+      const Vector3 cameraRight = Vector3 { camera.getViewToWorld(true)[0].xyz() };
+      const auto entries = ds1ViewLights(snapshot, worldToProj, camera.getPosition(true));
+      const ImDrawListSharedData* font = ImGui::GetDrawListSharedData();
+      // Hover only while Remix's UI (and its cursor) is up: in play the hidden cursor would raise tooltips.
+      const bool canHover = RtxOptions::showUI() != UIType::None;
+      const Ds1LightEntry* hovered = nullptr;
+      // Far to near, so the near lights' marks and names lie on top.
+      for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
+        const auto& entry = *it;
+        const auto& light = *entry.light;
+        if (light.type == RtLightType::Distant || !entry.onScreen || entry.distance > Ds1LightViewSettings::viewDistance() ||
+            !s_ds1ShowProvenance[entry.provenance]) {
+          continue;
+        }
+        const ImU32 colour = kDs1Provenance[entry.provenance].colour;
+        if (light.radius > 0.0f) {
+          // The emitter's size on screen.
+          ImVec2 edge;
+          transformToScreen(worldToProj, Vector2 { viewport->Size.x, viewport->Size.y }, light.position + cameraRight * light.radius, edge);
+          const float dx = edge.x - entry.screen.x, dy = edge.y - entry.screen.y;
+          const float radius = std::sqrt(dx * dx + dy * dy);
+          if (std::isfinite(radius) && radius > 5.0f && radius < 4.0f * viewport->Size.x) {
+            drawList->AddCircleFilled(entry.screen, radius, (colour & 0x00FFFFFFu) | IM_COL32(0, 0, 0, 60));
+          }
+        }
+        drawList->AddCircleFilled(entry.screen, 4.0f, colour);
+        drawList->AddCircle(entry.screen, 5.0f, IM_COL32(0, 0, 0, 220));
+        if (light.hash == s_ds1Selected) {
+          drawList->AddCircle(entry.screen, 14.0f, IM_COL32_WHITE, 0, 3.0f);
+        }
+        const float mx = entry.screen.x - ImGui::GetMousePos().x, my = entry.screen.y - ImGui::GetMousePos().y;
+        if (canHover && mx * mx + my * my < 64.0f && (!hovered || entry.distance < hovered->distance)) {
+          hovered = &entry;
+        }
+        if (Ds1LightViewSettings::showViewNames() && font && font->Font) {
+          const std::string text = ds1LightName(light);
+          const ImVec2 at { entry.screen.x + 8.0f, entry.screen.y - font->FontSize * 0.5f };
+          const ImVec2 size = font->Font->CalcTextSizeA(font->FontSize, FLT_MAX, 0.0f, text.c_str());
+          drawList->AddRectFilled(ImVec2 { at.x - 2.0f, at.y - 1.0f }, ImVec2 { at.x + size.x + 2.0f, at.y + size.y + 1.0f }, IM_COL32(0, 0, 0, 170));
+          drawList->AddText(font->Font, font->FontSize, at, colour, text.c_str());
+        }
+      }
+      if (hovered) {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(420.0f);
+        ds1LightDetails(*hovered);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+      }
+      drawList->PopClipRect();
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
+  }
+
+  void LightManager::showDs1LightList() {
+    if (!ImGui::CollapsingHeader("Lights")) {
+      return;
+    }
+    m_ds1SnapshotWanted = true;
+    std::vector<Ds1LightSnapshotEntry> snapshot;
+    {
+      std::lock_guard<std::mutex> lock(m_ds1SnapshotMutex);
+      snapshot = m_ds1Snapshot;
+    }
+    ImGui::Indent();
+    ImGui::TextWrapped("Every light Remix renders, by where its values come from. The colours mark the lights in the world.");
+    RemixGui::Checkbox("Show Lights in the World", &Ds1LightViewSettings::showViewObject());
+    RemixGui::Checkbox("Name Them", &Ds1LightViewSettings::showViewNamesObject());
+    RemixGui::DragFloat("Up To (m)", &Ds1LightViewSettings::viewDistanceObject(), 1.0f, 1.0f, 1000.0f, "%.0f");
+    RemixGui::Checkbox("Only Lights on Screen", &s_ds1OnlyOnScreen);
+
+    const RtCamera& camera = device()->getCommon()->getSceneManager().getCamera();
+    const Matrix4 worldToProj = camera.getViewToProjection() * camera.getWorldToView(true);
+    const auto entries = ds1ViewLights(snapshot, worldToProj, camera.getPosition(true));
+
+    int counts[kDs1ProvenanceCount] = {};
+    for (const auto& entry : entries) {
+      if (!s_ds1OnlyOnScreen || entry.onScreen) {
+        ++counts[entry.provenance];
+      }
+    }
+    for (int i = 0; i < kDs1ProvenanceCount; ++i) {
+      ImGui::PushID(i);
+      ImGui::Checkbox("##show", &s_ds1ShowProvenance[i]);
+      ImGui::SameLine();
+      ImGui::TextColored(ImColor(kDs1Provenance[i].colour), "%s (%d)", kDs1Provenance[i].name, counts[i]);
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s", kDs1Provenance[i].detail);
+      }
+      ImGui::PopID();
+    }
+
+    const Ds1LightEntry* selected = nullptr;
+    const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable;
+    if (ImGui::BeginTable("ds1_lights", 6, flags, ImVec2(0.0f, 320.0f))) {
+      ImGui::TableSetupScrollFreeze(0, 1);
+      ImGui::TableSetupColumn("Source");
+      ImGui::TableSetupColumn("Kind");
+      ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+      ImGui::TableSetupColumn("Dist (m)");
+      ImGui::TableSetupColumn("Radiance (max)");
+      ImGui::TableSetupColumn("Radius (m)");
+      ImGui::TableHeadersRow();
+      int row = 0;
+      for (const auto& entry : entries) {
+        if (!s_ds1ShowProvenance[entry.provenance] || (s_ds1OnlyOnScreen && !entry.onScreen)) {
+          continue;
+        }
+        const auto& light = *entry.light;
+        const Ds1Provenance& provenance = kDs1Provenance[entry.provenance];
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::PushID(row++);
+        if (ImGui::Selectable(provenance.name, light.hash == s_ds1Selected, ImGuiSelectableFlags_SpanAllColumns)) {
+          s_ds1Selected = light.hash == s_ds1Selected ? 0 : light.hash;
+        }
+        if (ImGui::IsItemHovered()) {
+          ImGui::BeginTooltip();
+          ImGui::PushTextWrapPos(420.0f);
+          ds1LightDetails(entry);
+          ImGui::PopTextWrapPos();
+          ImGui::EndTooltip();
+        }
+        ImGui::PopID();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(light.kind.empty() ? "Remix" : light.kind.c_str());
+        ImGui::TableNextColumn();
+        ImGui::TextColored(ImColor(provenance.colour), "%s", ds1LightName(light).c_str());
+        ImGui::TableNextColumn();
+        if (light.type == RtLightType::Distant) {
+          ImGui::TextUnformatted("-");
+        } else {
+          ImGui::Text("%.1f", entry.distance);
+        }
+        ImGui::TableNextColumn();
+        ImGui::Text("%.2f", std::max({ light.radiance.x, light.radiance.y, light.radiance.z }));
+        ImGui::TableNextColumn();
+        if (light.type == RtLightType::Sphere) {
+          ImGui::Text("%.2f", light.radius);
+        } else {
+          ImGui::Text("- (%s)", ds1LightType(light.type));
+        }
+        if (light.hash == s_ds1Selected) {
+          selected = &entry;
+        }
+      }
+      ImGui::EndTable();
+    }
+    if (selected) {
+      ImGui::Separator();
+      ds1LightDetails(*selected);
+    }
+    ImGui::Unindent();
   }
 
 }  // namespace dxvk

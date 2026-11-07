@@ -40,6 +40,10 @@ namespace dxvk {
 
     RTX_OPTION_FLAG("rtx.ds1Lights", std::string, falloffTable, "", RtxOptionFlags::NoSave,
                     "Set by the DS1 proxy: hash:begin:end;... for the lights that use the game's falloff.");
+    RTX_OPTION_FLAG("rtx.ds1Lights", std::string, labels, "", RtxOptionFlags::NoSave,
+                    "Set by the DS1 proxy: what each light it sends is and where its values come from, for the DS1 light view "
+                    "(Alt+X > DS1 > Lights): 'hash|provenance|kind|name|origin;' per light, hash in hex, provenance G (the game's), "
+                    "D (derived by the game's rule), T (a table from the game's placements), H (by hand), X (a guess), M (the proxy's).");
     RTX_OPTION_FLAG("rtx.ds1Lights", std::string, playerLight, "", RtxOptionFlags::NoSave,
                     "Set by the DS1 proxy: the player light's API hash (hex).");
     RTX_OPTION_FLAG("rtx.ds1Lights", Vector3, playerAnchor, Vector3(0.0f), RtxOptionFlags::NoSave,

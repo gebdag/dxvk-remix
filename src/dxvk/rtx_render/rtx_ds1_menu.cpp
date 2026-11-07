@@ -166,6 +166,8 @@ namespace dxvk {
     showBody();
     showMaterials();
     showMarkers();
+    // Every light Remix renders and where it comes from (rtx_light_manager_gui.cpp).
+    ctx->getCommonObjects()->getSceneManager().getLightManager().showDs1LightList();
 
     ImGui::PopItemWidth();
   }
