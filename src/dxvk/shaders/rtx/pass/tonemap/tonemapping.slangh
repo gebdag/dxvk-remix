@@ -88,6 +88,17 @@ float3 ACESFilmApproximation(float3 x)
   return saturate((x*(a*x+b))/(x*(c*x+d)+e));
 }
 
+// Fork (DS1): DLSS-NR's SDR curve under the game's image pipeline. The game's display is a saturate of the exposed scene, so
+// its darks are linear; ACES's toe flattens them about five times, and the inverse after DLSS-NR scaled every change the
+// network made there by as much (boiling, a compressed look in dim interiors). Linear up to the knee, then a soft
+// shoulder to 1, so highlights still fit the SDR range.
+float3 ds1NeuralRenderingCurve(float3 x)
+{
+  const float knee = 0.8f;
+  const float3 above = max(x - knee, 0.0f);
+  return min(x, knee) + (1.0f - knee) * (1.0f - exp(-above / (1.0f - knee)));
+}
+
 float3 ACESFilm(float3 color, bool useLegacyACES, bool suppressBlackLevelClamp = false)
 {
   if (useLegacyACES)

@@ -21,6 +21,7 @@
 */
 #include "rtx_tone_mapping.h"
 #include "rtx_dark_souls_exposure.h"
+#include "rtx_dark_souls_look.h"
 #include "rtx_dlss_neural_rendering.h"
 #include "dxvk_device.h"
 #include "dxvk_scoped_annotation.h"
@@ -359,6 +360,7 @@ namespace dxvk {
     FastToneMappingArgs pushArgs = {};
     pushArgs.enableAutoExposure = autoExposureEnabled && !DxvkDarkSoulsExposure::replacesAutoExposure();
     pushArgs.exposureFactor = exp2f(exposureBias() + RtxOptions::calcUserEVBias()) * DxvkDarkSoulsExposure::factor(); // ev100
+    pushArgs.ds1LinearCurve = DlssNeuralRendering::ds1LinearCurve() && DxvkDarkSoulsLook::isActive() ? 1u : 0u;
 
     const Resources::Resource& inputColorTexture = rtOutput.m_finalOutput.resource(Resources::AccessType::Read);
     const VkExtent3D workgroups = util::computeBlockCount(inputColorTexture.view->imageInfo().extent, VkExtent3D { 16 , 16, 1 });
@@ -383,6 +385,7 @@ namespace dxvk {
     FastToneMappingArgs pushArgs = {};
     pushArgs.enableAutoExposure = autoExposureEnabled && !DxvkDarkSoulsExposure::replacesAutoExposure();
     pushArgs.exposureFactor = exp2f(exposureBias() + RtxOptions::calcUserEVBias()) * DxvkDarkSoulsExposure::factor(); // ev100
+    pushArgs.ds1LinearCurve = DlssNeuralRendering::ds1LinearCurve() && DxvkDarkSoulsLook::isActive() ? 1u : 0u;
     // Highlight recovery (inverse-tonemap only path)
     pushArgs.enableHighlightRecovery = DlssNeuralRendering::enableHighlightRecovery() ? 1u : 0u;
     {

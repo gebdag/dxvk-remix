@@ -49,7 +49,7 @@ void main(uint2 threadId : SV_DispatchThreadID)
 
   const float exposure = sanitizeExposure(getExposure(InExposure, cb.enableAutoExposure, cb.exposureFactor));
   inputColor *= exposure;
-  float3 outputColor = ACESFilmApproximation(inputColor);
+  float3 outputColor = cb.ds1LinearCurve != 0 ? ds1NeuralRenderingCurve(max(inputColor, 0.0f)) : ACESFilmApproximation(inputColor);
 
   outputColor = linearToGamma(outputColor);
   OutColorTexture[threadId] = vec4(outputColor.rgb, 1.0f);

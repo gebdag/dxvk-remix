@@ -110,6 +110,12 @@ namespace dxvk {
     RTX_OPTION("rtx.dlssNeuralRendering", bool,    enableHighlightRecovery, true, "Recover highlights compressed by DLSS 3D-Guided Neural Rendering's LDR-domain processing.");
     RTX_OPTION("rtx.dlssNeuralRendering", Vector4, highlightRecoveryThresholds, Vector4(1.0f, 8.0f, 0.75f, 0.99f), "Smoothstep edges for highlight recovery: (exposed HDR max-channel min, exposed HDR max-channel max, LDR max-channel min, LDR max-channel max).");
 
+    // Fork (DS1): with the game's image pipeline on, the SDR round trip around the network uses the game's own curve (linear,
+    // soft shoulder) instead of ACES, whose toe amplified the network's changes in dark areas about fivefold on the way back.
+    RTX_OPTION("rtx.dlssNeuralRendering", bool, ds1LinearCurve, true,
+               "With Dark Souls' image pipeline on: map the frame to SDR for DLSS-NR with the game's curve (linear, soft shoulder) "
+               "instead of ACES. ACES's toe amplified the network's changes in dark areas about fivefold (boiling in dim interiors).");
+
     RTX_OPTION("rtx.dlssNeuralRendering", bool, enableVolumetricControlMask, true, "Modulate the DLSS 3D-Guided Neural Rendering control mask with fog, volumetric, and alpha-blended transmittance.");
 
     RTX_OPTION("rtx.dlssNeuralRendering", bool, showVramUsage, false,

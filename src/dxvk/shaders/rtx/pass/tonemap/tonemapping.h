@@ -122,7 +122,8 @@ struct FastToneMappingArgs {
   uint enableAutoExposure;
   float exposureFactor;
   uint enableHighlightRecovery;
-  uint pad0;
+  // Fork (DS1): the SDR round trip uses ds1NeuralRenderingCurve instead of ACES (DlssNeuralRendering::ds1LinearCurve).
+  uint ds1LinearCurve;
 
   // Highlight recovery (inverse tonemap): substitute the original HDR back in for pixels that were
   // very bright in HDR and land in the active curve's shoulder. Thresholds are smoothstep edges:

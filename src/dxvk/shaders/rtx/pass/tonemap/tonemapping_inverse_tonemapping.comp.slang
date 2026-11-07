@@ -67,7 +67,7 @@ void main(uint2 threadId : SV_DispatchThreadID)
   const float3 originalHdrColor = sanitizeRadiance(imageLoad(InOutColorTexture, threadId).rgb);
   const float exposure = sanitizeExposure(getExposure(InExposure, cb.enableAutoExposure, cb.exposureFactor));
   const float3 toneMappingInput = originalHdrColor * exposure;
-  const float3 originalToneMapped = ACESFilmApproximation(toneMappingInput);
+  const float3 originalToneMapped = cb.ds1LinearCurve != 0 ? ds1NeuralRenderingCurve(max(toneMappingInput, 0.0f)) : ACESFilmApproximation(toneMappingInput);
   const float3 inverseScalar = toneMappingInput / max(originalToneMapped, float3(1e-6f));
   const bool isValidInverseScalar =
     isValidValue(inverseScalar) &&
