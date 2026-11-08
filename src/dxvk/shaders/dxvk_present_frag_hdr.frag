@@ -75,13 +75,15 @@ void main() {
   ivec2 coord = ivec2(gl_FragCoord.xy) + src_offset - dst_offset;
   vec4 c = texelFetch(s_image, coord, 0);
 
-  // The game's gamma ramp covers 0..1; what is above SDR white passes.
+  // The game's gamma ramp covers 0..1: applied to the SDR part of the value, the headroom above 1 keeps its
+  // ratio to it (no step at 1).
   if (s_gamma_bound) {
+    vec3 sdr = min(c.rgb, vec3(1.0));
     vec3 ramped = vec3(
-      texture(s_gamma, c.r).r,
-      texture(s_gamma, c.g).g,
-      texture(s_gamma, c.b).b);
-    c.rgb = mix(c.rgb, ramped, step(c.rgb, vec3(1.0)));
+      texture(s_gamma, sdr.r).r,
+      texture(s_gamma, sdr.g).g,
+      texture(s_gamma, sdr.b).b);
+    c.rgb = ramped * (c.rgb / max(sdr, vec3(1e-6)));
   }
 
   o_color = hdr_encode(c, decode_gamma, paper_white_nits, peak_nits, shoulder_start);

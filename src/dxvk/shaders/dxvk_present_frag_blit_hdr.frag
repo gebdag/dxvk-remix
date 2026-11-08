@@ -75,11 +75,12 @@ void main() {
   vec4 c = textureLod(s_image, coord, 0.0f);
 
   if (s_gamma_bound) {
+    vec3 sdr = min(c.rgb, vec3(1.0));
     vec3 ramped = vec3(
-      texture(s_gamma, c.r).r,
-      texture(s_gamma, c.g).g,
-      texture(s_gamma, c.b).b);
-    c.rgb = mix(c.rgb, ramped, step(c.rgb, vec3(1.0)));
+      texture(s_gamma, sdr.r).r,
+      texture(s_gamma, sdr.g).g,
+      texture(s_gamma, sdr.b).b);
+    c.rgb = ramped * (c.rgb / max(sdr, vec3(1e-6)));
   }
 
   o_color = hdr_encode(c, decode_gamma, paper_white_nits, peak_nits, shoulder_start);

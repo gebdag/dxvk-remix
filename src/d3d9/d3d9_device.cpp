@@ -1001,13 +1001,68 @@ namespace dxvk {
     Rc<DxvkImage>  srcImage                 = srcTexInfo->GetImage();
     const DxvkFormatInfo* srcFormatInfo     = imageFormatInfo(srcImage->info().format);
 
-    const VkImageSubresource srcSubresource = srcTexInfo->GetSubresourceFromIndex(srcFormatInfo->aspectMask, src->GetSubresource());
+    VkImageSubresource srcSubresource = srcTexInfo->GetSubresourceFromIndex(srcFormatInfo->aspectMask, src->GetSubresource());
+    VkExtent3D srcExtent = srcTexInfo->GetExtentMip(src->GetMipLevel());
+
+    // NV-DXVK start: DS1 HDR10 output: a back buffer described as 8-bit may hold 16-bit float
+    // (D3D9CommonTexture). The destination buffer is sized for the description, so an image of another
+    // format is first blitted into a temporary image of the destination's format.
+    const VkFormat dstVkFormat = dstTexInfo->GetFormatMapping().FormatColor;
+    if (srcImage->info().format != dstVkFormat && dstVkFormat != VK_FORMAT_UNDEFINED) {
+      DxvkImageCreateInfo blitCreateInfo;
+      blitCreateInfo.type          = VK_IMAGE_TYPE_2D;
+      blitCreateInfo.format        = dstVkFormat;
+      blitCreateInfo.flags         = 0;
+      blitCreateInfo.sampleCount   = VK_SAMPLE_COUNT_1_BIT;
+      blitCreateInfo.extent        = srcExtent;
+      blitCreateInfo.numLayers     = 1;
+      blitCreateInfo.mipLevels     = 1;
+      blitCreateInfo.usage         = VK_IMAGE_USAGE_SAMPLED_BIT
+                                   | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+                                   | VK_IMAGE_USAGE_TRANSFER_DST_BIT
+                                   | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+      blitCreateInfo.stages        = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+                                   | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+                                   | VK_PIPELINE_STAGE_TRANSFER_BIT;
+      blitCreateInfo.access        = VK_ACCESS_SHADER_READ_BIT
+                                   | VK_ACCESS_TRANSFER_READ_BIT
+                                   | VK_ACCESS_TRANSFER_WRITE_BIT
+                                   | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT
+                                   | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+      blitCreateInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
+      blitCreateInfo.layout        = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+      Rc<DxvkImage> blittedSrc = m_dxvkDevice->createImage(
+        blitCreateInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, DxvkMemoryStats::Category::AppTexture, "GetRenderTargetData blit src");
+
+      VkImageBlit blitInfo;
+      blitInfo.srcSubresource = { srcSubresource.aspectMask, srcSubresource.mipLevel, srcSubresource.arrayLayer, 1 };
+      blitInfo.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+      blitInfo.srcOffsets[0] = VkOffset3D { 0, 0, 0 };
+      blitInfo.srcOffsets[1] = VkOffset3D { int32_t(srcExtent.width), int32_t(srcExtent.height), 1 };
+      blitInfo.dstOffsets[0] = VkOffset3D { 0, 0, 0 };
+      blitInfo.dstOffsets[1] = VkOffset3D { int32_t(srcExtent.width), int32_t(srcExtent.height), 1 };
+
+      EmitCs([
+        cDstImage = blittedSrc,
+        cDstMap   = dstTexInfo->GetMapping().Swizzle,
+        cSrcImage = srcImage,
+        cSrcMap   = srcTexInfo->GetMapping().Swizzle,
+        cBlitInfo = blitInfo
+      ] (DxvkContext* ctx) {
+        ctx->blitImage(cDstImage, cDstMap, cSrcImage, cSrcMap, cBlitInfo, VK_FILTER_NEAREST);
+      });
+
+      srcImage = std::move(blittedSrc);
+      srcFormatInfo = imageFormatInfo(srcImage->info().format);
+      srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0 };
+    }
+    // NV-DXVK end
+
     VkImageSubresourceLayers srcSubresourceLayers = {
       srcSubresource.aspectMask,
       srcSubresource.mipLevel,
       srcSubresource.arrayLayer, 1 };
-
-    VkExtent3D srcExtent = srcTexInfo->GetExtentMip(src->GetMipLevel());
 
     VkExtent3D texLevelExtentBlockCount = util::computeBlockCount(srcExtent, srcFormatInfo->blockSize);
     VkDeviceSize pitch = align(texLevelExtentBlockCount.width * uint32_t(srcFormatInfo->elementSize), 4);

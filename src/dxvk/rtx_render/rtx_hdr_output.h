@@ -66,22 +66,26 @@ namespace dxvk {
                     "Screenshots folder (hdrFinal_*.dds), then clear. Gamma-encoded, 1.0 = paper white.");
 
     // The back buffers hold 16-bit float (set by the swap chain when it creates them).
-    static bool floatBackBuffers() { return s_floatBackBuffers; }
-    static void setFloatBackBuffers(bool value) { s_floatBackBuffers = value; }
+    static bool floatBackBuffers() { return s_floatBackBuffers.load(); }
+    static void setFloatBackBuffers(bool value) { s_floatBackBuffers.store(value); }
 
     // The swap chain presents in HDR10 (set by the swap chain after each (re)creation).
-    static bool swapchainHdr() { return s_swapchainHdr; }
-    static VkColorSpaceKHR swapchainColorSpace() { return s_colorSpace; }
-    static VkFormat swapchainFormat() { return s_swapchainFormat; }
+    static bool swapchainHdr() { return s_swapchainHdr.load(); }
+    static VkColorSpaceKHR swapchainColorSpace() { return s_colorSpace.load(); }
+    static VkFormat swapchainFormat() { return s_swapchainFormat.load(); }
     static void setSwapchain(VkFormat format, VkColorSpaceKHR colorSpace) {
-      s_swapchainFormat = format;
-      s_colorSpace = colorSpace;
-      s_swapchainHdr = colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT;
+      s_swapchainFormat.store(format);
+      s_colorSpace.store(colorSpace);
+      s_swapchainHdr.store(colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT);
     }
 
     // True while the frame is rendered with headroom: values above 1 reach a float back buffer and an
     // HDR10 swap chain. False for one frame after the toggle, while those are being recreated.
-    static bool renderHeadroom() { return enable() && s_floatBackBuffers && s_swapchainHdr; }
+    // The swap chain and back buffer state is written on the app thread; the render passes run on the CS
+    // thread and all read one snapshot taken at the start of the frame (beginFrame, RtxContext::injectRTX),
+    // so every pass of a frame agrees.
+    static void beginFrame() { s_frameHeadroom = enable() && s_floatBackBuffers.load() && s_swapchainHdr.load(); }
+    static bool renderHeadroom() { return s_frameHeadroom; }
 
     // Headroom above SDR white the display has, as a factor on 1.0 (peak / paper white).
     static float headroom() { return std::max(peakNits(), 1.0f) / std::max(paperWhiteNits(), 1.0f); }
@@ -107,11 +111,12 @@ namespace dxvk {
     static void showImguiSettings();
 
   private:
-    inline static bool s_floatBackBuffers = false;
-    inline static bool s_swapchainHdr = false;
-    inline static bool s_dumpTaken = false;
-    inline static VkColorSpaceKHR s_colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-    inline static VkFormat s_swapchainFormat = VK_FORMAT_UNDEFINED;
+    inline static std::atomic<bool> s_floatBackBuffers = false;
+    inline static std::atomic<bool> s_swapchainHdr = false;
+    inline static bool s_frameHeadroom = false;   // CS thread only
+    inline static bool s_dumpTaken = false;       // CS thread only
+    inline static std::atomic<VkColorSpaceKHR> s_colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+    inline static std::atomic<VkFormat> s_swapchainFormat = VK_FORMAT_UNDEFINED;
   };
 
 } // namespace dxvk

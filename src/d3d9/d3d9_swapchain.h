@@ -249,6 +249,10 @@ namespace dxvk {
 
     // NV-DXVK start: DS1 HDR10 output: after a toggle, the back buffers take the other format in place
     void SyncHdrBackBuffers();
+
+    // The back buffers hold 16-bit float and the swap chain asks for HDR10 (rtx.hdr.enable, no multisampling).
+    // The external swap chain hands its images to another process as described, so never there.
+    virtual bool WantsFloatBackBuffers() const;
     // NV-DXVK end
 
     virtual int NumFrontBuffers();
@@ -325,6 +329,9 @@ namespace dxvk {
 
   protected:
     int NumFrontBuffers() override { return 0; };
+    // NV-DXVK start: DS1 HDR10 output: the external host reads the images as described (8-bit)
+    bool WantsFloatBackBuffers() const override { return false; }
+    // NV-DXVK end
 
   public:
 

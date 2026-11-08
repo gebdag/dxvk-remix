@@ -126,6 +126,13 @@ namespace dxvk {
       std::swap(m_texture,          Other->m_texture);
       std::swap(m_sampleView,       Other->m_sampleView);
       std::swap(m_renderTargetView, Other->m_renderTargetView);
+      // NV-DXVK start: DS1 HDR10 output swaps textures of another format into the back buffers
+      // (D3D9SwapChainEx::SyncHdrBackBuffers): the bits derived from the texture follow it.
+      m_isSrgbCompatible = m_texture->IsSrgbCompatible();
+      m_isNull = m_texture->IsNull();
+      Other->m_isSrgbCompatible = Other->m_texture->IsSrgbCompatible();
+      Other->m_isNull = Other->m_texture->IsNull();
+      // NV-DXVK end
     }
 
     // NV-DXVK start

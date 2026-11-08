@@ -112,10 +112,6 @@ void main(uint2 threadId : SV_DispatchThreadID)
     texelFinal = max(texelFinal, vec3(0.0f));
     texelFinal = hdrExpandHighlights(texelFinal, cb.hdrHighlightKnee, cb.hdrHeadroom, cb.hdrHighlightExpansion);
   }
-  else
-  {
-    texelFinal = saturate(texelFinal);
-  }
 
   // sRGB conversion and dithering are now performed by the final output pass,
   // which runs after all post-process effects (lens effects, etc.).

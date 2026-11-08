@@ -542,6 +542,9 @@ namespace dxvk {
     m_currentPassStage = RtxFramePassStage::FrameBegin;
 #endif
 
+    // DS1 HDR10 output: one snapshot of the output state for every pass of this frame (rtx_hdr_output.h).
+    DxvkHdrOutput::beginFrame();
+
     if (RtxOptions::enableBreakIntoDebuggerOnPressingB() && ImGUI::checkHotkeyState({VirtualKey{ 'B' }}, true)) {
       while (!::IsDebuggerPresent()) {
         ::Sleep(100);

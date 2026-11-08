@@ -579,8 +579,13 @@ namespace dxvk {
 
 
   // NV-DXVK start: DS1 HDR10 output (rtx_hdr_output.h)
+  bool D3D9SwapChainEx::WantsFloatBackBuffers() const {
+    // Not with a multisampled back buffer: the present resolve path has no HDR encode.
+    return DxvkHdrOutput::enable() && m_presentParams.MultiSampleType == D3DMULTISAMPLE_NONE;
+  }
+
   void D3D9SwapChainEx::SyncHdrBackBuffers() {
-    const bool wantFloat = DxvkHdrOutput::enable();
+    const bool wantFloat = WantsFloatBackBuffers();
     if (wantFloat == m_floatBackBuffers || m_backBuffers.empty())
       return;
 
@@ -588,6 +593,7 @@ namespace dxvk {
     // stay: new images of the other format are created in fresh surfaces and swapped into the existing
     // ones, as Present rotates the buffers. The bound framebuffer is rebuilt at the next draw.
     std::vector<Com<D3D9Surface, false>> existing = std::move(m_backBuffers);
+    m_backBuffers.clear();
     CreateBackBuffers(m_presentParams.BackBufferCount);
 
     for (size_t i = 0; i < existing.size() && i < m_backBuffers.size(); i++)
@@ -690,6 +696,11 @@ namespace dxvk {
     D3D9Format dstFormat = dstTexInfo->Desc()->Format;
 
     bool similar = AreFormatsSimilar(srcFormat, dstFormat);
+
+    // NV-DXVK start: DS1 HDR10 output: a back buffer described as 8-bit may hold 16-bit float; the
+    // destination buffer is sized for the description, so the image formats must match for the copy.
+    similar = similar && srcImage->info().format == dstTexInfo->GetFormatMapping().FormatColor;
+    // NV-DXVK end
 
     if (!similar || srcImage->info().extent != dstTexInfo->GetExtent()) {
       DxvkImageCreateInfo blitCreateInfo;
@@ -1598,7 +1609,7 @@ namespace dxvk {
 
     // NV-DXVK start: DS1 HDR10 output: the back buffers are 16-bit float behind the 8-bit description
     // while HDR10 output is on (D3D9CommonTexture reads this at creation).
-    m_floatBackBuffers = DxvkHdrOutput::enable();
+    m_floatBackBuffers = WantsFloatBackBuffers();
     DxvkHdrOutput::setFloatBackBuffers(m_floatBackBuffers);
     // NV-DXVK end
 
@@ -1762,7 +1773,7 @@ namespace dxvk {
         // NV-DXVK start: DS1 HDR10 output: first choice a 10-bit ST 2084 swap chain, which the surface
         // offers while the display runs in Windows HDR (needs VK_EXT_swapchain_colorspace); otherwise the
         // sRGB formats below as before.
-        if (DxvkHdrOutput::enable() && m_device->instance()->extensions().extSwapchainColorSpace)
+        if (WantsFloatBackBuffers() && m_device->instance()->extensions().extSwapchainColorSpace)
           pDstFormats[n++] = { VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_COLOR_SPACE_HDR10_ST2084_EXT };
         // NV-DXVK end
         pDstFormats[n++] = { VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
