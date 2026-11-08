@@ -275,9 +275,10 @@ namespace dxvk {
       pushArgs.finalizeWithACES = finalizeWithACES();
       pushArgs.useLegacyACES = RtxOptions::useLegacyACES();
       // DS1 HDR10 output (rtx_hdr_output.h)
-      pushArgs.hdrMode = DxvkHdrOutput::renderHeadroom() ? 1u : 0u;
-      pushArgs.hdrHighlightRecovery = std::clamp(DxvkHdrOutput::remixHighlightRecovery(), 0.0f, 1.0f);
+      pushArgs.hdrMode = DxvkHdrOutput::renderHeadroom() && DxvkHdrOutput::remixClipRecovery() ? 1u : 0u;
+      pushArgs.hdrHighlightExpansion = std::clamp(DxvkHdrOutput::remixHighlightExpansion(), 0.0f, 1.0f);
       pushArgs.hdrHighlightKnee = DxvkHdrOutput::remixHighlightKnee();
+      pushArgs.hdrHeadroom = DxvkHdrOutput::headroom();
 
       ctx->pushConstants(0, sizeof(pushArgs), &pushArgs);
 

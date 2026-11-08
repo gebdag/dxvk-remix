@@ -56,26 +56,19 @@ void main(uint2 pixel : SV_DispatchThreadID)
   }
 
   const vec4 frame = InOutColor[pixel];
-  // DS1 HDR10 output (keepHeadroom): the colour stays the SDR one. The game's yellow and white fire exist because each
-  // channel clips at 1 on its own (measured: raw fire G/R 0.6, displayed 0.9-1.0 as it brightens), so unclipped channels
-  // would show a different colour. The SDR result is computed as ever and only scaled by how far the brightest graded
-  // channel would have gone past white. A pixel no channel of which passes 1 is the SDR pixel exactly.
+  // DS1 HDR10 output (keepHeadroom): ColAdj's clips are left out, so what they cut above white reaches the
+  // display; within 0..1 nothing changes.
   const bool keep = cb.keepHeadroom != 0;
-  const vec3 unclippedScene = max(frame.rgb * cb.sceneScale * cb.adjustExposure, vec3(0.0f));
-  vec3 col = saturate(frame.rgb * cb.sceneScale * cb.adjustExposure);
-  vec3 colUnclipped = unclippedScene;
+  vec3 col = frame.rgb * cb.sceneScale * cb.adjustExposure;
+  col = keep ? max(col, vec3(0.0f)) : saturate(col);
   if (cb.bloomEnable != 0)
   {
     const vec4 bloom = Bloom.SampleLevel((vec2(pixel) + 0.5f) * cb.invImageSize, 0);
-    const vec3 added = bloom.rgb * lerp(cb.bloomRateNear, cb.bloomRateFar, bloom.a);
-    col += added;
-    colUnclipped += added;
+    col += bloom.rgb * lerp(cb.bloomRateNear, cb.bloomRateFar, bloom.a);
   }
   if (cb.shaftEnable != 0)
   {
-    const vec3 added = Shafts.SampleLevel((vec2(pixel) + 0.5f) * cb.invImageSize, 0).rgb * cb.shaftWeight;
-    col += added;
-    colUnclipped += added;
+    col += Shafts.SampleLevel((vec2(pixel) + 0.5f) * cb.invImageSize, 0).rgb * cb.shaftWeight;
   }
   // rtx.ds1Look.intensity: the game's scene (its exposure, haze and DoF, bloom and shafts) over Remix's own
   // tonemapped frame, in display (gamma) space. The grade below is eased toward identity by it on the CPU
@@ -84,13 +77,13 @@ void main(uint2 pixel : SV_DispatchThreadID)
   {
     const vec3 stock = pow(saturate(Stock[pixel].rgb), vec3(1.0f / 2.2f));
     col = lerp(stock, col, cb.intensity);
-    colUnclipped = lerp(stock, colUnclipped, cb.intensity);
   }
   const vec4 c = vec4(col, 1.0f);
   const float brightest = max(col.r, max(col.g, col.b));
-  vec3 graded = saturate(vec3(toeChannel(dot(c, cb.gradeRowR), cb.gradeRowR, brightest, cb.blackToe),
-                              toeChannel(dot(c, cb.gradeRowG), cb.gradeRowG, brightest, cb.blackToe),
-                              toeChannel(dot(c, cb.gradeRowB), cb.gradeRowB, brightest, cb.blackToe)));
+  vec3 graded = vec3(toeChannel(dot(c, cb.gradeRowR), cb.gradeRowR, brightest, cb.blackToe),
+                     toeChannel(dot(c, cb.gradeRowG), cb.gradeRowG, brightest, cb.blackToe),
+                     toeChannel(dot(c, cb.gradeRowB), cb.gradeRowB, brightest, cb.blackToe));
+  graded = keep ? max(graded, vec3(0.0f)) : saturate(graded);
   // Image adjustments (rtx.ds1Look.adjust*), on the displayed value; skipped entirely at their defaults.
   if (cb.adjustEnable != 0)
   {
@@ -99,12 +92,8 @@ void main(uint2 pixel : SV_DispatchThreadID)
     graded = cb.adjustLift + (1.0f - cb.adjustLift) * graded;
     graded = (graded - 0.5f) * cb.adjustContrast + 0.5f;
     const float luma = dot(graded, vec3(0.2126f, 0.7152f, 0.0722f));
-    graded = saturate(lerp(vec3(luma), graded, cb.adjustSaturation));
-  }
-  if (keep)
-  {
-    const vec4 u = vec4(colUnclipped, 1.0f);
-    graded *= max(max(dot(u, cb.gradeRowR), max(dot(u, cb.gradeRowG), dot(u, cb.gradeRowB))), 1.0f);
+    graded = lerp(vec3(luma), graded, cb.adjustSaturation);
+    graded = keep ? max(graded, vec3(0.0f)) : saturate(graded);
   }
   InOutColor[pixel] = vec4(pow(graded, vec3(2.2f)), frame.a);
 }

@@ -117,11 +117,13 @@ struct ToneMappingApplyToneMappingArgs {
   uint finalizeWithACES;
   uint useLegacyACES;
 
-  // DS1 HDR10 output (rtx_hdr_output.h). hdrMode 1: highlights recovered from the exposed scene (hdrRecoverHighlights).
+  // DS1 HDR10 output (rtx_hdr_output.h). hdrMode 1: the output keeps channels above 1 instead of the
+  // saturate; hdrHighlightExpansion 0..1 stretches the shoulder above hdrHighlightKnee (display linear)
+  // in log luminance so that 1.0 reaches hdrHeadroom^expansion.
   uint hdrMode;
-  float hdrHighlightRecovery;
+  float hdrHighlightExpansion;
   float hdrHighlightKnee;
-  float hdrPad;
+  float hdrHeadroom;
 };
 
 struct FastToneMappingArgs {

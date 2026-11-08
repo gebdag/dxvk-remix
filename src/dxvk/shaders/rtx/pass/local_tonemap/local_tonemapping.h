@@ -100,12 +100,13 @@ struct FinalCombineArgs
   uint finalizeWithACES;
   uint enableAutoExposure;
   uint useLegacyACES;
-  // DS1 HDR10 output (rtx_hdr_output.h): hdrMode 1: highlights recovered from the exposed scene (hdrRecoverHighlights).
+  // DS1 HDR10 output (rtx_hdr_output.h): hdrMode 1 keeps channels above 1 (ACES without its clamp); the
+  // expansion stretches the shoulder above the knee (see hdrExpandHighlights).
   uint hdrMode;
 
-  float hdrHighlightRecovery;
+  float hdrHighlightExpansion;
   float hdrHighlightKnee;
-  float hdrPad;
+  float hdrHeadroom;
   uint pad0;
 };
 

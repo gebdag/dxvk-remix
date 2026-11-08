@@ -23,12 +23,10 @@ namespace dxvk {
   //    1.0 to paperWhiteNits, rolls the luminance off towards peakNits above shoulderStart * peakNits,
   //    converts BT.709 -> BT.2020 and encodes ST 2084 (PQ);
   //  - the Remix menu (ImGui) encodes its colours the same way, at paper white;
-  //  - the frame has headroom, always in the SDR image's colour: the DS1 look scales its SDR result by how far
-  //    the brightest graded channel passes white (post_fx_dark_souls_look_composite), Remix's tonemappers scale
-  //    theirs by the scene brightness their curve compressed (hdrRecoverHighlights), and the final pass skips the
-  //    saturate and the 8-bit dither (srgb_dither);
-  //  - the DS1 proxy's [HDR] Enabled makes the game's own scene target float and its final LUT pass a copy, which
-  //    otherwise clip everything above white after Remix.
+  //  - the frame keeps its headroom: the DS1 look drops the game's 8-bit scene clip and ColAdj clips
+  //    (post_fx_dark_souls_look_scene / _composite), the stock tonemapper drops its per-channel saturate
+  //    and may stretch its shoulder (tonemapping_apply_tonemapping), and the final pass skips the
+  //    saturate and the 8-bit dither (srgb_dither).
   // Nothing in the SDR range changes: every pass that reads the frame for a decision (the DS1 meter,
   // the bloom bright pass) reads the clipped value, so bloom, exposure and DoF rates are those of the
   // SDR frame, and a value within 0..1 reaches the display exactly as before, at paper white.
@@ -54,13 +52,15 @@ namespace dxvk {
                "With the game's image pipeline: keep what its 8-bit scene clip and ColAdj clips would cut above "
                "white, so the sky, fire and lit highlights go above SDR white. Off: the look's output clips at 1 as "
                "in SDR (the HDR display then only gets the 10-bit encode).");
-    RTX_OPTION("rtx.hdr", float, remixHighlightRecovery, 1.0f,
-               "With Remix's own tonemappers, 0..1: how much of the exposed scene brightness the tone curve compressed "
-               "comes back above SDR white, keeping the SDR colour. The curves fit the whole scene under 1, so at 0 "
-               "nothing exceeds SDR white.");
+    RTX_OPTION("rtx.hdr", bool, remixClipRecovery, true,
+               "With Remix's own tonemapper: keep colour channels above 1 after the tone curve instead of clipping "
+               "them, so bright saturated colours keep their hue and brightness.");
+    RTX_OPTION("rtx.hdr", float, remixHighlightExpansion, 0.0f,
+               "With Remix's own tonemapper, 0..1: stretch the tone curve's shoulder above the knee so that an SDR "
+               "output of 1.0 reaches the peak (in log luminance, hue kept). 0 = the curve as it is (its highlights "
+               "stay at SDR white). This changes the highlights, nothing below the knee.");
     RTX_OPTION("rtx.hdr", float, remixHighlightKnee, 0.5f,
-               "The SDR output luminance (0..1, display linear) from which the recovery fades in: below it the image "
-               "is the SDR image.");
+               "The SDR output level (0..1, display linear) above which the shoulder is stretched.");
     RTX_OPTION_FLAG("rtx.hdr", bool, dumpFrame, false, RtxOptionFlags::NoSave,
                     "Write the next frame's final output (before the game's UI) as a 16-bit float DDS to the "
                     "Screenshots folder (hdrFinal_*.dds), then clear. Gamma-encoded, 1.0 = paper white.");
