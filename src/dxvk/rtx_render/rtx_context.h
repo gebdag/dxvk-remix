@@ -127,6 +127,9 @@ namespace dxvk {
     Resources& getResourceManager();
   
     static void triggerScreenshot() { s_triggerScreenshot = true; }
+
+    // DS1 HDR10 output: an image to the Screenshots folder from outside the context (the swap chain's back buffer dump).
+    void dumpImage(const std::string& imageName, const Rc<DxvkImage>& image) { takeScreenshot(imageName, image); }
     static void triggerUsdCapture() { s_triggerUsdCapture = true; }
 
     void bindCommonRayTracingResources(const Resources::RaytracingOutput& rtOutput);

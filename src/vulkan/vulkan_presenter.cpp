@@ -260,7 +260,9 @@ namespace dxvk::vk {
     swapInfo.imageUsage             = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
                                     | VK_IMAGE_USAGE_TRANSFER_DST_BIT
     // NV-DXVK start: Add storage bit for Frameview because it runs computer shader
-                                    | VK_IMAGE_USAGE_STORAGE_BIT;
+                                    | VK_IMAGE_USAGE_STORAGE_BIT
+    // DS1 HDR10 output: the presented image can be read back (rtx.hdr.dumpFrame)
+                                    | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     // NV-DXVK end
     swapInfo.imageSharingMode       = VK_SHARING_MODE_EXCLUSIVE;
     swapInfo.queueFamilyIndexCount  = 0;

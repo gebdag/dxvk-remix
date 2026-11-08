@@ -1206,8 +1206,12 @@ namespace dxvk {
     args.adjustSaturation = std::max(adjustSaturation(), 0.0f);
     args.adjustEnable = (adjustGain() != 1.0f || adjustGamma() != 1.0f || adjustLift() != 0.0f || adjustContrast() != 1.0f ||
                          adjustSaturation() != 1.0f) ? 1u : 0u;
-    // HDR10 output: ColAdj's clips are left out (rtx_hdr_output.h).
+    // HDR10 output: ColAdj's clips are left out (rtx_hdr_output.h), and optionally the brightest values are
+    // stretched into the display's headroom.
     args.keepHeadroom = DxvkHdrOutput::renderHeadroom() && DxvkHdrOutput::ds1Headroom() ? 1u : 0u;
+    args.hdrExpansion = std::clamp(DxvkHdrOutput::ds1HighlightExpansion(), 0.0f, 1.0f);
+    args.hdrKnee = DxvkHdrOutput::ds1HighlightKnee();
+    args.hdrHeadroom = DxvkHdrOutput::headroom();
     // intensity below 1: the composite blends over Remix's own frame (m_blend[1], RtxContext), and the grade
     // eases toward identity with it.
     args.intensity = m_blend[1].isValid() ? intensityClamped() : 1.0f;

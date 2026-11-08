@@ -52,6 +52,13 @@ namespace dxvk {
                "With the game's image pipeline: keep what its 8-bit scene clip and ColAdj clips would cut above "
                "white, so the sky, fire and lit highlights go above SDR white. Off: the look's output clips at 1 as "
                "in SDR (the HDR display then only gets the 10-bit encode).");
+    RTX_OPTION("rtx.hdr", float, ds1HighlightExpansion, 0.0f,
+               "With the game's image pipeline, 0..1: stretch the graded output's shoulder above the knee so that what "
+               "the game showed at white reaches the display's peak (in log luminance, hue kept). The game's exposure "
+               "keeps most skies and suns just under white, so without this an HDR display shows them at paper white; "
+               "with it they go above. Nothing below the knee changes. 0 = the game's values as they are.");
+    RTX_OPTION("rtx.hdr", float, ds1HighlightKnee, 0.5f,
+               "The display-linear level (0..1) above which the game look's shoulder is stretched.");
     RTX_OPTION("rtx.hdr", bool, remixClipRecovery, true,
                "With Remix's own tonemapper: keep colour channels above 1 after the tone curve instead of clipping "
                "them, so bright saturated colours keep their hue and brightness.");
@@ -104,8 +111,24 @@ namespace dxvk {
         return false;
       }
       s_dumpTaken = true;
+      s_dumpSwapchain = true;
+      s_dumpBackBuffer = true;
       dumpFrameObject().setDeferred(false);
       return true;
+    }
+
+    // After a frame dump, the swap chain image of the same frame (what the display gets: PQ-encoded with HDR10).
+    static bool takeSwapchainDump() {
+      const bool take = s_dumpSwapchain;
+      s_dumpSwapchain = false;
+      return take;
+    }
+
+    // ... and the back buffer as presented (the frame with the game's UI, float with HDR10).
+    static bool takeBackBufferDump() {
+      const bool take = s_dumpBackBuffer;
+      s_dumpBackBuffer = false;
+      return take;
     }
 
     static void showImguiSettings();
@@ -115,6 +138,8 @@ namespace dxvk {
     inline static std::atomic<bool> s_swapchainHdr = false;
     inline static bool s_frameHeadroom = false;   // CS thread only
     inline static bool s_dumpTaken = false;       // CS thread only
+    inline static bool s_dumpSwapchain = false;   // CS thread only
+    inline static bool s_dumpBackBuffer = false;  // CS thread only
     inline static std::atomic<VkColorSpaceKHR> s_colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
     inline static std::atomic<VkFormat> s_swapchainFormat = VK_FORMAT_UNDEFINED;
   };

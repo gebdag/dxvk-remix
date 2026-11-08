@@ -32,6 +32,10 @@ namespace dxvk {
     RemixGui::Checkbox("sRGB Piecewise Decode (default: 2.2)", &srgbDecodeObject());
     ImGui::Separator();
     RemixGui::Checkbox("Game Image Pipeline: Keep Clipped Highlights", &ds1HeadroomObject());
+    RemixGui::SliderFloat("Game Image Pipeline: Highlight Expansion", &ds1HighlightExpansionObject(), 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+    RemixGui::SliderFloat("Game Image Pipeline: Expansion Knee", &ds1HighlightKneeObject(), 0.1f, 0.95f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::TextDisabled("DS1 composites the frame into its own scene target: the proxy's [HDR] Enabled makes it float and\n"
+                        "skips the brightness LUT (takes effect at the next game start). Without it nothing above white reaches the display.");
     RemixGui::Checkbox("Remix Tonemapper: Keep Clipped Channels", &remixClipRecoveryObject());
     RemixGui::SliderFloat("Remix Tonemapper: Highlight Expansion", &remixHighlightExpansionObject(), 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
     RemixGui::SliderFloat("Remix Tonemapper: Expansion Knee", &remixHighlightKneeObject(), 0.1f, 0.95f, "%.2f", ImGuiSliderFlags_AlwaysClamp);

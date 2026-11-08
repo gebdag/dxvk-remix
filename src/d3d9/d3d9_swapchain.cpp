@@ -32,6 +32,7 @@
 #include "../util/util_string.h"
 #include "../dxvk/rtx_render/rtx_bridge_message_channel.h"
 #include "../dxvk/rtx_render/rtx_hdr_output.h"
+#include "../dxvk/rtx_render/rtx_context.h"
 #include "../dxvk/dxvk_scoped_annotation.h"
 
 // NV-DXVK start: DLFG integration
@@ -1312,6 +1313,13 @@ namespace dxvk {
         { uint32_t(m_dstRect.right - m_dstRect.left), uint32_t(m_dstRect.bottom - m_dstRect.top) } };
       
 
+      // NV-DXVK start: DS1 HDR10 output: the back buffer as presented, for rtx.hdr.dumpFrame (the flag is set on the
+      // CS thread by injectRTX of this frame, which ran before Present reached here through Flush).
+      if (DxvkHdrOutput::takeBackBufferDump()) {
+        static_cast<RtxContext*>(m_context.ptr())->dumpImage("hdrBackBuffer", swapImage);
+      }
+      // NV-DXVK end
+
       m_blitter->presentImage(m_context.ptr(),
         m_imageViews.at(imageIndex), dstRect,
         swapImageView, srcRect);
@@ -1559,7 +1567,9 @@ namespace dxvk {
     imageInfo.extent      = { info.imageExtent.width, info.imageExtent.height, 1 };
     imageInfo.numLayers   = 1;
     imageInfo.mipLevels   = 1;
-    imageInfo.usage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    // NV-DXVK start: DS1 HDR10 output: readable for rtx.hdr.dumpFrame (the swap chain is created with TRANSFER_SRC)
+    imageInfo.usage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    // NV-DXVK end
     imageInfo.stages      = 0;
     imageInfo.access      = 0;
     imageInfo.tiling      = VK_IMAGE_TILING_OPTIMAL;

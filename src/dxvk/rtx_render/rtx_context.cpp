@@ -1022,6 +1022,12 @@ namespace dxvk {
     }
     s_triggerScreenshot = false;
 
+    // DS1 HDR10 output: with rtx.hdr.dumpFrame, the presented image too (the swap chain image: PQ-encoded 10-bit
+    // with HDR10, the 8-bit frame otherwise), for analysis of what reaches the display.
+    if (DxvkHdrOutput::takeSwapchainDump() && targetImage != nullptr) {
+      takeScreenshot("hdrSwapchain", targetImage);
+    }
+
     // Some time in the future kill process
     if (m_triggerDelayedTerminate &&
         (m_device->getCurrentFrameId() > m_terminateAppFrameNum) &&
