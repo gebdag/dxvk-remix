@@ -1110,6 +1110,11 @@ namespace dxvk {
     // Copies are only supported on similar formats.
     fastPath &= similar;
 
+    // NV-DXVK start: DS1 HDR10 output: a back buffer described as 8-bit may hold 16-bit float
+    // (D3D9CommonTexture); a copy needs the same texel size, otherwise blit.
+    fastPath &= srcFormatInfo->elementSize == dstFormatInfo->elementSize;
+    // NV-DXVK end
+
     // Copies are only supported if the sample count matches,
     // otherwise we need to resolve.
     bool needsResolve = srcImage->info().sampleCount != VK_SAMPLE_COUNT_1_BIT;

@@ -30,6 +30,7 @@
 #include "rtx/pass/srgb_dither/srgb_dither.h"
 #include "rtx/pass/tonemap/tonemapping.h"
 #include "rtx_imgui.h"
+#include "rtx_hdr_output.h"
 
 #include <rtx_shaders/srgb_dither.h>
 
@@ -83,6 +84,8 @@ namespace dxvk {
       ? inversionModeThresholdInvert
       : inversionModeInvert;
     pushArgs.inversionThreshold = DxvkPostFx::inversionThreshold();
+    // DS1 HDR10 output: no clip and no 8-bit dither while the frame keeps its headroom.
+    pushArgs.hdrOutput = DxvkHdrOutput::renderHeadroom() ? 1u : 0u;
 
     ctx->bindResourceView(SRGB_DITHER_BLUE_NOISE_TEXTURE_INPUT, ctx->getResourceManager().getBlueNoiseTexture(ctx), nullptr);
     ctx->bindResourceView(SRGB_DITHER_COLOR_INPUT_OUTPUT, inoutColorBuffer.view, nullptr);

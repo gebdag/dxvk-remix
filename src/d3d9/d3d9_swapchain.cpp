@@ -31,6 +31,7 @@
 #include "../util/util_sentry.h"
 #include "../util/util_string.h"
 #include "../dxvk/rtx_render/rtx_bridge_message_channel.h"
+#include "../dxvk/rtx_render/rtx_hdr_output.h"
 #include "../dxvk/dxvk_scoped_annotation.h"
 
 // NV-DXVK start: DLFG integration
@@ -564,12 +565,46 @@ namespace dxvk {
       // NV-DXVK end
 
       PresentImage(presentInterval);
+
+      // NV-DXVK start: DS1 HDR10 output: a toggle takes effect at the frame boundary: the back buffers change
+      // format now, the swap chain its format on the next Present (m_dirty).
+      SyncHdrBackBuffers();
+      // NV-DXVK end
       return D3D_OK;
     } catch (const DxvkError& e) {
       Logger::err(e.message());
       return D3DERR_DEVICEREMOVED;
     }
   }
+
+
+  // NV-DXVK start: DS1 HDR10 output (rtx_hdr_output.h)
+  void D3D9SwapChainEx::SyncHdrBackBuffers() {
+    const bool wantFloat = DxvkHdrOutput::enable();
+    if (wantFloat == m_floatBackBuffers || m_backBuffers.empty())
+      return;
+
+    // The app may hold the back buffer objects (GetBackBuffer, a render target binding), so the surfaces
+    // stay: new images of the other format are created in fresh surfaces and swapped into the existing
+    // ones, as Present rotates the buffers. The bound framebuffer is rebuilt at the next draw.
+    std::vector<Com<D3D9Surface, false>> existing = std::move(m_backBuffers);
+    CreateBackBuffers(m_presentParams.BackBufferCount);
+
+    for (size_t i = 0; i < existing.size() && i < m_backBuffers.size(); i++)
+      existing[i]->Swap(m_backBuffers[i].ptr());
+
+    for (auto& fresh : m_backBuffers)
+      fresh->ClearContainer();
+    m_backBuffers = std::move(existing);
+
+    m_parent->m_flags.set(D3D9DeviceFlag::DirtyFramebuffer);
+    m_dirty = true;
+
+    Logger::info(str::format("D3D9SwapChainEx: HDR10 output ", wantFloat ? "on" : "off",
+                             ": back buffers now ", wantFloat ? "R16G16B16A16_SFLOAT" : "the requested 8-bit format",
+                             ", swap chain recreated at the next present"));
+  }
+  // NV-DXVK end
 
 
   HRESULT STDMETHODCALLTYPE D3D9SwapChainEx::GetFrontBufferData(IDirect3DSurface9* pDestSurface) {
@@ -1487,7 +1522,21 @@ namespace dxvk {
     // NV-DXVK start: DLFG integration
     vk::PresenterInfo info = GetPresenter()->info();
     // NV-DXVK end
-    
+
+    // NV-DXVK start: DS1 HDR10 output: what the swap chain became, for the present blit, the menu and the
+    // frame's headroom (rtx_hdr_output.h).
+    if (info.imageCount != 0) {
+      const bool wasHdr = DxvkHdrOutput::swapchainHdr();
+      DxvkHdrOutput::setSwapchain(info.format.format, info.format.colorSpace);
+      if (wasHdr != DxvkHdrOutput::swapchainHdr() || DxvkHdrOutput::enable()) {
+        Logger::info(str::format("D3D9SwapChainEx: swap chain ", info.format.format, " / ", info.format.colorSpace,
+                                 DxvkHdrOutput::swapchainHdr() ? " (HDR10)" : " (SDR)",
+                                 DxvkHdrOutput::enable() && !DxvkHdrOutput::swapchainHdr()
+                                   ? "; rtx.hdr.enable is on but the surface offered no HDR10 format (Windows HDR off?)" : ""));
+      }
+    }
+    // NV-DXVK end
+
     m_imageViews.clear();
     m_imageViews.resize(info.imageCount);
 
@@ -1546,6 +1595,12 @@ namespace dxvk {
     int NumFrontBuffer = NumFrontBuffers();
 
     m_backBuffers.resize(NumBackBuffers + NumFrontBuffer);
+
+    // NV-DXVK start: DS1 HDR10 output: the back buffers are 16-bit float behind the 8-bit description
+    // while HDR10 output is on (D3D9CommonTexture reads this at creation).
+    m_floatBackBuffers = DxvkHdrOutput::enable();
+    DxvkHdrOutput::setFloatBackBuffers(m_floatBackBuffers);
+    // NV-DXVK end
 
     // Create new back buffer
     D3D9_COMMON_TEXTURE_DESC desc;
@@ -1704,6 +1759,12 @@ namespace dxvk {
       case D3D9Format::X8R8G8B8:
       case D3D9Format::A8B8G8R8:
       case D3D9Format::X8B8G8R8: {
+        // NV-DXVK start: DS1 HDR10 output: first choice a 10-bit ST 2084 swap chain, which the surface
+        // offers while the display runs in Windows HDR (needs VK_EXT_swapchain_colorspace); otherwise the
+        // sRGB formats below as before.
+        if (DxvkHdrOutput::enable() && m_device->instance()->extensions().extSwapchainColorSpace)
+          pDstFormats[n++] = { VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_COLOR_SPACE_HDR10_ST2084_EXT };
+        // NV-DXVK end
         pDstFormats[n++] = { VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
         pDstFormats[n++] = { VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
       } break;

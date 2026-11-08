@@ -26,4 +26,10 @@
 struct ImGuiPushConstants {
   float2 scale;
   float2 translate;
+  // DS1 HDR10 output (rtx_hdr_output.h): hdrMode 1 = the swap chain is PQ BT.2020; the menu's sRGB colours are
+  // decoded (hdrDecodeGamma: 2.2, or 0 for the sRGB curve), shown at hdrPaperWhiteNits and PQ-encoded.
+  float hdrPaperWhiteNits;
+  float hdrDecodeGamma;
+  uint hdrMode;
+  uint hdrPad;
 };

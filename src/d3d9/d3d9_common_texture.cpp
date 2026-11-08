@@ -11,6 +11,7 @@
 #include <iostream>
 #include <sstream>
 #include "../dxvk/imgui/dxvk_imgui.h"
+#include "../dxvk/rtx_render/rtx_hdr_output.h"
 
 #include <charconv>
 
@@ -41,6 +42,16 @@ namespace dxvk {
     }
 
     m_mapping = pDevice->LookupFormat(m_desc.Format);
+
+    // NV-DXVK start: DS1 HDR10 output (rtx_hdr_output.h). The game asks for an 8-bit back buffer; with HDR10
+    // output it is created as 16-bit float behind that description, so the frame's values above SDR white
+    // and the UI blended over them survive to the present blit. Only the swap chain's back buffers.
+    if (m_desc.IsBackBuffer && DxvkHdrOutput::floatBackBuffers() &&
+        (m_desc.Format == D3D9Format::X8R8G8B8 || m_desc.Format == D3D9Format::A8R8G8B8 ||
+         m_desc.Format == D3D9Format::X8B8G8R8 || m_desc.Format == D3D9Format::A8B8G8R8)) {
+      m_mapping = pDevice->LookupFormat(D3D9Format::A16B16G16R16F);
+    }
+    // NV-DXVK end
 
     m_mapMode        = DetermineMapMode();
     m_shadow         = DetermineShadowState();

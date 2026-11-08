@@ -186,8 +186,30 @@ void main(uint2 threadId : SV_DispatchThreadID)
 
   float3 outputColor = applyToneMapping(inputColor, threadId);
 
-  // clamp outputColor to avoid problems with NIS
-  outputColor = saturate(outputColor);
+  if (cb.hdrMode != 0)
+  {
+    // DS1 HDR10 output: channels above 1 (a bright saturated colour whose luminance the curve kept
+    // under 1) stay, so the display shows the colour instead of its clip. Below 1 nothing changes.
+    outputColor = max(outputColor, float3(0.0f));
+    if (cb.hdrHighlightExpansion > 0.0f)
+    {
+      // The curve's shoulder above the knee, stretched in log luminance so an SDR 1.0 reaches
+      // headroom^expansion (hue kept). Optional: it changes the highlights, which the curve had
+      // already fitted under SDR white.
+      const float y = calcBt709Luminance(outputColor);
+      const float knee = clamp(cb.hdrHighlightKnee, 0.05f, 0.95f);
+      if (y > knee)
+      {
+        const float t = (log2(y) - log2(knee)) / (-log2(knee));
+        outputColor *= exp2(t * log2(max(cb.hdrHeadroom, 1.0f)) * cb.hdrHighlightExpansion);
+      }
+    }
+  }
+  else
+  {
+    // clamp outputColor to avoid problems with NIS
+    outputColor = saturate(outputColor);
+  }
 
   OutColorBuffer[threadId] = vec4(outputColor, 1.0f);
 }

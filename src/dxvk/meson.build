@@ -36,6 +36,8 @@ dxvk_shaders = files([
 
   'shaders/dxvk_present_frag.frag',
   'shaders/dxvk_present_frag_blit.frag',
+  'shaders/dxvk_present_frag_hdr.frag',
+  'shaders/dxvk_present_frag_blit_hdr.frag',
   'shaders/dxvk_present_frag_ms.frag',
   'shaders/dxvk_present_frag_ms_amd.frag',
   'shaders/dxvk_present_vert.vert',
@@ -350,6 +352,8 @@ dxvk_src = files([
   'rtx_render/rtx_preserved_object_picking.h',
   'rtx_render/rtx_srgb_dither.cpp',
   'rtx_render/rtx_srgb_dither.h',
+  'rtx_render/rtx_hdr_output.cpp',
+  'rtx_render/rtx_hdr_output.h',
   'rtx_render/rtx_ray_portal_manager.cpp',
   'rtx_render/rtx_ray_portal_manager.h',
   'rtx_render/rtx_ray_reconstruction.cpp',

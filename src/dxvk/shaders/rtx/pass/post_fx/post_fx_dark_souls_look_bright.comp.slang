@@ -42,7 +42,9 @@ void main(uint2 texel : SV_DispatchThreadID)
   {
     for (uint x = begin.x; x < end.x; ++x)
     {
-      sum += Scene[uint2(x, y)].rgb;
+      // The game's 8-bit scene: with HDR output the frame keeps values above 1 (rtx_hdr_output.h), which
+      // the bloom must not see, or it would grow around what SDR clipped.
+      sum += saturate(Scene[uint2(x, y)].rgb);
     }
   }
   const vec3 scene = sum / float((end.x - begin.x) * (end.y - begin.y));

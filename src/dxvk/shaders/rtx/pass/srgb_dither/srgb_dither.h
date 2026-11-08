@@ -37,6 +37,7 @@ struct SRGBDitherArgs {
 
   uint inversionMode;
   float inversionThreshold;
-  uint pad0;
+  // DS1 HDR10 output (rtx_hdr_output.h): 1 = keep values above 1 and skip the 8-bit dither.
+  uint hdrOutput;
   uint pad1;
 };

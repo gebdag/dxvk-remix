@@ -84,6 +84,7 @@
 #include "rtx_dark_souls_ripples.h"
 #include "rtx_dark_souls_look.h"
 #include "rtx_dark_souls_light_falloff.h"
+#include "rtx_hdr_output.h"
 
 // Destructor requires the struct definitions
 #include "rtx_sky.h"
@@ -895,6 +896,12 @@ namespace dxvk {
         // for 16bit float formats).
         const bool performSRGBConversion = !captureScreenImage && g_allowSrgbConversionForOutput;
         dispatchSRGBDither(rtOutput, performSRGBConversion);
+
+        // DS1 HDR10 output: the final frame as the back buffer gets it (gamma-encoded, 1 = SDR white, above
+        // 1 with headroom), for analysis (rtx.hdr.dumpFrame).
+        if (DxvkHdrOutput::consumeDump()) {
+          takeScreenshot("hdrFinal", rtOutput.m_finalOutput.resource(Resources::AccessType::Read).image);
+        }
 
         if (captureScreenImage) {
           if (m_common->metaDebugView().debugViewIdx() == DEBUG_VIEW_DISABLED) {

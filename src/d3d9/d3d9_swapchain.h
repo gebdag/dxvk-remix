@@ -199,6 +199,10 @@ namespace dxvk {
     bool                      m_dirty    = true;
     bool                      m_vsync    = true;
 
+    // NV-DXVK start: DS1 HDR10 output: the back buffers hold 16-bit float (rtx_hdr_output.h)
+    bool                      m_floatBackBuffers = false;
+    // NV-DXVK end
+
     bool                      m_dialog;
     bool                      m_lastDialog = false;
 
@@ -242,6 +246,10 @@ namespace dxvk {
 
     void CreateBackBuffers(
             uint32_t            NumBackBuffers);
+
+    // NV-DXVK start: DS1 HDR10 output: after a toggle, the back buffers take the other format in place
+    void SyncHdrBackBuffers();
+    // NV-DXVK end
 
     virtual int NumFrontBuffers();
 

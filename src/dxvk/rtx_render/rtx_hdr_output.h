@@ -1,0 +1,117 @@
+#pragma once
+
+#include "../dxvk_include.h"
+#include "rtx_option.h"
+
+#include <atomic>
+#include <algorithm>
+#include <cmath>
+
+namespace dxvk {
+
+  // HDR10 output (experimental), gated by rtx.hdr.enable. With it off nothing below applies and the
+  // output path is the stock one: an 8-bit UNORM back buffer, an sRGB swap chain, the final pass's
+  // saturate and 8-bit dither.
+  //
+  // With it on:
+  //  - the D3D9 back buffers are created as R16G16B16A16_SFLOAT behind the game's X8R8G8B8 request
+  //    (D3D9CommonTexture), so values above 1 (brighter than SDR white) survive the blit from Remix's
+  //    final output and the game's UI, drawn over them in gamma space as before, blends unchanged;
+  //  - the swap chain asks for A2B10G10R10 + VK_COLOR_SPACE_HDR10_ST2084_EXT (D3D9SwapChainEx::PickFormats)
+  //    and falls back to the sRGB formats where the surface has no HDR10 (Windows HDR off);
+  //  - the present blit (DxvkSwapchainBlitter) decodes the gamma-encoded back buffer (2.2, or sRGB), maps
+  //    1.0 to paperWhiteNits, rolls the luminance off towards peakNits above shoulderStart * peakNits,
+  //    converts BT.709 -> BT.2020 and encodes ST 2084 (PQ);
+  //  - the Remix menu (ImGui) encodes its colours the same way, at paper white;
+  //  - the frame keeps its headroom: the DS1 look drops the game's 8-bit scene clip and ColAdj clips
+  //    (post_fx_dark_souls_look_scene / _composite), the stock tonemapper drops its per-channel saturate
+  //    and may stretch its shoulder (tonemapping_apply_tonemapping), and the final pass skips the
+  //    saturate and the 8-bit dither (srgb_dither).
+  // Nothing in the SDR range changes: every pass that reads the frame for a decision (the DS1 meter,
+  // the bloom bright pass) reads the clipped value, so bloom, exposure and DoF rates are those of the
+  // SDR frame, and a value within 0..1 reaches the display exactly as before, at paper white.
+  class DxvkHdrOutput {
+  public:
+    RTX_OPTION("rtx.hdr", bool, enable, false,
+               "HDR10 output (experimental). The swap chain becomes 10-bit ST 2084 (PQ) BT.2020 when the display "
+               "runs in Windows HDR, the back buffer 16-bit float, and the frame keeps what SDR clipped: values "
+               "brighter than SDR white (the DS1 look's scene and ColAdj clips, the tonemapper's channel clip) go to "
+               "the display up to the peak instead of being clipped. Off: the stock SDR output, untouched.");
+    RTX_OPTION("rtx.hdr", float, paperWhiteNits, 200.0f,
+               "Brightness of SDR white (a value of 1.0, the UI's white) in nits. The whole SDR range of the image "
+               "is shown as it was, at this brightness.");
+    RTX_OPTION("rtx.hdr", float, peakNits, 1000.0f,
+               "The display's peak brightness in nits. Values above the shoulder roll off towards it (hue kept).");
+    RTX_OPTION("rtx.hdr", float, shoulderStart, 0.75f,
+               "Where the roll-off towards the peak begins, as a share of peakNits. 1 = a hard clip at the peak.");
+    RTX_OPTION("rtx.hdr", bool, srgbDecode, false,
+               "Decode the gamma-encoded frame and UI with the sRGB piecewise curve instead of a 2.2 power. An SDR "
+               "display shows the 8-bit frame through about a 2.2 power, so 2.2 keeps blacks as they looked; the "
+               "piecewise curve lifts them slightly (Windows' own SDR-in-HDR choice).");
+    RTX_OPTION("rtx.hdr", bool, ds1Headroom, true,
+               "With the game's image pipeline: keep what its 8-bit scene clip and ColAdj clips would cut above "
+               "white, so the sky, fire and lit highlights go above SDR white. Off: the look's output clips at 1 as "
+               "in SDR (the HDR display then only gets the 10-bit encode).");
+    RTX_OPTION("rtx.hdr", bool, remixClipRecovery, true,
+               "With Remix's own tonemapper: keep colour channels above 1 after the tone curve instead of clipping "
+               "them, so bright saturated colours keep their hue and brightness.");
+    RTX_OPTION("rtx.hdr", float, remixHighlightExpansion, 0.0f,
+               "With Remix's own tonemapper, 0..1: stretch the tone curve's shoulder above the knee so that an SDR "
+               "output of 1.0 reaches the peak (in log luminance, hue kept). 0 = the curve as it is (its highlights "
+               "stay at SDR white). This changes the highlights, nothing below the knee.");
+    RTX_OPTION("rtx.hdr", float, remixHighlightKnee, 0.5f,
+               "The SDR output level (0..1, display linear) above which the shoulder is stretched.");
+    RTX_OPTION_FLAG("rtx.hdr", bool, dumpFrame, false, RtxOptionFlags::NoSave,
+                    "Write the next frame's final output (before the game's UI) as a 16-bit float DDS to the "
+                    "Screenshots folder (hdrFinal_*.dds), then clear. Gamma-encoded, 1.0 = paper white.");
+
+    // The back buffers hold 16-bit float (set by the swap chain when it creates them).
+    static bool floatBackBuffers() { return s_floatBackBuffers; }
+    static void setFloatBackBuffers(bool value) { s_floatBackBuffers = value; }
+
+    // The swap chain presents in HDR10 (set by the swap chain after each (re)creation).
+    static bool swapchainHdr() { return s_swapchainHdr; }
+    static VkColorSpaceKHR swapchainColorSpace() { return s_colorSpace; }
+    static VkFormat swapchainFormat() { return s_swapchainFormat; }
+    static void setSwapchain(VkFormat format, VkColorSpaceKHR colorSpace) {
+      s_swapchainFormat = format;
+      s_colorSpace = colorSpace;
+      s_swapchainHdr = colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT;
+    }
+
+    // True while the frame is rendered with headroom: values above 1 reach a float back buffer and an
+    // HDR10 swap chain. False for one frame after the toggle, while those are being recreated.
+    static bool renderHeadroom() { return enable() && s_floatBackBuffers && s_swapchainHdr; }
+
+    // Headroom above SDR white the display has, as a factor on 1.0 (peak / paper white).
+    static float headroom() { return std::max(peakNits(), 1.0f) / std::max(paperWhiteNits(), 1.0f); }
+
+    // Decode exponent of the gamma-encoded frame: 2.2, or 0 for the sRGB piecewise curve.
+    static float decodeGamma() { return srgbDecode() ? 0.0f : 2.2f; }
+
+    // Takes the dump request, once per setting of rtx.hdr.dumpFrame (the option is cleared deferred, so the
+    // frame after the dump may still read it as set).
+    static bool consumeDump() {
+      if (!dumpFrame()) {
+        s_dumpTaken = false;
+        return false;
+      }
+      if (s_dumpTaken) {
+        return false;
+      }
+      s_dumpTaken = true;
+      dumpFrameObject().setDeferred(false);
+      return true;
+    }
+
+    static void showImguiSettings();
+
+  private:
+    inline static bool s_floatBackBuffers = false;
+    inline static bool s_swapchainHdr = false;
+    inline static bool s_dumpTaken = false;
+    inline static VkColorSpaceKHR s_colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+    inline static VkFormat s_swapchainFormat = VK_FORMAT_UNDEFINED;
+  };
+
+} // namespace dxvk

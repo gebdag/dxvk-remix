@@ -35,7 +35,9 @@ void main(uint2 cell : SV_DispatchThreadID, uint2 group : SV_GroupID, uint index
     {
       for (uint x = p0.x; x < p1.x; ++x)
       {
-        sum += Scene[uint2(x, y)].rgb;
+        // The game's meter reads its 8-bit scene: with HDR output the frame keeps values above 1
+        // (rtx_hdr_output.h), which must not move the exposure.
+        sum += saturate(Scene[uint2(x, y)].rgb);
         lifted += cb.useLift != 0 ? Lift[uint2(x, y)].g : 0.0f;
       }
     }

@@ -43,6 +43,17 @@ void main(uint2 threadId : SV_DispatchThreadID)
   }
 
   const float3 inputColor = imageLoad(InOutColorBuffer, threadId).xyz;
+
+  // DS1 HDR10 output: the frame keeps its headroom (values above 1, brighter than SDR white) and goes to
+  // a 16-bit float back buffer, so there is nothing to dither to 8 bits here; the PQ encode happens at
+  // present (dxvk_present_frag_hdr.frag). Within 0..1 the value is what SDR would have shown.
+  if (cb.hdrOutput != 0)
+  {
+    const float3 hdrColor = max(inputColor, float3(0.0f));
+    InOutColorBuffer[threadId] = float4(cb.performSRGBConversion > 0 ? linearToGamma(hdrColor) : hdrColor, 1.0f);
+    return;
+  }
+
   float3 gammaColor = 0;
   if (cb.inversionAmount > 0.0f)
   {

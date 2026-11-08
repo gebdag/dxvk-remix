@@ -22,6 +22,7 @@
 #include "rtx_dark_souls_ripples.h"
 #include "rtx_dark_souls_specular.h"
 #include "rtx_dark_souls_effect_particles.h"
+#include "rtx_hdr_output.h"
 #include "../dxvk_context.h"
 #include "../imgui/imgui.h"
 
@@ -163,6 +164,9 @@ namespace dxvk {
       }
       ImGui::Unindent();
     }
+
+    // HDR10 output (rtx_hdr_output.h): the swap chain, back buffer and the frame's headroom.
+    DxvkHdrOutput::showImguiSettings();
 
     showWater();
     showBody();

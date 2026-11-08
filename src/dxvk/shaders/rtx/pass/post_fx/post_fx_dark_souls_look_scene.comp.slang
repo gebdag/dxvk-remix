@@ -310,5 +310,7 @@ void main(uint2 pixel : SV_DispatchThreadID)
   // passes run before the DoF.
   DofRate[pixel] = float2(resolvedA.a, liftedLuminance);
 
-  InOutColor[pixel] = vec4(saturate(g), frame.a);
+  // The game's target is 8-bit: the clip. With HDR10 output the value above 1 stays (what the game's
+  // shaders computed and its target cut); the meter and the bloom bright pass clip it themselves.
+  InOutColor[pixel] = vec4(cb.keepHeadroom != 0 ? g : saturate(g), frame.a);
 }

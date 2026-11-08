@@ -4,6 +4,7 @@
 #include "rtx_dark_souls_haze.h"
 #include "rtx_dark_souls_ripples.h"
 #include "rtx_global_volumetrics.h"
+#include "rtx_hdr_output.h"
 #include "rtx_scene_manager.h"
 #include "rtx_context.h"
 #include "rtx_camera.h"
@@ -462,6 +463,8 @@ namespace dxvk {
     m_eyeLifted = args.eyeViewGain > 1.0f;
     args.eyeLocal = std::clamp(eyeLocal(), 0.0f, 2.0f);
     args.eyeMaxGain = std::max(eyeMaxGain(), 1.0f);
+    // HDR10 output: the scene keeps what the game's 8-bit target would clip (rtx_hdr_output.h).
+    args.keepHeadroom = DxvkHdrOutput::renderHeadroom() && DxvkHdrOutput::ds1Headroom() ? 1u : 0u;
     args.hazeEnable = hazeEnable() && hazeValid ? 1u : 0u;
     const bool dof = dofEnable() && gameActive();
     args.dofFarBegin = dofFarBegin();
@@ -1203,6 +1206,8 @@ namespace dxvk {
     args.adjustSaturation = std::max(adjustSaturation(), 0.0f);
     args.adjustEnable = (adjustGain() != 1.0f || adjustGamma() != 1.0f || adjustLift() != 0.0f || adjustContrast() != 1.0f ||
                          adjustSaturation() != 1.0f) ? 1u : 0u;
+    // HDR10 output: ColAdj's clips are left out (rtx_hdr_output.h).
+    args.keepHeadroom = DxvkHdrOutput::renderHeadroom() && DxvkHdrOutput::ds1Headroom() ? 1u : 0u;
     // intensity below 1: the composite blends over Remix's own frame (m_blend[1], RtxContext), and the grade
     // eases toward identity with it.
     args.intensity = m_blend[1].isValid() ? intensityClamped() : 1.0f;

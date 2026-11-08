@@ -375,6 +375,9 @@ namespace dxvk {
   struct DxvkInstanceExtensions {
     DxvkExt extDebugUtils                   = { VK_EXT_DEBUG_UTILS_EXTENSION_NAME,                      DxvkExtMode::Optional };
     DxvkExt khrGetSurfaceCapabilities2      = { VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME,       DxvkExtMode::Optional };
+    // NV-DXVK start: DS1 HDR10 output (rtx_hdr_output.h): HDR10_ST2084 and other non-sRGB swap chain colour spaces
+    DxvkExt extSwapchainColorSpace          = { VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME,             DxvkExtMode::Optional };
+    // NV-DXVK end
     DxvkExt khrSurface                      = { VK_KHR_SURFACE_EXTENSION_NAME,                          DxvkExtMode::Required };
     DxvkExt khrDeviceProperties2            = { VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME, DxvkExtMode::Required };
     DxvkExt khrDebugReport                  = { VK_EXT_DEBUG_REPORT_EXTENSION_NAME,                     DxvkExtMode::Required };

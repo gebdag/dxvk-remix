@@ -708,6 +708,9 @@ namespace dxvk {
       &insExtensions.khrGetSurfaceCapabilities2,
       &insExtensions.khrSurface,
       &insExtensions.khrDeviceProperties2,
+      // NV-DXVK start: DS1 HDR10 output
+      &insExtensions.extSwapchainColorSpace,
+      // NV-DXVK end
     }};
 
     // Hide VK_EXT_debug_utils behind an environment variable. This extension

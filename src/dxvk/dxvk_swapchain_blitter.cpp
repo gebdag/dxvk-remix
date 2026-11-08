@@ -1,11 +1,18 @@
 #include "dxvk_swapchain_blitter.h"
 #include "dxvk_scoped_annotation.h"
 
+#include <algorithm>
+
 #include <dxvk_present_frag.h>
 #include <dxvk_present_frag_blit.h>
 #include <dxvk_present_frag_ms.h>
 #include <dxvk_present_frag_ms_amd.h>
 #include <dxvk_present_vert.h>
+// NV-DXVK start: DS1 HDR10 output
+#include <dxvk_present_frag_hdr.h>
+#include <dxvk_present_frag_blit_hdr.h>
+#include "rtx_render/rtx_hdr_output.h"
+// NV-DXVK end
 
 namespace dxvk {
   
@@ -49,8 +56,15 @@ namespace dxvk {
     bool sameSize = dstRect.extent == srcRect.extent;
     bool usedResolveImage = false;
 
+    // NV-DXVK start: DS1 HDR10 output: an HDR10 swap chain gets the PQ-encoding copy / blit. (The
+    // multisample resolve path keeps the SDR shaders: no DS1 back buffer is multisampled.)
+    const bool hdr = DxvkHdrOutput::swapchainHdr() && dstView->imageInfo().format == VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+    const Rc<DxvkShader>& fsCopy = hdr ? m_fsCopyHdr : m_fsCopy;
+    const Rc<DxvkShader>& fsBlit = hdr ? m_fsBlitHdr : m_fsBlit;
+    // NV-DXVK end
+
     if (srcView->imageInfo().sampleCount == VK_SAMPLE_COUNT_1_BIT) {
-      this->draw(ctx, sameSize ? m_fsCopy : m_fsBlit,
+      this->draw(ctx, sameSize ? fsCopy : fsBlit,
         dstView, dstRect, srcView, srcRect);
     } else if (sameSize) {
       this->draw(ctx, m_fsResolve,
@@ -62,7 +76,7 @@ namespace dxvk {
           this->createResolveImage(srcView->imageInfo());
 
       this->resolve(ctx, m_resolveView, srcView);
-      this->draw(ctx, m_fsBlit, dstView, dstRect, m_resolveView, srcRect);
+      this->draw(ctx, fsBlit, dstView, dstRect, m_resolveView, srcRect);
 
       usedResolveImage = true;
     }
@@ -203,13 +217,20 @@ namespace dxvk {
     ctx->bindShader(VK_SHADER_STAGE_VERTEX_BIT, m_vs);
     ctx->bindShader(VK_SHADER_STAGE_FRAGMENT_BIT, fs);
 
-    PresenterArgs args;
+    PresenterArgs args = {};
     args.srcOffset = srcRect.offset;
 
     if (dstRect.extent == srcRect.extent)
       args.dstOffset = dstRect.offset;
     else
       args.srcExtent = srcRect.extent;
+
+    // NV-DXVK start: DS1 HDR10 output (read by the HDR present shaders only)
+    args.paperWhiteNits = std::max(DxvkHdrOutput::paperWhiteNits(), 1.0f);
+    args.peakNits = std::max(DxvkHdrOutput::peakNits(), args.paperWhiteNits);
+    args.shoulderStart = std::clamp(DxvkHdrOutput::shoulderStart(), 0.1f, 1.0f);
+    args.decodeGamma = DxvkHdrOutput::decodeGamma();
+    // NV-DXVK end
 
     ctx->setPushConstantBank(DxvkPushConstantBank::RTX);
 
@@ -324,7 +345,11 @@ namespace dxvk {
     const SpirvCodeBuffer fsCodeCopy(dxvk_present_frag);
     const SpirvCodeBuffer fsCodeResolve(dxvk_present_frag_ms);
     const SpirvCodeBuffer fsCodeResolveAmd(dxvk_present_frag_ms_amd);
-    
+    // NV-DXVK start: DS1 HDR10 output
+    const SpirvCodeBuffer fsCodeCopyHdr(dxvk_present_frag_hdr);
+    const SpirvCodeBuffer fsCodeBlitHdr(dxvk_present_frag_blit_hdr);
+    // NV-DXVK end
+
     const std::array<DxvkResourceSlot, 2> fsResourceSlots = {{
       { BindingIds::Image, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_IMAGE_VIEW_TYPE_2D },
       { BindingIds::Gamma, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_IMAGE_VIEW_TYPE_1D },
@@ -356,6 +381,22 @@ namespace dxvk {
       { 0u, 1u, 0u, sizeof(PresenterArgs) },
       m_device->extensions().amdShaderFragmentMask
         ? fsCodeResolveAmd : fsCodeResolve);
+
+    // NV-DXVK start: DS1 HDR10 output
+    m_fsBlitHdr = m_device->createShader(
+      VK_SHADER_STAGE_FRAGMENT_BIT,
+      fsResourceSlots.size(),
+      fsResourceSlots.data(),
+      { 1u, 1u, 0u, sizeof(PresenterArgs) },
+      fsCodeBlitHdr);
+
+    m_fsCopyHdr = m_device->createShader(
+      VK_SHADER_STAGE_FRAGMENT_BIT,
+      fsResourceSlots.size(),
+      fsResourceSlots.data(),
+      { 0u, 1u, 0u, sizeof(PresenterArgs) },
+      fsCodeCopyHdr);
+    // NV-DXVK end
   }
 
   void DxvkSwapchainBlitter::createResolveImage(const DxvkImageCreateInfo& info) {

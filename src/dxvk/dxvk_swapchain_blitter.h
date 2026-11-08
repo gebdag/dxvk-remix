@@ -11,7 +11,7 @@ namespace dxvk {
   struct DxvkGammaCp {
     uint16_t r, g, b, a;
   };
-  
+
   /**
    * \brief Swap chain blitter
    *
@@ -19,7 +19,7 @@ namespace dxvk {
    * rendered images to a swap chain image.
    */
   class DxvkSwapchainBlitter : public RcObject {
-    
+
   public:
 
     DxvkSwapchainBlitter(const Rc<DxvkDevice>& device);
@@ -61,13 +61,20 @@ namespace dxvk {
       Gamma = 1,
     };
 
+    // NV-DXVK start: DS1 HDR10 output (rtx_hdr_output.h). The HDR present shaders read the four floats;
+    // the SDR shaders declare only the first 16 bytes. One push constant size for all pipelines.
     struct PresenterArgs {
       VkOffset2D srcOffset;
       union {
         VkExtent2D srcExtent;
         VkOffset2D dstOffset;
       };
+      float paperWhiteNits;
+      float peakNits;
+      float shoulderStart;
+      float decodeGamma;
     };
+    // NV-DXVK end
 
     Rc<DxvkDevice>      m_device;
 
@@ -75,6 +82,11 @@ namespace dxvk {
     Rc<DxvkShader>      m_fsBlit;
     Rc<DxvkShader>      m_fsResolve;
     Rc<DxvkShader>      m_vs;
+
+    // NV-DXVK start: DS1 HDR10 output: the same copy and blit, encoding ST 2084 BT.2020 for an HDR10 swap chain
+    Rc<DxvkShader>      m_fsCopyHdr;
+    Rc<DxvkShader>      m_fsBlitHdr;
+    // NV-DXVK end
 
     Rc<DxvkBuffer>      m_gammaBuffer;
     Rc<DxvkImage>       m_gammaImage;
@@ -114,5 +126,5 @@ namespace dxvk {
     void destroyResolveImage();
 
   };
-  
+
 }

@@ -35,6 +35,7 @@
 #include <rtx_shaders/imgui_fragment.h>
 #include "../shaders/rtx/pass/imgui/imgui_bindings.h"
 #include "../rtx_render/rtx_shader_manager.h"
+#include "../rtx_render/rtx_hdr_output.h"
 
 namespace ImGui_ImplDxvk {
 
@@ -58,6 +59,9 @@ namespace ImGui_ImplDxvk {
 
     class ImGuiPixelShader : public ManagedShader {
       SHADER_SOURCE(ImGuiPixelShader, VK_SHADER_STAGE_FRAGMENT_BIT, imgui_fragment)
+
+      // DS1 HDR10 output: the fragment stage reads the HDR fields (rtx_hdr_output.h).
+      PUSH_CONSTANTS(ImGuiPushConstants)
 
       BEGIN_PARAMETER()
         SAMPLER2D(IMGUI_TEXTURE0_INPUT)
@@ -283,17 +287,17 @@ namespace ImGui_ImplDxvk {
     // Push constants for pixel->NDC transform
     const ImVec2 display_pos = draw_data->DisplayPos;
     const ImVec2 display_size = draw_data->DisplaySize;
-    struct Pc {
-      float scale[2]; 
-      float translate[2];
-    };
-    Pc pc;
-    pc.scale[0] = 2.0f / display_size.x;
-    pc.scale[1] = 2.0f / display_size.y;
-    pc.translate[0] = -1.0f - display_pos.x * pc.scale[0];
-    pc.translate[1] = -1.0f - display_pos.y * pc.scale[1];
+    const float scaleX = 2.0f / display_size.x;
+    const float scaleY = 2.0f / display_size.y;
+    ImGuiPushConstants pc = {};
+    pc.scale = { scaleX, scaleY };
+    pc.translate = { -1.0f - display_pos.x * scaleX, -1.0f - display_pos.y * scaleY };
+    // DS1 HDR10 output: the swap chain is PQ, the menu's colours are encoded for it (rtx_hdr_output.h).
+    pc.hdrMode = DxvkHdrOutput::swapchainHdr() ? 1u : 0u;
+    pc.hdrPaperWhiteNits = DxvkHdrOutput::paperWhiteNits();
+    pc.hdrDecodeGamma = DxvkHdrOutput::decodeGamma();
 
-    ctx->pushConstants(0, sizeof(Pc), &pc);
+    ctx->pushConstants(0, sizeof(pc), &pc);
 
     // Stream vertex/index data into our host-visible buffers
     VkDeviceSize vbOffset = 0;
