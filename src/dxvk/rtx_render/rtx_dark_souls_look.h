@@ -130,6 +130,16 @@ namespace dxvk {
     RTX_OPTION("rtx.ds1Look", float, eyeLocal, 0.5f, "How much more the view's dark parts come up than its bright ones.");
     RTX_OPTION("rtx.ds1Look", float, gradeOffsetLimit, 0.08f, "While the eye lifts the view, the game's grade takes off no more than this for black, gamma, on its largest channel; the others keep their proportion. Lost Izalith's takes 0.21. 1 keeps the game's in full.");
     RTX_OPTION("rtx.ds1Look", float, gradeOffsetLiftFull, 2.0f, "The eye's lift at which that limit holds in full, from none at no lift.");
+    // Image adjustments on top of the game's look, for players: every default leaves the image exactly as it is.
+    RTX_OPTION("rtx.ds1Look", float, adjustExposure, 0.0f, "Image adjustment: exposure in stops on the game's scene value, before its grade (0 = unchanged).");
+    RTX_OPTION("rtx.ds1Look", float, adjustGain, 1.0f, "Image adjustment: brightness gain on the final image (1 = unchanged).");
+    RTX_OPTION("rtx.ds1Look", float, adjustGamma, 1.0f, "Image adjustment: midtones, value^(1 / gamma) on the final image; above 1 brighter midtones (1 = unchanged).");
+    RTX_OPTION("rtx.ds1Look", float, adjustLift, 0.0f, "Image adjustment: raises the shadows towards this value, white stays white (0 = unchanged).");
+    RTX_OPTION("rtx.ds1Look", float, adjustContrast, 1.0f, "Image adjustment: contrast around mid grey (1 = unchanged).");
+    RTX_OPTION("rtx.ds1Look", float, adjustSaturation, 1.0f, "Image adjustment: colour saturation (1 = unchanged, 0 = grey).");
+    RTX_OPTION("rtx.ds1Look", float, blackOffsetScale, 1.0f, "Image adjustment: scale on the game grade's black offset, what it takes away from the darks (1 = the game's, 0 = none).");
+    RTX_OPTION("rtx.ds1Look", float, bloomStrength, 1.0f, "Image adjustment: scale on the game's bloom (1 = the game's).");
+    RTX_OPTION("rtx.ds1Look", float, shaftStrength, 1.0f, "Image adjustment: scale on the game's light shafts (1 = the game's).");
     RTX_OPTION("rtx.ds1Look", float, blackToe, 1.0f, "How far the grade's black offset rolls off into black instead of clipping (0 = the game's hard clip, 1 = a full toe). "
                "With a toe, what the offset would clip keeps a dim gradient: what clipped exactly at black comes out at a quarter of the offset, true black stays black, and every output above the offset's size is unchanged. Dark pixels only: a bright saturated colour keeps the game's clip.");
     RTX_OPTION("rtx.ds1Look", float, eyeBrightenSeconds, 0.3f, "How fast the eye adapts to a part of the view getting brighter.");

@@ -56,7 +56,7 @@ void main(uint2 pixel : SV_DispatchThreadID)
   }
 
   const vec4 frame = InOutColor[pixel];
-  vec3 col = saturate(frame.rgb * cb.sceneScale);
+  vec3 col = saturate(frame.rgb * cb.sceneScale * cb.adjustExposure);
   if (cb.bloomEnable != 0)
   {
     const vec4 bloom = Bloom.SampleLevel((vec2(pixel) + 0.5f) * cb.invImageSize, 0);
@@ -76,8 +76,18 @@ void main(uint2 pixel : SV_DispatchThreadID)
   }
   const vec4 c = vec4(col, 1.0f);
   const float brightest = max(col.r, max(col.g, col.b));
-  const vec3 graded = saturate(vec3(toeChannel(dot(c, cb.gradeRowR), cb.gradeRowR, brightest, cb.blackToe),
-                                    toeChannel(dot(c, cb.gradeRowG), cb.gradeRowG, brightest, cb.blackToe),
-                                    toeChannel(dot(c, cb.gradeRowB), cb.gradeRowB, brightest, cb.blackToe)));
+  vec3 graded = saturate(vec3(toeChannel(dot(c, cb.gradeRowR), cb.gradeRowR, brightest, cb.blackToe),
+                              toeChannel(dot(c, cb.gradeRowG), cb.gradeRowG, brightest, cb.blackToe),
+                              toeChannel(dot(c, cb.gradeRowB), cb.gradeRowB, brightest, cb.blackToe)));
+  // Image adjustments (rtx.ds1Look.adjust*), on the displayed value; skipped entirely at their defaults.
+  if (cb.adjustEnable != 0)
+  {
+    graded = graded * cb.adjustGain;
+    graded = pow(max(graded, vec3(0.0f)), vec3(1.0f / max(cb.adjustGamma, 0.01f)));
+    graded = cb.adjustLift + (1.0f - cb.adjustLift) * graded;
+    graded = (graded - 0.5f) * cb.adjustContrast + 0.5f;
+    const float luma = dot(graded, vec3(0.2126f, 0.7152f, 0.0722f));
+    graded = saturate(lerp(vec3(luma), graded, cb.adjustSaturation));
+  }
   InOutColor[pixel] = vec4(pow(graded, vec3(2.2f)), frame.a);
 }

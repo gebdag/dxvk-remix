@@ -1183,8 +1183,26 @@ namespace dxvk {
       args.gradeRowB = vec4 { 0, 0, 1, 0 };
     }
     args.shaftEnable = shafts ? 1u : 0u;
-    args.shaftWeight = shaftWeight();
+    args.shaftWeight = shaftWeight() * std::max(shaftStrength(), 0.0f);
     args.blackToe = std::clamp(blackToe(), 0.0f, 1.0f);
+    // Image adjustments (rtx.ds1Look.adjust* and the strengths): exactly the look as it is at their defaults.
+    args.bloomRateNear *= std::max(bloomStrength(), 0.0f);
+    args.bloomRateFar *= std::max(bloomStrength(), 0.0f);
+    if (blackOffsetScale() != 1.0f) {
+      for (vec4* row : { &args.gradeRowR, &args.gradeRowG, &args.gradeRowB }) {
+        if (row->w < 0.0f) {
+          row->w *= std::max(blackOffsetScale(), 0.0f);
+        }
+      }
+    }
+    args.adjustExposure = exp2f(std::clamp(adjustExposure(), -4.0f, 4.0f) / 2.2f);
+    args.adjustGain = std::max(adjustGain(), 0.0f);
+    args.adjustGamma = std::max(adjustGamma(), 0.01f);
+    args.adjustLift = std::clamp(adjustLift(), 0.0f, 0.5f);
+    args.adjustContrast = std::max(adjustContrast(), 0.0f);
+    args.adjustSaturation = std::max(adjustSaturation(), 0.0f);
+    args.adjustEnable = (adjustGain() != 1.0f || adjustGamma() != 1.0f || adjustLift() != 0.0f || adjustContrast() != 1.0f ||
+                         adjustSaturation() != 1.0f) ? 1u : 0u;
     // intensity below 1: the composite blends over Remix's own frame (m_blend[1], RtxContext), and the grade
     // eases toward identity with it.
     args.intensity = m_blend[1].isValid() ? intensityClamped() : 1.0f;
@@ -1242,6 +1260,34 @@ namespace dxvk {
                         ImGuiSliderFlags_AlwaysClamp);
     RemixGui::DragFloat("Fog / DoF Temporal Blend (1 = no history)", &depthTemporalBlendObject(), 0.01f, 0.01f, 1.0f, "%.2f",
                         ImGuiSliderFlags_AlwaysClamp);
+    // Image adjustments for players, on top of the game's look (which replaces Remix's tonemapper while it runs).
+    if (ImGui::TreeNodeEx("Image Adjustments", ImGuiTreeNodeFlags_DefaultOpen)) {
+      ImGui::TextDisabled("On top of the game's look. The defaults change nothing.");
+      constexpr ImGuiSliderFlags clamp = ImGuiSliderFlags_AlwaysClamp;
+      RemixGui::SliderFloat("Exposure (stops)", &adjustExposureObject(), -2.0f, 2.0f, "%.2f", clamp);
+      RemixGui::SliderFloat("Brightness", &adjustGainObject(), 0.5f, 1.5f, "%.2f", clamp);
+      RemixGui::SliderFloat("Midtones (gamma)", &adjustGammaObject(), 0.5f, 2.0f, "%.2f", clamp);
+      RemixGui::SliderFloat("Shadow Lift", &adjustLiftObject(), 0.0f, 0.2f, "%.3f", clamp);
+      RemixGui::SliderFloat("Contrast", &adjustContrastObject(), 0.5f, 1.5f, "%.2f", clamp);
+      RemixGui::SliderFloat("Saturation", &adjustSaturationObject(), 0.0f, 2.0f, "%.2f", clamp);
+      RemixGui::SliderFloat("Black Crush Softening (toe)", &blackToeObject(), 0.0f, 1.0f, "%.2f", clamp);
+      RemixGui::SliderFloat("Game Grade's Black Offset", &blackOffsetScaleObject(), 0.0f, 1.5f, "%.2f", clamp);
+      RemixGui::SliderFloat("Bloom Strength", &bloomStrengthObject(), 0.0f, 3.0f, "%.2f", clamp);
+      RemixGui::SliderFloat("Light Shaft Strength", &shaftStrengthObject(), 0.0f, 3.0f, "%.2f", clamp);
+      if (ImGui::Button("Reset Adjustments")) {
+        adjustExposure.resetToDefault();
+        adjustGain.resetToDefault();
+        adjustGamma.resetToDefault();
+        adjustLift.resetToDefault();
+        adjustContrast.resetToDefault();
+        adjustSaturation.resetToDefault();
+        blackToe.resetToDefault();
+        blackOffsetScale.resetToDefault();
+        bloomStrength.resetToDefault();
+        shaftStrength.resetToDefault();
+      }
+      ImGui::TreePop();
+    }
     RemixGui::Checkbox("Gamma-Space Albedo (game texture multiply)", &gammaAlbedoObject());
     ImGui::BeginDisabled(!gammaAlbedo());
     RemixGui::DragFloat("Bounce Albedo Power (2.2 = game)", &bounceAlbedoGammaObject(), 0.01f, 0.5f, 2.2f, "%.2f",

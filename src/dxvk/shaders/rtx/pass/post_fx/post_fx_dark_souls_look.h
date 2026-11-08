@@ -297,6 +297,17 @@ struct PostFxDarkSoulsLookCompositeArgs {
   float intensity;
   // rtx.ds1Look.blackToe: 0 = the grade's hard clip at black, 1 = the full toe (post_fx_dark_souls_look_composite.comp.slang).
   float blackToe;
+
+  // Image adjustments on top of the look (rtx.ds1Look.adjust*), display (gamma) values; adjustEnable 0 = all at their
+  // defaults, which leave the image as it is.
+  float adjustExposure;   // gain on the scene value, 2^(EV / 2.2)
+  float adjustGain;       // brightness gain after the grade
+  float adjustGamma;      // midtones: value^(1 / gamma)
+  float adjustLift;       // shadows: lift + (1 - lift) * value
+  float adjustContrast;   // around 0.5
+  float adjustSaturation; // against Rec. 709 luma
+  uint adjustEnable;
+  uint pad1;
 };
 
 // One stage of the light shaft chain in direction space (post_fx_dark_souls_look_shafts.comp.slang).
