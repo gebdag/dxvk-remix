@@ -47,6 +47,11 @@ namespace dxvk {
     constexpr int kUploadFramesAfterEdit = 3;   // an edit can land after this frame's materials were built
     const char* const kResolutions[] = { "1k", "2k", "4k" };
 
+    enum GeneratedMap { kAlbedoMap, kNormalMap, kRoughnessMap, kHeightMap, kGeneratedMapCount };
+    const char* const kMapKeys[kGeneratedMapCount] = { "albedo", "normal", "roughness", "height" };
+    const char* const kMapLabels[kGeneratedMapCount] = { "Albedo", "Normal", "Roughness", "Height (POM)" };
+    constexpr float kMapNameColumn = 130.0f;
+
     using ScaleTable = std::unordered_map<XXH64_hash_t, float>;
 
     std::atomic<int> g_uploadFrames { 0 };
@@ -203,6 +208,8 @@ namespace dxvk {
     std::atomic<XXH64_hash_t> g_selected { 0 };
     bool g_picking = false;
     int g_resolution = 1;
+    bool g_mapTicked[kGeneratedMapCount] = { true, true, true, true };
+    XXH64_hash_t g_ticksFor = 0;
     std::string g_state, g_message;
     XXH64_hash_t g_statusHash = 0;
     Clock::time_point g_lastStatusRead {};
@@ -224,7 +231,7 @@ namespace dxvk {
     }
 
     void tip(const char* text) {
-      if (ImGui::IsItemHovered()) {
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
         ImGui::SetTooltip("%s", text);
       }
     }
@@ -318,12 +325,18 @@ namespace dxvk {
       return !ec;
     }
 
-    void requestGeneration(XXH64_hash_t hash) {
+    // `maps` go in place of the maps in use, or with `keep` are added to them.
+    void requestGeneration(XXH64_hash_t hash, const std::vector<GeneratedMap>& maps, bool keep) {
       const std::string name = hexHash(hash);
       const fs::path statusFile = kLabDir / "status" / (name + ".txt");
       // The status goes to "queued" first: a "done" left from an earlier run must not read as this request's result.
       writeFileAtomic(statusFile, "queued\nwaiting for the helper\n");
-      const bool written = writeFileAtomic(kLabDir / "requests" / (name + ".json"), std::string("{\"resolution\": \"") + kResolutions[g_resolution] + "\"}");
+      std::string mapList;
+      for (const GeneratedMap map : maps) {
+        mapList += (mapList.empty() ? "\"" : ", \"") + std::string(kMapKeys[map]) + "\"";
+      }
+      const bool written = writeFileAtomic(kLabDir / "requests" / (name + ".json"),
+        std::string("{\"resolution\": \"") + kResolutions[g_resolution] + "\", \"maps\": [" + mapList + "], \"keep\": " + (keep ? "true" : "false") + "}");
       g_requestedAt = Clock::now();
       g_statusHash = 0;
       if (!written) {
@@ -395,16 +408,97 @@ namespace dxvk {
       ImGui::PopID();
     }
 
-    void showGenerate(XXH64_hash_t hash) {
+    std::string mapInUse(const TextureRef& texture, const char* whenNone) {
+      if (!texture.isValid()) {
+        return whenNone;
+      }
+      const std::string file = textureFile(texture);
+      return file.empty() ? std::string("a map, still loading") : fileStem(file);
+    }
+
+    std::string roughnessInUse(const OpaqueMaterialData* opaque) {
+      if (opaque && opaque->getRoughnessTexture().isValid()) {
+        return mapInUse(opaque->getRoughnessTexture(), "");
+      }
+      return formatted("flat %.2f", opaque ? opaque->getRoughnessConstant() : LegacyMaterialDefaults::roughnessConstant());
+    }
+
+    std::string heightInUse(const OpaqueMaterialData* opaque) {
+      if (!opaque || !opaque->getHeightTexture().isValid()) {
+        return "none";
+      }
+      return mapInUse(opaque->getHeightTexture(), "") + formatted(", depth %.4f", opaque->getDisplaceIn());
+    }
+
+    void showMapRow(GeneratedMap map, const std::string& inUse, bool available, const char* note) {
+      ImGui::BeginDisabled(!available);
+      bool ticked = available && g_mapTicked[map];
+      if (ImGui::Checkbox(kMapLabels[map], &ticked)) {
+        g_mapTicked[map] = ticked;
+      }
+      ImGui::EndDisabled();
+      tip(note);
+      ImGui::SameLine(kMapNameColumn);
+      ImGui::TextDisabled("%s", inUse.c_str());
+    }
+
+    void showFixedMapRow(const char* label, const TextureRef& texture) {
+      if (texture.isValid()) {
+        ImGui::TextUnformatted(label);
+        ImGui::SameLine(kMapNameColumn);
+        ImGui::TextDisabled("%s", mapInUse(texture, "").c_str());
+      }
+    }
+
+    // The maps the material has now, each with a tick for whether Generate should supply it. An unticked map stays as the material has it without AI.
+    std::vector<GeneratedMap> showMapList(XXH64_hash_t hash, const OpaqueMaterialData* opaque) {
+      if (g_ticksFor != hash) {
+        g_ticksFor = hash;
+        std::fill(std::begin(g_mapTicked), std::end(g_mapTicked), true);
+      }
+      const bool hasNormal = opaque && opaque->getNormalTexture().isValid();
+      const bool heightPossible = hasNormal || g_mapTicked[kNormalMap];
+      ImGui::PushID("maps");
+      showMapRow(kAlbedoMap, opaque ? mapInUse(opaque->getAlbedoOpacityTexture(), "the game's texture") : std::string("the game's texture"), true, "Ticked: PBRFusion's upscaled albedo. Unticked: stays as it is.");
+      showMapRow(kNormalMap, opaque ? mapInUse(opaque->getNormalTexture(), "none") : std::string("none"), true, "Ticked: PBRFusion's normal map. Unticked: stays as it is, or none.");
+      showMapRow(kRoughnessMap, roughnessInUse(opaque), true, "Ticked: PBRFusion's roughness map. Unticked: stays as it is, or flat; the Roughness slider scales the flat value.");
+      showMapRow(kHeightMap, heightInUse(opaque), heightPossible, heightPossible ? "Ticked: integrated from the normal map in use. Unticked: stays as it is, or none." : "Needs a normal map: tick Normal.");
+      if (opaque) {
+        showFixedMapRow("Metallic", opaque->getMetallicTexture());
+        showFixedMapRow("Specular", opaque->getSpecularColorTexture());
+        showFixedMapRow("Emissive", opaque->getEmissiveColorTexture());
+      }
+      ImGui::PopID();
+
+      std::vector<GeneratedMap> chosen;
+      for (int map = 0; map < kGeneratedMapCount; ++map) {
+        if (g_mapTicked[map] && (map != kHeightMap || heightPossible)) {
+          chosen.push_back(static_cast<GeneratedMap>(map));
+        }
+      }
+      return chosen;
+    }
+
+    void showGenerate(XXH64_hash_t hash, const OpaqueMaterialData* opaque) {
+      const std::vector<GeneratedMap> chosen = showMapList(hash, opaque);
       ImGui::SetNextItemWidth(70.0f);
       ImGui::Combo("Size", &g_resolution, kResolutions, IM_ARRAYSIZE(kResolutions));
       ImGui::SameLine();
       readStatus(hash);
-      ImGui::BeginDisabled(generationRunning());
-      if (ImGui::Button("Generate PBR")) {
-        requestGeneration(hash);
+      const bool running = generationRunning();
+      ImGui::BeginDisabled(running || chosen.empty());
+      if (ImGui::Button("Generate")) {
+        requestGeneration(hash, chosen, false);
       }
       ImGui::EndDisabled();
+      tip("Makes the ticked maps. With the same ticks as last time PBRFusion runs again; with changed ticks at the same size the maps it already made are reused.");
+      ImGui::SameLine();
+      ImGui::BeginDisabled(running || !opaque || !opaque->getNormalTexture().isValid());
+      if (ImGui::Button("Generate Height Only")) {
+        requestGeneration(hash, { kHeightMap }, true);
+      }
+      ImGui::EndDisabled();
+      tip("Integrates a height map from the normal map this material already has, and changes nothing else. No ComfyUI needed.");
       if (!g_state.empty()) {
         ImGui::TextWrapped("%s: %s", g_state.c_str(), g_message.c_str());
       }
@@ -417,7 +511,7 @@ namespace dxvk {
       const auto replacement = common->getSceneManager().getAssetReplacer()->getReplacementMaterial(hash);
       const OpaqueMaterialData* opaque = opaqueReplacement(replacement);
       ImGui::TextUnformatted(!opaque ? "Material: the game's, no PBR" : opaque->getNormalTexture().isValid() ? "Material: has PBR maps" : "Material: replaced, no normal map");
-      showGenerate(hash);
+      showGenerate(hash, opaque);
 
       ImGui::Separator();
       const bool hasHeight = opaque && opaque->getHeightTexture().isValid();
@@ -468,8 +562,14 @@ namespace dxvk {
         detail = "Map rendered now: " + map + "\nThe bake makes a new scaled map from it. This file is never changed, and texlab.py revert undoes it.";
       } else {
         const float constant = opaque->getRoughnessConstant();
-        text += formatted(", constant %.3f -> %.3f", std::min(constant * change.saved, 1.0f), std::min(constant * change.live, 1.0f));
-        detail = "This material has no roughness map. The bake writes the new constant into the mod's tuned layer.";
+        const std::string values = formatted("%.3f -> %.3f", std::min(constant * change.saved, 1.0f), std::min(constant * change.live, 1.0f));
+        if (opaque->isRoughnessConstantModified()) {
+          text += ", constant " + values;
+          detail = "This material has no roughness map. The bake writes the new constant into the mod's tuned layer.";
+        } else {
+          text += ", flat " + values + ", live only";
+          detail = "This material authors no roughness, which keeps the game's specular response; authoring one would switch that off. Saved, but the bake leaves it in the file.";
+        }
       }
       return { "rough:" + hexHash(change.hash), materialName(change.hash), std::move(text), std::move(detail), &g_roughness, change.hash };
     }
