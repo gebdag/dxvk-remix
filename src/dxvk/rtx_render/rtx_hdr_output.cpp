@@ -17,6 +17,12 @@ namespace dxvk {
         if (!renderHeadroom()) {
           ImGui::TextDisabled("Switching: the next frame renders with headroom.");
         }
+        if (!targetFloat()) {
+          ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
+                             "The game draws into an 8-bit scene target: nothing above SDR white reaches the display,\n"
+                             "the image is only the SDR image at paper white. Turn on \"HDR10 Output\" in the proxy's\n"
+                             "F4 > Post-FX tab (it sets this switch too) and restart the game.");
+        }
       } else {
         ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
                            "The display gave no HDR10 swap chain: the output stays SDR (turn on HDR for this display "

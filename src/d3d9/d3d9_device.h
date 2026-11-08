@@ -1317,6 +1317,10 @@ namespace dxvk {
     Rc<DxvkImageView>               m_rtOcclusionDepthView;
     Rc<DxvkImage>                   m_rtOcclusionViewZ;
     Rc<DxvkImageView>               m_rtOcclusionViewZView;
+    // DS1 HDR10 output: GetRenderTargetData from a float back buffer into an 8-bit system-memory surface
+    // goes through an image of the destination's format; kept across calls (the game reads back every
+    // frame), recreated when the format or size differs.
+    Rc<DxvkImage>                   m_readbackBlitImage;
     bool                            m_rtOcclusionDepthBound = false;
     // Filled at the Begin of the query now counting; a query whose Begin could not fill it (no
     // perspective projection, option off) must not be tested against an older fill.

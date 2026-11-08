@@ -660,8 +660,10 @@ namespace dxvk {
     // here because a renderable scene waits for initialization above.
     if (isRaytracingEnabled && isCameraValid && !asyncShaderCompilationActive) {
       if (targetImage == nullptr) {
-        targetImage = m_state.om.renderTargets.color[0].view->image();  
+        targetImage = m_state.om.renderTargets.color[0].view->image();
       }
+      // DS1 HDR10 output: whether the game's target can hold values above white (rtx_hdr_output.h).
+      DxvkHdrOutput::noteTarget(targetImage->info().format);
 
       const bool captureTestScreenshot = (m_screenshotFrameEnabled && m_device->getCurrentFrameId() == m_screenshotFrameNum);
       const bool captureScreenImage = s_triggerScreenshot || (captureTestScreenshot && !s_capturePrePresentTestScreenshot);

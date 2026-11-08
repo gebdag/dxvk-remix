@@ -1032,8 +1032,14 @@ namespace dxvk {
       blitCreateInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
       blitCreateInfo.layout        = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-      Rc<DxvkImage> blittedSrc = m_dxvkDevice->createImage(
-        blitCreateInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, DxvkMemoryStats::Category::AppTexture, "GetRenderTargetData blit src");
+      // One image, reused: the game reads back every frame, and an allocation per call costs time and memory churn.
+      Rc<DxvkImage> blittedSrc = m_readbackBlitImage;
+      if (blittedSrc == nullptr || blittedSrc->info().format != dstVkFormat ||
+          blittedSrc->info().extent.width != srcExtent.width || blittedSrc->info().extent.height != srcExtent.height) {
+        blittedSrc = m_dxvkDevice->createImage(
+          blitCreateInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, DxvkMemoryStats::Category::AppTexture, "GetRenderTargetData blit src");
+        m_readbackBlitImage = blittedSrc;
+      }
 
       VkImageBlit blitInfo;
       blitInfo.srcSubresource = { srcSubresource.aspectMask, srcSubresource.mipLevel, srcSubresource.arrayLayer, 1 };

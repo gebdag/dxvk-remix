@@ -79,6 +79,22 @@ namespace dxvk {
     static bool floatBackBuffers() { return s_floatBackBuffers.load(); }
     static void setFloatBackBuffers(bool value) { s_floatBackBuffers.store(value); }
 
+    // The format of the target the frame is drawn into (RtxContext::injectRTX). DS1 composites the frame
+    // into its own scene target; an 8-bit one clips everything above white before the present ever sees
+    // it, whatever the swap chain is. The proxy's [HDR] Enabled makes that target float when the game
+    // creates it (a game restart). Read by the menu, to say so instead of showing an HDR10 output that
+    // carries nothing above SDR white.
+    static void noteTarget(VkFormat format) {
+      const bool isFloat = format == VK_FORMAT_R16G16B16A16_SFLOAT || format == VK_FORMAT_R32G32B32A32_SFLOAT ||
+                           format == VK_FORMAT_B10G11R11_UFLOAT_PACK32;
+      const int state = isFloat ? 1 : 0;
+      if (s_targetState.exchange(state) != state && enable()) {
+        Logger::info(str::format("DxvkHdrOutput: the game's scene target is ", isFloat ? "float: values above white reach the display"
+                                 : "8-bit: nothing above SDR white can reach the display (the proxy's [HDR] Enabled takes effect at the next game start)"));
+      }
+    }
+    static bool targetFloat() { return s_targetState.load() == 1; }
+
     // The swap chain presents in HDR10 (set by the swap chain after each (re)creation).
     static bool swapchainHdr() { return s_swapchainHdr.load(); }
     static VkColorSpaceKHR swapchainColorSpace() { return s_colorSpace.load(); }
@@ -94,7 +110,14 @@ namespace dxvk {
     // The swap chain and back buffer state is written on the app thread; the render passes run on the CS
     // thread and all read one snapshot taken at the start of the frame (beginFrame, RtxContext::injectRTX),
     // so every pass of a frame agrees.
-    static void beginFrame() { s_frameHeadroom = enable() && s_floatBackBuffers.load() && s_swapchainHdr.load(); }
+    static void beginFrame() {
+      const bool was = s_frameHeadroom;
+      s_frameHeadroom = enable() && s_floatBackBuffers.load() && s_swapchainHdr.load();
+      if (s_frameHeadroom && !was && s_targetState.load() == 0) {
+        Logger::info("DxvkHdrOutput: HDR10 output on, but the game's scene target is 8-bit: nothing above SDR white can reach "
+                     "the display (the proxy's [HDR] Enabled takes effect at the next game start)");
+      }
+    }
     static bool renderHeadroom() { return s_frameHeadroom; }
 
     // Headroom above SDR white the display has, as a factor on 1.0 (peak / paper white).
@@ -146,6 +169,7 @@ namespace dxvk {
   private:
     inline static std::atomic<bool> s_floatBackBuffers = false;
     inline static std::atomic<bool> s_swapchainHdr = false;
+    inline static std::atomic<int> s_targetState = -1;  // -1 unseen, 0 8-bit, 1 float
     inline static bool s_frameHeadroom = false;   // CS thread only
     inline static bool s_dumpTaken = false;       // CS thread only
     inline static bool s_dumpSwapchain = false;   // CS thread only
