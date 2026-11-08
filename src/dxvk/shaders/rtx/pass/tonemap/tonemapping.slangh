@@ -99,6 +99,25 @@ float3 ds1NeuralRenderingCurve(float3 x)
   return min(x, knee) + (1.0f - knee) * (1.0f - exp(-above / (1.0f - knee)));
 }
 
+// DS1 HDR10 output (rtx_hdr_output.h): the tonemapped SDR colour's shoulder above the knee (display linear),
+// stretched in log luminance so an SDR 1.0 reaches headroom^strength, hue kept. Below the knee nothing changes.
+// Optional: it changes the highlights, which the SDR curve had already fitted under white.
+float3 hdrExpandHighlights(float3 color, float knee, float headroom, float strength)
+{
+  if (strength <= 0.0f)
+  {
+    return color;
+  }
+  const float y = calcBt709Luminance(color);
+  knee = clamp(knee, 0.05f, 0.95f);
+  if (y <= knee)
+  {
+    return color;
+  }
+  const float t = (log2(y) - log2(knee)) / (-log2(knee));
+  return color * exp2(t * log2(max(headroom, 1.0f)) * strength);
+}
+
 float3 ACESFilm(float3 color, bool useLegacyACES, bool suppressBlackLevelClamp = false)
 {
   if (useLegacyACES)

@@ -20,6 +20,7 @@
 * DEALINGS IN THE SOFTWARE.
 */
 #include "rtx_local_tone_mapping.h"
+#include "rtx_hdr_output.h"
 #include "dxvk_device.h"
 #include "dxvk_scoped_annotation.h"
 #include "rtx_render/rtx_shader_manager.h"
@@ -273,6 +274,11 @@ namespace dxvk {
       pushArgs.enableAutoExposure = enableAutoExposure;
       pushArgs.finalizeWithACES = finalizeWithACES();
       pushArgs.useLegacyACES = RtxOptions::useLegacyACES();
+      // DS1 HDR10 output (rtx_hdr_output.h)
+      pushArgs.hdrMode = DxvkHdrOutput::renderHeadroom() && DxvkHdrOutput::remixClipRecovery() ? 1u : 0u;
+      pushArgs.hdrHighlightExpansion = std::clamp(DxvkHdrOutput::remixHighlightExpansion(), 0.0f, 1.0f);
+      pushArgs.hdrHighlightKnee = DxvkHdrOutput::remixHighlightKnee();
+      pushArgs.hdrHeadroom = DxvkHdrOutput::headroom();
 
       ctx->pushConstants(0, sizeof(pushArgs), &pushArgs);
 

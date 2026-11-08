@@ -105,6 +105,17 @@ void main(uint2 threadId : SV_DispatchThreadID)
   {
     texelFinal = ACESFilm(texelFinal, cb.useLegacyACES);
   }
+  // DS1 HDR10 output: the output is not clipped at 1 (ACES itself tops out at about 1.03), and the shoulder
+  // may be stretched into the display's headroom (rtx.hdr.remixHighlightExpansion).
+  if (cb.hdrMode != 0)
+  {
+    texelFinal = max(texelFinal, vec3(0.0f));
+    texelFinal = hdrExpandHighlights(texelFinal, cb.hdrHighlightKnee, cb.hdrHeadroom, cb.hdrHighlightExpansion);
+  }
+  else
+  {
+    texelFinal = saturate(texelFinal);
+  }
 
   // sRGB conversion and dithering are now performed by the final output pass,
   // which runs after all post-process effects (lens effects, etc.).
