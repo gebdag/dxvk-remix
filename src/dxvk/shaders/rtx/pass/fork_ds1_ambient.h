@@ -35,7 +35,8 @@ struct Ds1AmbientArgs {
   // The DS1 look's scene pass runs (DxvkDarkSoulsLook::isActive): it takes hazed subtractive layers off absolutely, so the
   // resolve leaves them out of the radiance (resolveVertexUnorderedParticles, ds1HazedSubtract).
   uint lookActive;
-  uint foliagePad1;
+  // Scales the ambient for bounce rays that leave the map only (rtx.ds1Ambient.bounceScale); the eye meter and fog gates read the cube as sent.
+  float bounceScale;
   uint foliagePad2;
 };
 

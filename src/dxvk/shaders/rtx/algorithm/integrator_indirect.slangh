@@ -379,7 +379,7 @@ void integratePathVertex(
     {
       // Fork: Dark Souls' ambient light for the area (its irradiance probe and hemisphere
       // ambient), so bounce light matches the game's lighting where the sky is visible.
-      skyRadiance = ds1AmbientRadiance(cb.ds1Ambient, pathState.direction);
+      skyRadiance = ds1AmbientRadiance(cb.ds1Ambient, pathState.direction) * cb.ds1Ambient.bounceScale;
     }
     else
     {

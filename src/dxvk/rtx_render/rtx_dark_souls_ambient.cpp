@@ -12,6 +12,7 @@ namespace dxvk {
     args.sunLobe = vec4 { sunLobe().x, sunLobe().y, sunLobe().z, 0.0f };
     // Foliage passes whether or not the ambient is the sky.
     args.foliageTransmission = std::clamp(transmission(), 0.0f, 1.0f);
+    args.bounceScale = bounceScale();
     if (!enable() || !active()) {
       return;
     }
