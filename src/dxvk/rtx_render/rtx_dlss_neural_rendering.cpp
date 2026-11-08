@@ -29,8 +29,30 @@
 #include "rtx_dlss_neural_rendering.h"
 #include "rtx_imgui.h"
 #include "rtx_ngx_wrapper.h"
+#include "rtx_shader_manager.h"
+#include "rtx/pass/ds1_nr_stabilize.h"
+
+#include <rtx_shaders/ds1_nr_stabilize.h>
 
 namespace dxvk {
+  namespace {
+    // Fork (DS1): the network's change averaged over frames (DlssNeuralRendering::ds1Stabilize).
+    class Ds1NrStabilizeShader : public ManagedShader {
+      SHADER_SOURCE(Ds1NrStabilizeShader, VK_SHADER_STAGE_COMPUTE_BIT, ds1_nr_stabilize)
+
+      PUSH_CONSTANTS(Ds1NrStabilizeArgs)
+
+      BEGIN_PARAMETER()
+        TEXTURE2D(DS1_NR_STABILIZE_BINDING_INPUT)
+        TEXTURE2D(DS1_NR_STABILIZE_BINDING_MOTION_VECTOR)
+        TEXTURE2D(DS1_NR_STABILIZE_BINDING_HISTORY_INPUT)
+        RW_TEXTURE2D(DS1_NR_STABILIZE_BINDING_OUTPUT)
+        RW_TEXTURE2D(DS1_NR_STABILIZE_BINDING_HISTORY_OUTPUT)
+      END_PARAMETER()
+    };
+
+    PREWARM_SHADER_PIPELINE(Ds1NrStabilizeShader);
+  }
 
   DlssNeuralRendering::DlssNeuralRendering(DxvkDevice* device)
     : DxvkDLSS(device) {
@@ -42,6 +64,9 @@ namespace dxvk {
 
   void DlssNeuralRendering::release() {
     m_dlssNeuralRenderingContext = {};
+    m_ds1Change[0].reset();
+    m_ds1Change[1].reset();
+    m_ds1ChangeValid = false;
     mRecreate = true;
   }
 
@@ -217,6 +242,50 @@ namespace dxvk {
         disableAfterFailure("DLSS-NR evaluation failed; disabling DLSS-NR.");
         return false;
       }
+
+      // Fork (DS1): the network's change averaged over frames (ds1Stabilize). First the averaged change into this frame's
+      // history, then the colour as input plus it: two dispatches, so no thread reads a neighbour after it was written.
+      const float stabilize = std::clamp(ds1Stabilize(), 0.0f, 0.9f);
+      if (stabilize > 0.0f) {
+        const Resources::Resource& input = rtOutput.m_neuralRenderingInput.resource(Resources::AccessType::Read);
+        const Resources::Resource& output = rtOutput.m_neuralRenderingOutput.resource(Resources::AccessType::Write);
+        const VkExtent3D colorExtent = output.image->info().extent;
+        const VkExtent3D motionExtent = pMotionVectorInput->image->info().extent;
+        Rc<DxvkContext> dxvkCtx = ctx;
+        for (Resources::Resource& change : m_ds1Change) {
+          if (!change.isValid() || change.image->info().extent.width != colorExtent.width ||
+              change.image->info().extent.height != colorExtent.height) {
+            change = Resources::createImageResource(dxvkCtx, "DS1 DLSS-NR averaged change", colorExtent, VK_FORMAT_R16G16B16A16_SFLOAT);
+            m_ds1ChangeValid = false;
+          }
+        }
+        const Resources::Resource& previous = m_ds1Change[m_ds1ChangeIndex ^ 1];
+        const Resources::Resource& current = m_ds1Change[m_ds1ChangeIndex];
+        Ds1NrStabilizeArgs args = {};
+        args.colorSize = { colorExtent.width, colorExtent.height };
+        args.motionSize = { motionExtent.width, motionExtent.height };
+        args.currentWeight = 1.0f - stabilize;
+        args.historyValid = m_ds1ChangeValid && !resetHistory ? 1u : 0u;
+        const VkExtent3D workgroups = { (colorExtent.width + 15) / 16, (colorExtent.height + 15) / 16, 1 };
+        ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, Ds1NrStabilizeShader::getShader());
+        ctx->bindResourceView(DS1_NR_STABILIZE_BINDING_INPUT, input.view, nullptr);
+        ctx->bindResourceView(DS1_NR_STABILIZE_BINDING_MOTION_VECTOR, pMotionVectorInput->view, nullptr);
+        ctx->bindResourceView(DS1_NR_STABILIZE_BINDING_OUTPUT, output.view, nullptr);
+        args.mode = 0;
+        ctx->bindResourceView(DS1_NR_STABILIZE_BINDING_HISTORY_INPUT, previous.view, nullptr);
+        ctx->bindResourceView(DS1_NR_STABILIZE_BINDING_HISTORY_OUTPUT, current.view, nullptr);
+        ctx->pushConstants(0, sizeof(args), &args);
+        ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
+        args.mode = 1;
+        ctx->bindResourceView(DS1_NR_STABILIZE_BINDING_HISTORY_INPUT, current.view, nullptr);
+        ctx->bindResourceView(DS1_NR_STABILIZE_BINDING_HISTORY_OUTPUT, previous.view, nullptr);
+        ctx->pushConstants(0, sizeof(args), &args);
+        ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
+        m_ds1ChangeIndex ^= 1;
+        m_ds1ChangeValid = true;
+      } else {
+        m_ds1ChangeValid = false;
+      }
     }
 
     return true;
@@ -287,6 +356,7 @@ namespace dxvk {
       // Thresholds: (exposed HDR max-channel min/max, LDR max-channel min/max)
       RemixGui::DragFloat4("Highlight Recovery Thresholds", &DlssNeuralRendering::highlightRecoveryThresholdsObject(), 0.01f, 0.0f, 32.0f, "%.3f", flags);
       RemixGui::Checkbox("Volumetric Improvement", &DlssNeuralRendering::enableVolumetricControlMaskObject());
+      RemixGui::SliderFloat("Stabilize (average the change over frames)", &DlssNeuralRendering::ds1StabilizeObject(), 0.0f, 0.9f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
       ImGui::Unindent();
     }
   }

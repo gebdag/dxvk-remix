@@ -116,6 +116,13 @@ namespace dxvk {
                "With Dark Souls' image pipeline on: map the frame to SDR for DLSS-NR with the game's curve (linear, soft shoulder) "
                "instead of ACES. ACES's toe amplified the network's changes in dark areas about fivefold (boiling in dim interiors).");
 
+    // Fork (DS1): the network reworks the image differently with every frame's jitter, most where it restructures characters
+    // (auto mask, structural strength): its change flickers. Averaged over frames along the motion vectors (ds1_nr_stabilize).
+    RTX_OPTION("rtx.dlssNeuralRendering", float, ds1Stabilize, 0.0f,
+               "Average DLSS-NR's change to the image over frames (0 = off, up to 0.9): the share of last frame's averaged change, "
+               "reprojected along the motion vectors and kept within the range of this frame's change around each pixel. "
+               "Cuts the frame-to-frame flicker of what the network adds (boiling) without taking the change away.");
+
     RTX_OPTION("rtx.dlssNeuralRendering", bool, enableVolumetricControlMask, true, "Modulate the DLSS 3D-Guided Neural Rendering control mask with fog, volumetric, and alpha-blended transmittance.");
 
     RTX_OPTION("rtx.dlssNeuralRendering", bool, showVramUsage, false,
@@ -133,6 +140,10 @@ namespace dxvk {
     uint32_t m_displaySize[2] = {};
     // Fork (DS1): the preset the live feature was created with.
     RenderPreset m_createdPreset = RenderPreset::Default;
+    // Fork (DS1): ds1Stabilize's averaged change, this frame's and last frame's (swapped each frame).
+    Resources::Resource m_ds1Change[2];
+    uint32_t m_ds1ChangeIndex = 0;
+    bool m_ds1ChangeValid = false;
 
     std::unique_ptr<NGXNeuralRenderingContext> m_dlssNeuralRenderingContext;
   };
