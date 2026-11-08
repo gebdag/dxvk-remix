@@ -116,9 +116,13 @@ float3 dynamicToneMapper(float3 inputColor)
   return mappedColor;
 }
 
+// DS1 HDR10 output: the scene after exposure, before the tone curve (hdrRecoverHighlights).
+static float3 g_exposedScene = float3(0.0f);
+
 float3 applyToneMapping(float3 color, uint2 pixelPosition)
 {
   color *= getExposure(InExposure, cb.enableAutoExposure, cb.exposureFactor);
+  g_exposedScene = color;
 
   if (cb.toneMappingEnabled != 0) 
   {
@@ -188,10 +192,8 @@ void main(uint2 threadId : SV_DispatchThreadID)
 
   if (cb.hdrMode != 0)
   {
-    // DS1 HDR10 output: channels above 1 (a bright saturated colour whose luminance the curve kept
-    // under 1) stay, so the display shows the colour instead of its clip. Below 1 nothing changes.
-    outputColor = max(outputColor, float3(0.0f));
-    outputColor = hdrExpandHighlights(outputColor, cb.hdrHighlightKnee, cb.hdrHeadroom, cb.hdrHighlightExpansion);
+    // DS1 HDR10 output: the curve fits the scene under 1; the highlights come back from the exposed scene.
+    outputColor = hdrRecoverHighlights(outputColor, g_exposedScene, cb.hdrHighlightKnee, cb.hdrHighlightRecovery);
   }
   else
   {

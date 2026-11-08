@@ -99,24 +99,21 @@ float3 ds1NeuralRenderingCurve(float3 x)
   return min(x, knee) + (1.0f - knee) * (1.0f - exp(-above / (1.0f - knee)));
 }
 
-// DS1 HDR10 output (rtx_hdr_output.h): the tonemapped SDR colour's shoulder above the knee (display linear),
-// stretched in log luminance so an SDR 1.0 reaches headroom^strength, hue kept. Below the knee nothing changes.
-// Optional: it changes the highlights, which the SDR curve had already fitted under white.
-float3 hdrExpandHighlights(float3 color, float knee, float headroom, float strength)
+// DS1 HDR10 output (rtx_hdr_output.h): a tonemapper fits the whole scene under 1, so nothing above SDR white exists in
+// its output. The highlights come back from the exposed scene radiance the curve compressed: the SDR colour (its hue)
+// is scaled so its luminance gains what the curve took away, fading in from the knee (SDR output luminance) to 1. A
+// pixel the curve did not compress, or below the knee, stays the SDR pixel exactly.
+float3 hdrRecoverHighlights(float3 sdrColor, float3 exposedScene, float knee, float strength)
 {
+  const float3 sdr = saturate(sdrColor);
   if (strength <= 0.0f)
   {
-    return color;
+    return sdr;
   }
-  const float y = calcBt709Luminance(color);
-  knee = clamp(knee, 0.05f, 0.95f);
-  if (y <= knee)
-  {
-    return color;
-  }
-  // Clamped at SDR white: a value already above 1 takes the full gain, it does not extrapolate the stretch.
-  const float t = min((log2(y) - log2(knee)) / (-log2(knee)), 1.0f);
-  return color * exp2(t * log2(max(headroom, 1.0f)) * strength);
+  const float sdrY = calcBt709Luminance(sdr);
+  const float compressed = max(calcBt709Luminance(max(exposedScene, float3(0.0f))) - sdrY, 0.0f);
+  const float recovered = compressed * smoothstep(clamp(knee, 0.05f, 0.95f), 1.0f, sdrY) * strength;
+  return sdr * (sdrY + recovered) / max(sdrY, 1e-4f);
 }
 
 float3 ACESFilm(float3 color, bool useLegacyACES, bool suppressBlackLevelClamp = false)

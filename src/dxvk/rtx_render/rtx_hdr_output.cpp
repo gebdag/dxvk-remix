@@ -34,9 +34,8 @@ namespace dxvk {
     RemixGui::Checkbox("Game Image Pipeline: Keep Clipped Highlights", &ds1HeadroomObject());
     ImGui::TextDisabled("DS1 composites the frame into its own scene target: the proxy's [HDR] Enabled makes it float and\n"
                         "skips the brightness LUT (takes effect at the next game start). Without it nothing above white reaches the display.");
-    RemixGui::Checkbox("Remix Tonemapper: Keep Clipped Channels", &remixClipRecoveryObject());
-    RemixGui::SliderFloat("Remix Tonemapper: Highlight Expansion", &remixHighlightExpansionObject(), 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
-    RemixGui::SliderFloat("Remix Tonemapper: Expansion Knee", &remixHighlightKneeObject(), 0.1f, 0.95f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+    RemixGui::SliderFloat("Remix Tonemapper: Highlight Recovery", &remixHighlightRecoveryObject(), 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+    RemixGui::SliderFloat("Remix Tonemapper: Recovery Knee", &remixHighlightKneeObject(), 0.1f, 0.95f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
     ImGui::Separator();
     if (ImGui::Button("Dump Final Frame (DDS)")) {
       dumpFrameObject().setDeferred(true);
