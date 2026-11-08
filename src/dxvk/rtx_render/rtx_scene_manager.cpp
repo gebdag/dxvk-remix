@@ -1825,6 +1825,13 @@ namespace dxvk {
       emissiveIntensity = opaqueMaterialData.getEmissiveIntensity() * RtxOptions::emissiveIntensity();
       emissiveColorConstant = opaqueMaterialData.getEmissiveColorConstant();
       enableEmissive = opaqueMaterialData.getEnableEmission();
+      // Materials no mod replaces pulse red.
+      if (RtxOptions::useHighlightLegacyMode() && opaqueMaterialData.getIsLegacyMaterial()) {
+        enableEmissive = true;
+        // In steps: every distinct value is a new entry in the material cache.
+        emissiveIntensity = std::floor((std::sin(static_cast<float>(m_device->getCurrentFrameId()) / 20.0f) + 1.0f) * 4.0f) * 0.5f;
+        emissiveColorConstant = Vector3(1.0f, 0.0f, 0.0f);
+      }
       anisotropy = opaqueMaterialData.getAnisotropyConstant();
         
       thinFilmEnable = opaqueMaterialData.getEnableThinFilm();
@@ -2425,6 +2432,7 @@ namespace dxvk {
     const bool updateSurfaceMaterials =
       !m_accelManager.wasSceneUnchangedThisFrame() ||
       TerrainBaker::needsTerrainBaking() ||
+      RtxOptions::useHighlightLegacyMode() ||
       startInMediumStateChanged;
     if (updateSurfaceMaterials) {
       DxvkBufferCreateInfo matInfo;
