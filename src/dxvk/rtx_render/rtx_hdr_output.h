@@ -23,10 +23,12 @@ namespace dxvk {
   //    1.0 to paperWhiteNits, rolls the luminance off towards peakNits above shoulderStart * peakNits,
   //    converts BT.709 -> BT.2020 and encodes ST 2084 (PQ);
   //  - the Remix menu (ImGui) encodes its colours the same way, at paper white;
-  //  - the frame keeps its headroom: the DS1 look drops the game's 8-bit scene clip and ColAdj clips
-  //    (post_fx_dark_souls_look_scene / _composite), the stock tonemapper drops its per-channel saturate
-  //    and may stretch its shoulder (tonemapping_apply_tonemapping), and the final pass skips the
-  //    saturate and the 8-bit dither (srgb_dither).
+  //  - the frame keeps its headroom: the DS1 look replaces the game's 8-bit scene clip and ColAdj clips
+  //    with a per-channel roll-off from the knee towards the headroom (post_fx_dark_souls_look_scene /
+  //    _composite, hdrRollOff in tonemapping.slangh), the stock tonemappers continue their SDR curve
+  //    straight past the curve knee and roll off the same way instead of the per-channel saturate
+  //    (tonemapping_apply_tonemapping, final_combine), and the final pass skips the saturate and the
+  //    8-bit dither (srgb_dither).
   // Nothing in the SDR range changes: every pass that reads the frame for a decision (the DS1 meter,
   // the bloom bright pass) reads the clipped value, so bloom, exposure and DoF rates are those of the
   // SDR frame, and a value within 0..1 reaches the display exactly as before, at paper white.
@@ -42,8 +44,17 @@ namespace dxvk {
                "is shown as it was, at this brightness.");
     RTX_OPTION("rtx.hdr", float, peakNits, 1000.0f,
                "The display's peak brightness in nits. Values above the shoulder roll off towards it (hue kept).");
-    RTX_OPTION("rtx.hdr", float, shoulderStart, 0.75f,
-               "Where the roll-off towards the peak begins, as a share of peakNits. 1 = a hard clip at the peak.");
+    RTX_OPTION("rtx.hdr", float, shoulderStart, 1.0f,
+               "A second, luminance roll-off at present, from this share of peakNits. 1 = none: the render passes "
+               "already roll every channel off towards the peak, so the present only clips what exceeds it.");
+    RTX_OPTION("rtx.hdr", float, knee, 0.85f,
+               "The SDR output level (gamma, 0..1) from which the roll-off towards the peak begins. At or below it the "
+               "image is the SDR image; from it the range SDR clipped is spread over the headroom. Lower starts the "
+               "roll-off earlier (more of the highlight range keeps gradation); 1 starts it exactly at white.");
+    RTX_OPTION("rtx.hdr", float, rollOffPerChannel, 0.56f,
+               "How the roll-off treats colour, 0..1. 1 = each channel on its own: the brightest channel compresses "
+               "first, so a bright saturated colour turns towards white as it brightens, as it did at the SDR clip, "
+               "only higher up. 0 = all three by the brightest channel: the hue holds all the way to the peak.");
     RTX_OPTION("rtx.hdr", bool, srgbDecode, false,
                "Decode the gamma-encoded frame and UI with the sRGB piecewise curve instead of a 2.2 power. An SDR "
                "display shows the 8-bit frame through about a 2.2 power, so 2.2 keeps blacks as they looked; the "
@@ -52,15 +63,14 @@ namespace dxvk {
                "With the game's image pipeline: keep what its 8-bit scene clip and ColAdj clips would cut above "
                "white, so the sky, fire and lit highlights go above SDR white. Off: the look's output clips at 1 as "
                "in SDR (the HDR display then only gets the 10-bit encode).");
-    RTX_OPTION("rtx.hdr", bool, remixClipRecovery, true,
-               "With Remix's own tonemapper: keep colour channels above 1 after the tone curve instead of clipping "
-               "them, so bright saturated colours keep their hue and brightness.");
-    RTX_OPTION("rtx.hdr", float, remixHighlightExpansion, 0.0f,
-               "With Remix's own tonemapper, 0..1: stretch the tone curve's shoulder above the knee so that an SDR "
-               "output of 1.0 reaches the peak (in log luminance, hue kept). 0 = the curve as it is (its highlights "
-               "stay at SDR white). This changes the highlights, nothing below the knee.");
-    RTX_OPTION("rtx.hdr", float, remixHighlightKnee, 0.5f,
-               "The SDR output level (0..1, display linear) above which the shoulder is stretched.");
+    RTX_OPTION("rtx.hdr", bool, remixCurveContinue, true,
+               "With Remix's own tonemappers: continue the tone curve straight past its knee instead of letting it fit "
+               "everything under SDR white. Highlights above the knee get brighter than in SDR, up to the display's "
+               "peak; below the knee the image is the SDR image. Off: the tonemapped image has nothing above white "
+               "and only the roll-off runs.");
+    RTX_OPTION("rtx.hdr", float, remixCurveKnee, 0.5f,
+               "The SDR output level (0..1, display linear) at which the tone curve stops following its SDR shape and "
+               "continues straight. Lower: more of the highlights are brightened; higher: closer to the SDR image.");
     RTX_OPTION_FLAG("rtx.hdr", bool, dumpFrame, false, RtxOptionFlags::NoSave,
                     "Write the next frame's final output (before the game's UI) as a 16-bit float DDS to the "
                     "Screenshots folder (hdrFinal_*.dds), then clear. Gamma-encoded, 1.0 = paper white.");
@@ -89,6 +99,13 @@ namespace dxvk {
 
     // Headroom above SDR white the display has, as a factor on 1.0 (peak / paper white).
     static float headroom() { return std::max(peakNits(), 1.0f) / std::max(paperWhiteNits(), 1.0f); }
+
+    // The roll-off knee (rtx.hdr.knee) as a gamma value and as display linear.
+    static float kneeGamma() { return std::clamp(knee(), 0.3f, 1.0f); }
+    static float kneeLinear() { return std::pow(kneeGamma(), 2.2f); }
+
+    // The Remix tone curve's continuation knee (display linear), or 2 for none.
+    static float curveKnee() { return remixCurveContinue() ? std::clamp(remixCurveKnee(), 0.1f, 0.95f) : 2.0f; }
 
     // Decode exponent of the gamma-encoded frame: 2.2, or 0 for the sRGB piecewise curve.
     static float decodeGamma() { return srgbDecode() ? 0.0f : 2.2f; }

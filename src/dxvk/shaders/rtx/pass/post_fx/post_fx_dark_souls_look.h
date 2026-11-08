@@ -310,8 +310,13 @@ struct PostFxDarkSoulsLookCompositeArgs {
   float adjustSaturation; // against Rec. 709 luma
   uint adjustEnable;
   // DS1 HDR10 output (rtx_hdr_output.h): 1 = ColAdj's clips (sat(scene * c56.z), the graded 8-bit output)
-  // are left out; what they would cut goes to the display above SDR white.
+  // are replaced by a roll-off (hdrRollOff, in gamma space) from hdrKneeGamma towards hdrLimitGamma, so what
+  // they would cut goes to the display above SDR white.
   uint keepHeadroom;
+  float hdrLimitGamma;  // the display's headroom (peak / paper white) as a gamma value
+  float hdrPerChannel;  // rtx.hdr.rollOffPerChannel
+  float hdrKneeGamma;   // rtx.hdr.knee
+  uint pad3;
 };
 
 // One stage of the light shaft chain in direction space (post_fx_dark_souls_look_shafts.comp.slang).

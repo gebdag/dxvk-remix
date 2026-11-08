@@ -116,9 +116,25 @@ float3 dynamicToneMapper(float3 inputColor)
   return mappedColor;
 }
 
+// DS1 HDR10 output: the SDR curve's result for a grey of scene luminance y (the dynamic curve, then ACES where
+// it finalizes), to find where the curve reaches the continuation knee and how fast it rises there.
+float hdrGreyCurve(float y)
+{
+  float3 c = dynamicToneMapper(float3(y, y, y));
+  if (cb.finalizeWithACES)
+  {
+    c = ACESFilm(c, cb.useLegacyACES);
+  }
+  return calcBt709Luminance(c);
+}
+
+// The exposed scene colour of the pixel being tonemapped (applyToneMapping), for the curve continuation.
+static float3 g_exposedScene = float3(0.0f);
+
 float3 applyToneMapping(float3 color, uint2 pixelPosition)
 {
   color *= getExposure(InExposure, cb.enableAutoExposure, cb.exposureFactor);
+  g_exposedScene = color;
 
   if (cb.toneMappingEnabled != 0) 
   {
@@ -188,10 +204,34 @@ void main(uint2 threadId : SV_DispatchThreadID)
 
   if (cb.hdrMode != 0)
   {
-    // DS1 HDR10 output: channels above 1 (a bright saturated colour whose luminance the curve kept
-    // under 1) stay, so the display shows the colour instead of its clip. Below 1 nothing changes.
+    // DS1 HDR10 output. The SDR curve fits the whole scene under 1, so nothing above white would exist for
+    // the display: past the scene luminance where the curve reaches hdrCurveKnee it is continued straight
+    // (hdrContinueCurve), then the channels roll off towards the headroom instead of clipping at 1.
     outputColor = max(outputColor, float3(0.0f));
-    outputColor = hdrExpandHighlights(outputColor, cb.hdrHighlightKnee, cb.hdrHeadroom, cb.hdrHighlightExpansion);
+    if (cb.hdrCurveKnee < 1.0f && cb.toneMappingEnabled != 0 && cb.debugMode == 0)
+    {
+      // The scene luminance at which the grey curve reaches the knee, by bisection: the curve is monotonic.
+      float lo = 0.0f;
+      float hi = 64.0f;
+      for (int i = 0; i < 14; ++i)
+      {
+        const float mid = 0.5f * (lo + hi);
+        if (hdrGreyCurve(mid) < cb.hdrCurveKnee)
+        {
+          lo = mid;
+        }
+        else
+        {
+          hi = mid;
+        }
+      }
+      const float kneeIn = 0.5f * (lo + hi);
+      const float step = max(kneeIn * 0.05f, 1e-4f);
+      const float slope = (hdrGreyCurve(kneeIn + step) - hdrGreyCurve(max(kneeIn - step, 0.0f))) / (kneeIn + step - max(kneeIn - step, 0.0f));
+      const float sceneLum = calcBt709Luminance(max(g_exposedScene, float3(0.0f)));
+      outputColor = hdrContinueCurve(outputColor, sceneLum, kneeIn, cb.hdrCurveKnee, slope, hdrGreyCurve(sceneLum));
+    }
+    outputColor = hdrRollOff(outputColor, cb.hdrRollOffStart, cb.hdrHeadroom, cb.hdrPerChannel);
   }
   else
   {

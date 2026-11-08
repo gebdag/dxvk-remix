@@ -100,14 +100,15 @@ struct FinalCombineArgs
   uint finalizeWithACES;
   uint enableAutoExposure;
   uint useLegacyACES;
-  // DS1 HDR10 output (rtx_hdr_output.h): hdrMode 1 keeps channels above 1 (ACES without its clamp); the
-  // expansion stretches the shoulder above the knee (see hdrExpandHighlights).
+  // DS1 HDR10 output (rtx_hdr_output.h): hdrMode 1 continues the ACES curve past the SDR output level
+  // hdrCurveKnee (2 = no continuation) and rolls the channels off from hdrRollOffStart towards hdrHeadroom
+  // (hdrRollOff) instead of clipping at 1.
   uint hdrMode;
 
-  float hdrHighlightExpansion;
-  float hdrHighlightKnee;
+  float hdrCurveKnee;
   float hdrHeadroom;
-  uint pad0;
+  float hdrRollOffStart;
+  float hdrPerChannel;
 };
 
 

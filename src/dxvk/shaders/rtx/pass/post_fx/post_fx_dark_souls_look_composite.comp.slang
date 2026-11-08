@@ -7,6 +7,7 @@
 
 #include "rtx/pass/post_fx/post_fx_dark_souls_look.h"
 #include "rtx/utility/common.slangh"
+#include "rtx/pass/tonemap/tonemapping.slangh"  // hdrRollOff (HDR10 output)
 
 layout(binding = POST_FX_DS_LOOK_COMPOSITE_INOUT)
 RWTexture2D<float4> InOutColor;
@@ -83,7 +84,10 @@ void main(uint2 pixel : SV_DispatchThreadID)
   vec3 graded = vec3(toeChannel(dot(c, cb.gradeRowR), cb.gradeRowR, brightest, cb.blackToe),
                      toeChannel(dot(c, cb.gradeRowG), cb.gradeRowG, brightest, cb.blackToe),
                      toeChannel(dot(c, cb.gradeRowB), cb.gradeRowB, brightest, cb.blackToe));
-  graded = keep ? max(graded, vec3(0.0f)) : saturate(graded);
+  // The game's output clip is per channel at 1 (its 8-bit target). With headroom the range it would cut
+  // rolls off from the knee towards the display's limit instead (hdrRollOff); at or below the knee the
+  // value is the SDR value exactly.
+  graded = keep ? hdrRollOff(graded, cb.hdrKneeGamma, cb.hdrLimitGamma, cb.hdrPerChannel) : saturate(graded);
   // Image adjustments (rtx.ds1Look.adjust*), on the displayed value; skipped entirely at their defaults.
   if (cb.adjustEnable != 0)
   {
@@ -93,7 +97,7 @@ void main(uint2 pixel : SV_DispatchThreadID)
     graded = (graded - 0.5f) * cb.adjustContrast + 0.5f;
     const float luma = dot(graded, vec3(0.2126f, 0.7152f, 0.0722f));
     graded = lerp(vec3(luma), graded, cb.adjustSaturation);
-    graded = keep ? max(graded, vec3(0.0f)) : saturate(graded);
+    graded = keep ? hdrRollOff(graded, cb.hdrKneeGamma, cb.hdrLimitGamma, cb.hdrPerChannel) : saturate(graded);
   }
   InOutColor[pixel] = vec4(pow(graded, vec3(2.2f)), frame.a);
 }

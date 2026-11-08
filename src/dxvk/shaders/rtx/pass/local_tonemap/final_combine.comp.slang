@@ -105,12 +105,39 @@ void main(uint2 threadId : SV_DispatchThreadID)
   {
     texelFinal = ACESFilm(texelFinal, cb.useLegacyACES);
   }
-  // DS1 HDR10 output: the output is not clipped at 1 (ACES itself tops out at about 1.03), and the shoulder
-  // may be stretched into the display's headroom (rtx.hdr.remixHighlightExpansion).
+  // DS1 HDR10 output. ACES fits the scene under 1 (it tops out at about 1.03): past the scene luminance where
+  // it reaches hdrCurveKnee the curve is continued straight (hdrContinueCurve), then the channels roll off
+  // towards the headroom (hdrRollOff). Without ACES the fused result itself may exceed 1 and only rolls off.
   if (cb.hdrMode != 0)
   {
     texelFinal = max(texelFinal, vec3(0.0f));
-    texelFinal = hdrExpandHighlights(texelFinal, cb.hdrHighlightKnee, cb.hdrHeadroom, cb.hdrHighlightExpansion);
+    if (cb.finalizeWithACES && cb.hdrCurveKnee < 1.0f)
+    {
+      float lo = 0.0f;
+      float hi = 64.0f;
+      for (int i = 0; i < 14; ++i)
+      {
+        const float mid = 0.5f * (lo + hi);
+        if (calcBt709Luminance(ACESFilm(vec3(mid), cb.useLegacyACES)) < cb.hdrCurveKnee)
+        {
+          lo = mid;
+        }
+        else
+        {
+          hi = mid;
+        }
+      }
+      const float kneeIn = 0.5f * (lo + hi);
+      const float step = max(kneeIn * 0.05f, 1e-4f);
+      const float below = max(kneeIn - step, 0.0f);
+      const float slope = (calcBt709Luminance(ACESFilm(vec3(kneeIn + step), cb.useLegacyACES)) -
+                           calcBt709Luminance(ACESFilm(vec3(below), cb.useLegacyACES))) / (kneeIn + step - below);
+      const vec3 exposedScene = max(originalColor.xyz * finalMultiplier, vec3(0.0f));
+      const float sceneLum = calcBt709Luminance(exposedScene);
+      texelFinal = hdrContinueCurve(texelFinal, sceneLum, kneeIn, cb.hdrCurveKnee, slope,
+                                    calcBt709Luminance(ACESFilm(vec3(sceneLum), cb.useLegacyACES)));
+    }
+    texelFinal = hdrRollOff(texelFinal, cb.hdrRollOffStart, cb.hdrHeadroom, cb.hdrPerChannel);
   }
 
   // sRGB conversion and dithering are now performed by the final output pass,

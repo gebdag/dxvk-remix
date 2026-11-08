@@ -99,24 +99,39 @@ float3 ds1NeuralRenderingCurve(float3 x)
   return min(x, knee) + (1.0f - knee) * (1.0f - exp(-above / (1.0f - knee)));
 }
 
-// DS1 HDR10 output (rtx_hdr_output.h): the tonemapped SDR colour's shoulder above the knee (display linear),
-// stretched in log luminance so an SDR 1.0 reaches headroom^strength, hue kept. Below the knee nothing changes.
-// Optional: it changes the highlights, which the SDR curve had already fitted under white.
-float3 hdrExpandHighlights(float3 color, float knee, float headroom, float strength)
+// DS1 HDR10 output (rtx_hdr_output.h). The SDR image clips every channel at 1; with headroom the range the clip
+// would cut is spread between a start level and the display's limit instead. Nothing at or below start changes.
+
+// Exponential shoulder: identity up to start, then approaches limit without ever reaching it. The slope is
+// continuous at start (1 on both sides), so no edge appears where the shoulder takes over.
+float hdrShoulder(float x, float start, float limit)
 {
-  if (strength <= 0.0f)
+  const float range = max(limit - start, 1e-4f);
+  return x <= start ? x : start + range * (1.0f - exp(-(x - start) / range));
+}
+
+// The three channels through the shoulder. perChannel 1: each on its own, so the brightest channel compresses
+// first and a bright colour turns towards white as it brightens, as it did at the SDR clip but spread over the
+// headroom. perChannel 0: all three scaled by what the brightest would get, so the hue holds up to the limit.
+float3 hdrRollOff(float3 c, float start, float limit, float perChannel)
+{
+  const float3 each = float3(hdrShoulder(c.r, start, limit), hdrShoulder(c.g, start, limit), hdrShoulder(c.b, start, limit));
+  const float brightest = max(c.r, max(c.g, c.b));
+  const float3 together = brightest > start ? c * (hdrShoulder(brightest, start, limit) / brightest) : c;
+  return lerp(together, each, saturate(perChannel));
+}
+
+// A tone curve continued past the point where it reaches kneeOut: the SDR result is scaled so a grey of the
+// pixel's scene luminance would land on the straight line through (kneeIn, kneeOut) with the curve's slope
+// there, instead of on the curve's shoulder that fits everything under 1. Below kneeIn the SDR result stands.
+float3 hdrContinueCurve(float3 sdrColor, float sceneLum, float kneeIn, float kneeOut, float slope, float curveAtScene)
+{
+  if (sceneLum <= kneeIn || curveAtScene <= 1e-5f)
   {
-    return color;
+    return sdrColor;
   }
-  const float y = calcBt709Luminance(color);
-  knee = clamp(knee, 0.05f, 0.95f);
-  if (y <= knee)
-  {
-    return color;
-  }
-  // Clamped at SDR white: a value already above 1 takes the full gain, it does not extrapolate the stretch.
-  const float t = min((log2(y) - log2(knee)) / (-log2(knee)), 1.0f);
-  return color * exp2(t * log2(max(headroom, 1.0f)) * strength);
+  const float target = kneeOut + slope * (sceneLum - kneeIn);
+  return sdrColor * max(target / curveAtScene, 1.0f);
 }
 
 float3 ACESFilm(float3 color, bool useLegacyACES, bool suppressBlackLevelClamp = false)

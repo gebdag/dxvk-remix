@@ -117,13 +117,18 @@ struct ToneMappingApplyToneMappingArgs {
   uint finalizeWithACES;
   uint useLegacyACES;
 
-  // DS1 HDR10 output (rtx_hdr_output.h). hdrMode 1: the output keeps channels above 1 instead of the
-  // saturate; hdrHighlightExpansion 0..1 stretches the shoulder above hdrHighlightKnee (display linear)
-  // in log luminance so that 1.0 reaches hdrHeadroom^expansion.
+  // DS1 HDR10 output (rtx_hdr_output.h). hdrMode 1: the tone curve is continued past the SDR output level
+  // hdrCurveKnee (display linear; 2 = no continuation) and the result rolled off per channel from
+  // hdrRollOffStart towards hdrHeadroom (hdrRollOff) instead of the saturate.
   uint hdrMode;
-  float hdrHighlightExpansion;
-  float hdrHighlightKnee;
+  float hdrCurveKnee;
   float hdrHeadroom;
+  float hdrRollOffStart;
+
+  float hdrPerChannel;
+  float hdrPad0;
+  float hdrPad1;
+  float hdrPad2;
 };
 
 struct FastToneMappingArgs {
