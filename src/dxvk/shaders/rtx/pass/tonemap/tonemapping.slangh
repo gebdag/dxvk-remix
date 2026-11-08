@@ -114,7 +114,8 @@ float3 hdrExpandHighlights(float3 color, float knee, float headroom, float stren
   {
     return color;
   }
-  const float t = (log2(y) - log2(knee)) / (-log2(knee));
+  // Clamped at SDR white: a value already above 1 takes the full gain, it does not extrapolate the stretch.
+  const float t = min((log2(y) - log2(knee)) / (-log2(knee)), 1.0f);
   return color * exp2(t * log2(max(headroom, 1.0f)) * strength);
 }
 

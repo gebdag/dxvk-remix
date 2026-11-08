@@ -312,13 +312,6 @@ struct PostFxDarkSoulsLookCompositeArgs {
   // DS1 HDR10 output (rtx_hdr_output.h): 1 = ColAdj's clips (sat(scene * c56.z), the graded 8-bit output)
   // are left out; what they would cut goes to the display above SDR white.
   uint keepHeadroom;
-
-  // With keepHeadroom: the graded output's shoulder above hdrKnee (display linear) stretched in log luminance so
-  // that 1.0 reaches hdrHeadroom^hdrExpansion (hdrExpandHighlights). 0 = the game's values as they are.
-  float hdrExpansion;
-  float hdrKnee;
-  float hdrHeadroom;
-  uint pad2;
 };
 
 // One stage of the light shaft chain in direction space (post_fx_dark_souls_look_shafts.comp.slang).

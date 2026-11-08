@@ -7,7 +7,6 @@
 
 #include "rtx/pass/post_fx/post_fx_dark_souls_look.h"
 #include "rtx/utility/common.slangh"
-#include "rtx/pass/tonemap/tonemapping.slangh"
 
 layout(binding = POST_FX_DS_LOOK_COMPOSITE_INOUT)
 RWTexture2D<float4> InOutColor;
@@ -96,11 +95,5 @@ void main(uint2 pixel : SV_DispatchThreadID)
     graded = lerp(vec3(luma), graded, cb.adjustSaturation);
     graded = keep ? max(graded, vec3(0.0f)) : saturate(graded);
   }
-  vec3 outLinear = pow(graded, vec3(2.2f));
-  if (keep && cb.hdrExpansion > 0.0f)
-  {
-    // Optional: the game's brightest values, which its display showed at white, reach into the display's headroom.
-    outLinear = hdrExpandHighlights(outLinear, cb.hdrKnee, cb.hdrHeadroom, cb.hdrExpansion);
-  }
-  InOutColor[pixel] = vec4(outLinear, frame.a);
+  InOutColor[pixel] = vec4(pow(graded, vec3(2.2f)), frame.a);
 }
