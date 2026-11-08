@@ -805,7 +805,8 @@ struct RtOpaqueSurfaceMaterial {
     bool useLegacySpecular = false,
     uint32_t specularColorTextureIndex = kSurfaceMaterialInvalidTextureIndex,
     float specularColorScale = 1.0f,
-    bool albedoOpacityIsRenderTarget = false
+    bool albedoOpacityIsRenderTarget = false,
+    float roughnessScale = 1.0f
   ) :
     m_albedoOpacityTextureIndex{ albedoOpacityTextureIndex }, m_secondaryTextureIndex{secondaryTextureIndex}, m_normalTextureIndex{ normalTextureIndex },
     m_tangentTextureIndex { tangentTextureIndex }, m_heightTextureIndex { heightTextureIndex }, m_roughnessTextureIndex{ roughnessTextureIndex },
@@ -824,7 +825,7 @@ struct RtOpaqueSurfaceMaterial {
     m_subsurfaceMaterialIndex(subsurfaceMaterialIndex), m_isRaytracedRenderTarget(isRaytracedRenderTarget),
     m_isHairCard(isHairCard), m_samplerFeedbackStamp{ samplerFeedbackStamp },
     m_useLegacySpecular{ useLegacySpecular },
-    m_specularColorTextureIndex{ specularColorTextureIndex }, m_specularColorScale{ specularColorScale }
+    m_specularColorTextureIndex{ specularColorTextureIndex }, m_specularColorScale{ specularColorScale }, m_roughnessScale{ roughnessScale }
   {
     updateCachedData();
     updateCachedHash();
@@ -937,7 +938,7 @@ struct RtOpaqueSurfaceMaterial {
     // data[30 - 31]
     assert(m_specularColorScale <= FLOAT16_MAX);
     writeGPUHelper(data, offset, glm::packHalf1x16(m_specularColorScale));
-    writeGPUPadding<2>(data, offset);
+    writeGPUHelper(data, offset, glm::packHalf1x16(m_roughnessScale));
     assert(offset - oldOffset == kSurfaceMaterialGPUSize);
   }
 
@@ -1089,6 +1090,7 @@ private:
       uint32_t useLegacySpecular;         // NOTE: uint32_t to avoid padding
       uint32_t specularColorTextureIndex;
       float specularColorScale;
+      float roughnessScale;
       uint32_t albedoOpacityIsRenderTarget;
       // NOTE: There must be NO padding between members, as the struct is used for hashing
     };
@@ -1123,6 +1125,7 @@ private:
       m_useLegacySpecular,
       m_specularColorTextureIndex,
       m_specularColorScale,
+      m_roughnessScale,
       m_albedoOpacityIsRenderTarget,
     };
     m_cachedHash = hashStructByMemory<HashStruct,
@@ -1156,6 +1159,7 @@ private:
       &HashStruct::useLegacySpecular,
       &HashStruct::specularColorTextureIndex,
       &HashStruct::specularColorScale,
+      &HashStruct::roughnessScale,
       &HashStruct::albedoOpacityIsRenderTarget>(hashData);
   }
 
@@ -1225,6 +1229,7 @@ private:
   // sRGB-decode(texture * scale) instead of the metallic-derived value.
   uint32_t m_specularColorTextureIndex;
   float m_specularColorScale;
+  float m_roughnessScale;
 
   uint16_t m_samplerFeedbackStamp;
 

@@ -21,6 +21,7 @@
 */
 
 #include "rtx_asset_replacer.h"
+#include "rtx_ds1_texlab.h"
 
 #include "dxvk_device.h"
 #include "dxvk_context.h"
@@ -69,6 +70,9 @@ std::shared_ptr<MaterialData> AssetReplacer::getReplacementMaterial(XXH64_hash_t
     return nullptr;
 
   for (auto& mod : m_modManager.mods()) {
+    if (mod->isAiGenerated() && !DxvkDs1TexLab::aiLayer()) {
+      continue;
+    }
     std::shared_ptr<MaterialData> material;
     if (mod->replacements().getMaterial(hash, material)) {
       return material;
@@ -137,6 +141,14 @@ std::vector<Mod::State> AssetReplacer::getReplacementStates() const {
   }
 
   return modStates;
+}
+
+void AssetReplacer::requestAiGeneratedReload() {
+  for (auto& mod : m_modManager.mods()) {
+    if (mod->isAiGenerated()) {
+      mod->requestReload();
+    }
+  }
 }
 
 void AssetReplacer::requestReload() {

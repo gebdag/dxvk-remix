@@ -32,6 +32,7 @@
 #include <set>
 #include <nvapi.h>
 #include <NVIDIASansMd.ttf.h>
+#include "../rtx_render/rtx_ds1_texlab.h"
 #include <NVIDIASansBd.ttf.h>
 #include <RobotoMonoRg.ttf.h>
 
@@ -2697,6 +2698,8 @@ namespace dxvk {
 
     RemixGui::Separator();
     RemixGui::Checkbox("Highlight Legacy Materials (flash red)", &RtxOptions::useHighlightLegacyModeObject());
+
+    DxvkDs1TexLab::showImguiSettings(ctx);
 
   }
 

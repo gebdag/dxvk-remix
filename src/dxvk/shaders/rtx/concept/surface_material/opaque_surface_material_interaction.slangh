@@ -1207,6 +1207,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   {
     roughness = roughnessSample.x;
   }
+  roughness = saturate(roughness * float(opaqueSurfaceMaterial.roughnessScale));
 
 #if defined(RAY_TRACING_PRIMARY_RAY)
   if (cb.debugView == DEBUG_VIEW_OPAQUE_ROUGHNESS_RESOLUTION_CHECKERS) 

@@ -36,6 +36,7 @@ OpaqueSurfaceMaterial opaqueSurfaceMaterialCreate(MemoryPolymorphicSurfaceMateri
     opaqueSurfaceMaterial.tangentTextureIndex = BINDING_INDEX_INVALID;
     opaqueSurfaceMaterial.specularColorTextureIndex = BINDING_INDEX_INVALID;
     opaqueSurfaceMaterial.roughnessConstant = 1.h;
+    opaqueSurfaceMaterial.roughnessScale = 1.h;
     opaqueSurfaceMaterial.metallicConstant = 0.h;
     opaqueSurfaceMaterial.anisotropy = 0.h;
     opaqueSurfaceMaterial.emissiveColorConstant = 0.h;

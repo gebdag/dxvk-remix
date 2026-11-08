@@ -25,6 +25,7 @@
 
 #include "rtx_asset_replacer.h"
 #include "rtx_scene_manager.h"
+#include "rtx_ds1_texlab.h"
 #include "rtx_opacity_micromap_manager.h"
 #include "rtx_legacy_specular.h"
 #include "dxvk_device.h"
@@ -605,6 +606,9 @@ namespace dxvk {
     AssetChanges changes;
     const bool changedSync = m_pReplacer->checkForChanges(ctx);
     const bool appliedRebuild = m_pReplacer->applyPendingRebuilds(ctx, changes);
+    if (DxvkDs1TexLab::enable() && (changedSync || appliedRebuild)) {
+      DxvkDs1TexLab::requestMaterialUpload();
+    }
     if (m_enqueueDelayedClear || changedSync) {
       clear(ctx, true);
       m_enqueueDelayedClear = false;
@@ -1838,6 +1842,9 @@ namespace dxvk {
       alphaIsThinFilmThickness = opaqueMaterialData.getAlphaIsThinFilmThickness();
       thinFilmThicknessConstant = opaqueMaterialData.getThinFilmThicknessConstant();
       displaceIn = opaqueMaterialData.getDisplaceIn();
+      if (DxvkDs1TexLab::enable()) {
+        displaceIn *= DxvkDs1TexLab::pomDepthScale(drawCallState.getMaterialData().getHash());
+      }
       displaceOut = opaqueMaterialData.getDisplaceOut();
 
       ignoreAlphaChannel = opaqueMaterialData.getIgnoreAlphaChannel();
@@ -1918,7 +1925,8 @@ namespace dxvk {
         useLegacySpecular,
         specularColorTextureIndex,
         opaqueMaterialData.getSpecularColorScale(),
-        albedoOpacityIsRenderTarget
+        albedoOpacityIsRenderTarget,
+        DxvkDs1TexLab::enable() ? DxvkDs1TexLab::roughnessScale(drawCallState.getMaterialData().getHash()) : 1.0f
       };
 
       surfaceMaterial.emplace(opaqueSurfaceMaterial);
@@ -2433,6 +2441,7 @@ namespace dxvk {
       !m_accelManager.wasSceneUnchangedThisFrame() ||
       TerrainBaker::needsTerrainBaking() ||
       RtxOptions::useHighlightLegacyMode() ||
+      DxvkDs1TexLab::consumeMaterialUpload() ||
       startInMediumStateChanged;
     if (updateSurfaceMaterials) {
       DxvkBufferCreateInfo matInfo;

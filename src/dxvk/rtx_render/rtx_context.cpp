@@ -43,6 +43,7 @@
 #include "rtx_rtxdi_rayquery.h"
 #include "rtx_restir_gi_rayquery.h"
 #include "rtx_composite.h"
+#include "rtx_ds1_texlab.h"
 #include "rtx_debug_view.h"
 
 #include "rtx/pass/sparse_rendering/sparse_rendering.h"
@@ -1576,6 +1577,7 @@ namespace dxvk {
     constants.enableCullingSecondaryRays = RtxOptions::enableCullingInSecondaryRays();
 
     constants.domeLightArgs = getSceneManager().getLightManager().getDomeLightArgs();
+    DxvkDs1TexLab::update(this);
     DxvkDarkSoulsAmbient::fillShaderArgs(constants.ds1Ambient);
     DxvkDarkSoulsSwamp::fillShaderArgs(constants.ds1Swamp);
     DxvkDarkSoulsRipples::fillShaderArgs(constants.ds1Ripple);

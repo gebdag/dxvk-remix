@@ -551,6 +551,8 @@ namespace dxvk {
 
     // Queues a manual reload of every mod, picked up on the next checkForChanges.
     void requestReload();
+    // Fork (DS1): hot-reloads only the Texture Lab's ai_generated mod.
+    void requestAiGeneratedReload();
     // True while any mod has a reload queued or in flight, so the UI can disable the
     // button rather than letting clicks pile up.
     bool isReloadPending() const;

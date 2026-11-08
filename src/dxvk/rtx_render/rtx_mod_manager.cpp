@@ -24,6 +24,7 @@
 
 #include "rtx_asset_replacer.h"
 #include "rtx_mod_usd.h"
+#include "rtx_ds1_texlab.h"
 
 #include "rtx_options.h"
 
@@ -174,7 +175,8 @@ ModManager::Mods ModManager::enumerateModsInDir(const Path& modsDirPath) {
     if (modsDirEntry.is_directory()) {
       const auto modDirPath = modsDirEntry.path();
       const auto [bModExists, modDesc] = modExists(modDirPath);
-      if (bModExists) {
+      // Fork (DS1): the Texture Lab's AI materials exist only while the lab is on.
+      if (bModExists && (DxvkDs1TexLab::enable() || !Mod::isAiGeneratedFile(modDesc.filePath))) {
         mods.emplace(modDesc.typeInfo->construct(modDesc.filePath));
       }
     }
@@ -184,6 +186,7 @@ ModManager::Mods ModManager::enumerateModsInDir(const Path& modsDirPath) {
 
 Mod::Mod(const Path& filePath)
   : m_filePath(filePath),
+    m_isAiGenerated(isAiGeneratedFile(filePath)),
     m_priority(0) {
   m_replacements = std::make_unique<AssetReplacements>();
 }

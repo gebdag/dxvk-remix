@@ -109,8 +109,8 @@ struct OpaqueSurfaceMaterial
   // 30
   float16_t specularColorScale;
 
-  // padding (to keep size matching with MemoryPolymorphicSurfaceMaterial)
-  uint16_t data[1];
+  // 31: Fork (DS1): multiplies the roughness, map or constant (the Texture Lab's live control; 1 otherwise).
+  float16_t roughnessScale;
 
   bool hasValidDisplacement() {
     return flags & OPAQUE_SURFACE_MATERIAL_FLAG_HAS_DISPLACEMENT;

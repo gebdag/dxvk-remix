@@ -97,6 +97,15 @@ public:
     m_reloadRequested.store(true, std::memory_order_release);
   }
 
+  // Fork (DS1): whether this is the ai_generated mod, the Texture Lab's materials (rtx_ds1_texlab.h).
+  bool isAiGenerated() const {
+    return m_isAiGenerated;
+  }
+
+  static bool isAiGeneratedFile(const Path& filePath) {
+    return filePath.parent_path().filename() == "ai_generated";
+  }
+
   bool isReloadRequested() const {
     return m_reloadRequested.load(std::memory_order_acquire);
   }
@@ -169,6 +178,7 @@ protected:
   }
 
   const Path m_filePath;
+  const bool m_isAiGenerated;
   size_t m_priority;
 
   std::atomic<ProgressState> m_progressState{ ProgressState::Unloaded };
