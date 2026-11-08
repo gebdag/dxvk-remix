@@ -32,7 +32,9 @@ struct Ds1AmbientArgs {
 
   // DS1 foliage (Surface::isDs1Foliage): the share of lighting rays that pass a leaf (rtx.ds1Foliage.transmission).
   float foliageTransmission;
-  uint foliagePad0;
+  // The DS1 look's scene pass runs (DxvkDarkSoulsLook::isActive): it takes hazed subtractive layers off absolutely, so the
+  // resolve leaves them out of the radiance (resolveVertexUnorderedParticles, ds1HazedSubtract).
+  uint lookActive;
   uint foliagePad1;
   uint foliagePad2;
 };

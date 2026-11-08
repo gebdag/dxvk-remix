@@ -1116,10 +1116,11 @@ float resolveVertexUnorderedParticles<
   out uint numInteractions,
   out int surfaceIndex,
   inout bool decalCandidateSeen,
-  out vec3 ds1AdditiveRadiance)
+  out vec3 ds1AdditiveRadiance, out float ds1HazedSubtract)
 {
   surfaceIndex = -1;
   ds1AdditiveRadiance = vec3(0.0f);
+  ds1HazedSubtract = 0.0f;
 
   float opacityTransmittance = 1.0f;
 
@@ -1159,6 +1160,9 @@ float resolveVertexUnorderedParticles<
   // Fork: display-referred gamma-space sum of the unlit additive layers (see below).
   // Fork: and of the unlit subtractive (reverse-subtract) layers, which come off it.
   float3 unlitSubtractGammaSum = 0..xxx;
+  // Fork (DS1): the part of it from layers the game hazes with their own set (a lit map decal such as the Asylum's blood):
+  // it darkens what is behind and is hazed with it, where an unhazed one (an effect sprite) comes off after the haze.
+  float3 ds1HazedSubtractGammaSum = 0..xxx;
   // Fork: the unlit alpha-blended layers, composited in gamma space in depth order (Ds1UnlitLayers).
   Ds1UnlitLayers unlitLayers = Ds1UnlitLayers.create();
   bool ds1UnhazedLayers = false;
@@ -1396,7 +1400,12 @@ float resolveVertexUnorderedParticles<
     {
       if (surface.isUnlit || surface.hasDs1SelfLit)
       {
-        unlitSubtractGammaSum += linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation);
+        const float3 subtractGamma = linearToGamma(src / cb.opaqueMaterialArgs.unlitExposureCompensation);
+        unlitSubtractGammaSum += subtractGamma;
+        if (surface.ds1HazeSet >= 1 && surface.ds1HazeSet <= 14)
+        {
+          ds1HazedSubtractGammaSum += subtractGamma;
+        }
       }
     }
     // Fork: additive layers (alpha / colour emissive blends) add, as the blend does: averaging them
@@ -1506,18 +1515,35 @@ float resolveVertexUnorderedParticles<
     const float3 unlitGamma = unlitAdditiveGammaSum + unlitBlendGamma;
     emissiveRadiance += pow(max(unlitGamma - unlitSubtractGammaSum, 0.0f), kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation;
     const float3 subtractLeft = max(unlitSubtractGammaSum - unlitGamma, 0.0f);
-    radianceAttenuation *= pow(saturate(1.0f - subtractLeft), kSRGBGamma);
-    // Fork (DS1): the game's subtraction is absolute. The attenuation above only scales what is behind, so a layer
-    // hardly shows on a dark surface (the Dark Hand's red): the look's scene pass makes it exact, from these
-    // channels going negative in Ds1AdditiveRadiance.
-    ds1AdditiveRadiance = (pow(max(unlitAdditiveGammaSum - unlitSubtractGammaSum, 0.0f), kSRGBGamma) - pow(subtractLeft, kSRGBGamma)) *
+    // What is left over after the unlit layers is split into the unhazed layers' part and the hazed layers' (lit map decals).
+    // The unhazed part is an attenuation of what is behind that the look's scene pass undoes before taking it off absolutely,
+    // after its haze (below). The hazed part (ds1HazedSubtract, a grey amount: the blood's texture is grey) the look takes off
+    // absolutely before its eye lift and haze, so with the look it stays out of the radiance: undoing an attenuation there
+    // divided by 1 - h and blew up wherever this frame's jittered sample and the upscaled frame disagree (decal edges).
+    // Without the look it is an attenuation, as before.
+    const float3 unhazedSubtractGammaSum = unlitSubtractGammaSum - ds1HazedSubtractGammaSum;
+    const float3 unhazedSubtractLeft = max(unhazedSubtractGammaSum - unlitGamma, 0.0f);
+    const float3 hazedSubtractLeft = max(subtractLeft - unhazedSubtractLeft, 0.0f);
+    const float hazedSubtractGrey = dot(hazedSubtractLeft, float3(1.0f / 3.0f));
+    radianceAttenuation *= pow(saturate(1.0f - unhazedSubtractLeft), kSRGBGamma);
+    if (cb.ds1Ambient.lookActive == 0u)
+    {
+      radianceAttenuation *= pow(saturate(1.0f - hazedSubtractGrey), kSRGBGamma);
+    }
+    ds1HazedSubtract = pow(hazedSubtractGrey, kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation / pathSelectionProbability;
+    // Fork (DS1): the game's subtraction of an unhazed layer (an effect sprite, drawn unfogged) is absolute. The
+    // attenuation above only scales what is behind, so such a layer hardly shows on a dark surface (the Dark Hand's red):
+    // the look's scene pass makes it exact, after its haze, from these channels going negative in Ds1AdditiveRadiance.
+    // A hazed layer (a lit map decal) comes off before the haze instead (ds1HazedSubtract above), as the game's own fog takes
+    // it: taken off after the haze, the Asylum's blood stood out black in the fog.
+    ds1AdditiveRadiance = (pow(max(unlitAdditiveGammaSum - unhazedSubtractGammaSum, 0.0f), kSRGBGamma) - pow(unhazedSubtractLeft, kSRGBGamma)) *
       cb.opaqueMaterialArgs.unlitExposureCompensation / pathSelectionProbability;
     // Fork (DS1): unhazed alpha layers (a fog wall's ribbons) stay out of the haze here too, after the subtraction, as below.
     // Left to it, the white wall went a flat grey wherever a subtracted smoke's quad covered it (the black flame,
     // frame_20261106_114311), with the quad's alpha-tested edge.
     if (ds1UnhazedLayers)
     {
-      ds1AdditiveRadiance = (pow(max(unlitGamma - unlitSubtractGammaSum, 0.0f), kSRGBGamma) - pow(subtractLeft, kSRGBGamma)) *
+      ds1AdditiveRadiance = (pow(max(unlitGamma - unhazedSubtractGammaSum, 0.0f), kSRGBGamma) - pow(unhazedSubtractLeft, kSRGBGamma)) *
         cb.opaqueMaterialArgs.unlitExposureCompensation / pathSelectionProbability;
     }
   }

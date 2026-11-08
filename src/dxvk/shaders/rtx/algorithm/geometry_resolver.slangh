@@ -2226,6 +2226,7 @@ void geometryResolverVertex(
     geometryResolverState.accumulatedHitDistance > 0.0f;
 
   vec3 ds1AdditiveRadiance = vec3(0.0f);
+  float ds1HazedSubtract = 0.0f;
   float opacityTransmittance = 1.0f;
   if (geometryResolverState.ds1UnorderedHitsAhead > 0)
   {
@@ -2251,16 +2252,17 @@ void geometryResolverVertex(
       geometryResolverState.pixelCoordinate,
       geometryResolverState.accumulatedRotation, geometryResolverState.accumulatedHitDistance, 1.0f,
       radianceAttenuation, emissiveRadiance,
-      numUnorderedInteractions, surfaceIndex, decalCandidateSeen, ds1AdditiveRadiance);
+      numUnorderedInteractions, surfaceIndex, decalCandidateSeen, ds1AdditiveRadiance, ds1HazedSubtract);
     geometryResolverState.ds1UnorderedSpanEmissive = geometryResolverState.ds1UnorderedHitsAhead > 0 && any(emissiveRadiance > 0.0f);
   }
 
-  // Fork (DS1): the unlit additive sprites of the camera ray's segments, attenuated as in the radiance; the
-  // first segment starts the sum.
-  const vec3 ds1AdditiveBefore = geometryResolverState.accumulatedHitDistance > 0.0f
-    ? Ds1AdditiveRadiance[geometryResolverState.pixelCoordinate].rgb : vec3(0.0f);
-  Ds1AdditiveRadiance[geometryResolverState.pixelCoordinate] =
-    vec4(ds1AdditiveBefore + ds1AdditiveRadiance * geometryResolverState.attenuation, 0.0f);
+  // Fork (DS1): the unlit additive sprites of the camera ray's segments, attenuated as in the radiance, and in alpha what
+  // hazed subtractive layers take off (ds1HazedSubtract); the first segment starts the sum.
+  const vec4 ds1AdditiveBefore = geometryResolverState.accumulatedHitDistance > 0.0f
+    ? Ds1AdditiveRadiance[geometryResolverState.pixelCoordinate] : vec4(0.0f);
+  Ds1AdditiveRadiance[geometryResolverState.pixelCoordinate] = ds1AdditiveBefore +
+    vec4(ds1AdditiveRadiance * geometryResolverState.attenuation,
+         ds1HazedSubtract * dot(geometryResolverState.attenuation, vec3(1.0f / 3.0f)));
 
   geometryResolverState.decalCandidateSeen = decalCandidateSeen;
 

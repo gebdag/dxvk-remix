@@ -1583,6 +1583,7 @@ namespace dxvk {
     // DS1 look: the sky raster comes from the game's own sky shader, exposure included.
     constants.ds1Ambient.skyGamma = 0;
     constants.ds1Ambient.skyUnexpose = 1.0f;
+    constants.ds1Ambient.lookActive = DxvkDarkSoulsLook::isActive() ? 1u : 0u;
     if (DxvkDarkSoulsLook::isActive()) {
       const float exposure = DxvkDarkSoulsExposure::drawnExposure();
       constants.ds1Ambient.skyGamma = RtxOptions::skyForceHDR() ? 1u : 2u;
