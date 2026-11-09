@@ -17,6 +17,8 @@ namespace dxvk {
                "Bounce rays that escape to the sky take the game's ambient light for the area (its irradiance probe and "
                "hemisphere ambient, set each frame by the DS1 proxy) instead of the sky texture.");
     RTX_OPTION("rtx.ds1Ambient", float, gain, 1.0f, "Scale on the game's ambient light.");
+    RTX_OPTION_FLAG("rtx.ds1Ambient", bool, skyInShot, false, RtxOptionFlags::NoSave,
+      "Bounce rays take the sky texture for this shot, as with the ambient off. The proxy sets it, for shots where the game's ambient burns a figure out against the sky.");
     RTX_OPTION_FLAG("rtx.ds1Ambient", float, bounceScale, 1.0f, RtxOptionFlags::NoSave,
       "Scale on the ambient for bounce rays that leave the map, for a shot the game shows as a silhouette. The proxy sets it; the eye meter keeps the full ambient.");
     RTX_OPTION("rtx.ds1Foliage", float, transmission, 0.5f,

@@ -548,6 +548,12 @@ namespace dxvk {
     // Fork (DS1): a hit is always its whole burst.
     uint32_t numParticles = std::min(desc.ds1Sparks ? uint32_t(lambda + 0.5f) : distribution(particleSystem->generator), desc.maxNumParticles);
 
+    // Fork (DS1): sparks take what room the pool has, rather than the whole frame's hits being refused.
+    if (desc.ds1Sparks) {
+      const uint32_t used = particleSystem->context.particleCount + particleSystem->context.spawnParticleCount;
+      numParticles = std::min(numParticles, used + 1 < desc.maxNumParticles ? desc.maxNumParticles - used - 1 : 0u);
+    }
+
     // Capacity checks
     if (particleSystem->context.particleCount + particleSystem->context.spawnParticleCount + numParticles >= desc.maxNumParticles) {
       return 0;
@@ -588,7 +594,7 @@ namespace dxvk {
       return;
     }
 
-    assert (isNumParticlesConstant || (particleSystem->context.particleHeadOffset + numParticles) <= particleSystem->context.desc.maxNumParticles);
+    assert (isNumParticlesConstant || desc.ds1Sparks || (particleSystem->context.particleHeadOffset + numParticles) <= particleSystem->context.desc.maxNumParticles);
 
     // Register the spawn context data
     SpawnContext spawnCtx;

@@ -13,7 +13,7 @@ namespace dxvk {
     // Foliage passes whether or not the ambient is the sky.
     args.foliageTransmission = std::clamp(transmission(), 0.0f, 1.0f);
     args.bounceScale = bounceScale();
-    if (!enable() || !active()) {
+    if (!enable() || !active() || skyInShot()) {
       return;
     }
     const Vector3 faces[6] = { posX(), negX(), posY(), negY(), posZ(), negZ() };
