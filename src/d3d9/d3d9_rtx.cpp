@@ -1323,6 +1323,7 @@ namespace dxvk {
         const uint32_t albedoOffsetTag = d3d9State().textureStages[5][DXVK_TSS_CONSTANT];
         auto& albedoOffset = m_activeDrawCallState.materialData;
         albedoOffset.hasDs1AlbedoOffset = (albedoOffsetTag >> 24) == 0xD3u;
+        albedoOffset.isDs1Skin = albedoOffset.hasDs1AlbedoOffset;
         for (int c = 0; c < 3; ++c) {
           albedoOffset.ds1AlbedoOffset[c] = albedoOffset.hasDs1AlbedoOffset
             ? static_cast<float>(static_cast<int8_t>((albedoOffsetTag >> (16 - 8 * c)) & 0xFFu)) / 255.0f : 0.0f;

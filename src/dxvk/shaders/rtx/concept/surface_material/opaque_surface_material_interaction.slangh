@@ -1580,6 +1580,12 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
 
   opaqueSurfaceMaterialInteraction.subsurfaceMaterialInteraction =
     subSurfaceMaterialReadHelper(opaqueSurfaceMaterial.subsurfaceMaterialIndex, surfaceInteraction, opaqueSurfaceMaterial.samplerIndex);
+  // Fork (DS1): skin (rtx_dark_souls_skin.h) has no scattering colour of its own: a diffusion profile with zero transmittance takes the pixel's, tone included.
+  if (opaqueSurfaceMaterialInteraction.subsurfaceMaterialInteraction.maxSampleRadius != 0 &&
+      opaqueSurfaceMaterialInteraction.subsurfaceMaterialInteraction.packedTransmittanceColor == 0)
+  {
+    opaqueSurfaceMaterialInteraction.subsurfaceMaterialInteraction.packedTransmittanceColor = colorToR11G11B10(vec3(opaqueSurfaceMaterialInteraction.albedo));
+  }
   opaqueSurfaceMaterialInteraction.dlssControlMask = opaqueSurfaceMaterial.dlssControlMask;
 
   // For an eye, load a secondary texture (iris) and blend on top of primary texture (whites)

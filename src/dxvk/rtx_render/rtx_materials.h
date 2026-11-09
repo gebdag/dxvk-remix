@@ -2208,6 +2208,8 @@ struct LegacyMaterialData {
   // Surface::ds1AlbedoOffset. Per draw, not part of the identity.
   bool hasDs1AlbedoOffset = false;
   float ds1AlbedoOffset[3] = {};
+  // Fork: a skin draw (rtx_dark_souls_skin.h). Per draw, not part of the identity.
+  bool isDs1Skin = false;
   // Fork: DS1 self-lit ambient emission (linear, per unit albedo) from the stage-3 tag, see
   // Surface::ds1SelfLit. Per draw, not part of the identity.
   bool hasDs1SelfLit = false;

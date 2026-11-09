@@ -36,6 +36,7 @@
 #include "rtx_preserved_object_picking.h"
 #include "rtx_terrain_baker.h"
 #include "rtx_dark_souls_swamp.h"
+#include "rtx_dark_souls_skin.h"
 #include "rtx_dark_souls_ripples.h"
 #include "rtx_dark_souls_effect_particles.h"
 #include "rtx_texture_manager.h"
@@ -1852,7 +1853,9 @@ namespace dxvk {
 
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
 
-      const bool isSubsurfaceScatteringDiffusionProfile = opaqueMaterialData.getSubsurfaceDiffusionProfile();
+      // Fork (DS1): skin scatters whatever mod material it has (rtx_dark_souls_skin.h). Not a face's blended second layer.
+      const bool ds1Skin = DxvkDarkSoulsSkin::enable() && drawCallState.getMaterialData().isDs1Skin && !drawCallState.getMaterialData().blendMode.enableBlending;
+      const bool isSubsurfaceScatteringDiffusionProfile = opaqueMaterialData.getSubsurfaceDiffusionProfile() || ds1Skin;
 
       if ((RtxOptions::SubsurfaceScattering::enableThinOpaque()       && subsurfaceMeasurementDistance > 0.0f) ||
           (RtxOptions::SubsurfaceScattering::enableDiffusionProfile() && isSubsurfaceScatteringDiffusionProfile)) {
@@ -1866,6 +1869,13 @@ namespace dxvk {
           subsurfaceMaxSampleRadius = std::max(0.F, opaqueMaterialData.getSubsurfaceMaxSampleRadius());
           subsurfaceRadiusScale = std::max(opaqueMaterialData.getSubsurfaceRadiusScale(), 1e-5f);
           assert(subsurfaceRadiusScale > 0);
+          // Fork (DS1): zero transmittance: the shader takes the pixel's own colour.
+          if (ds1Skin) {
+            subsurfaceTransmittanceColor = Vector3(0.0f);
+            subsurfaceSingleScatteringAlbedo = DxvkDarkSoulsSkin::radius();
+            subsurfaceRadiusScale = std::max(DxvkDarkSoulsSkin::radiusScale(), 1e-5f);
+            subsurfaceMaxSampleRadius = std::max(0.F, DxvkDarkSoulsSkin::maxSampleRadius());
+          }
         } else /* if thin opaque */ {
           assert(subsurfaceMeasurementDistance > 0);
 
