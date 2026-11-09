@@ -311,13 +311,19 @@ struct VisibilityResult {
 };
 
 // Fork (DS1): whether a committed front hit is a thin wall the ray passes (Surface::isDs1ThinWall).
-bool ds1VisibilityPassesThinWall(Ray ray, RayHitInfo rayHitInfo, vec3 originNormal)
+// A no-shadow surface met from behind passes too when it is far away: a plane high above is met from underneath (Anor Londo's terrace, over Gwyndolin's corridor).
+// Close up a back face still stops the ray, as it always has: the far side of a lamp's closed shell.
+bool ds1VisibilityPassesThinWall(Ray ray, RayHitInfo rayHitInfo, vec3 originNormal, bool frontFace, float hitT)
 {
   const RayInteraction rayInteraction = rayInteractionCreate(ray, rayHitInfo);
   const Surface surface = surfaces[uint(rayInteraction.surfaceIndex)];
   if (surface.isDs1NoShadow)
   {
-    return true;
+    return frontFace || hitT > 1.5f;
+  }
+  if (!frontFace)
+  {
+    return false;
   }
   if (!surface.isDs1ThinWall)
   {
@@ -408,6 +414,7 @@ VisibilityResult traceVisibilityRay<let VisibilityMode : uint>(
 
   while (true)
   {
+    const vec3 ds1AttenuationBeforeTrace = result.attenuation;
     RayQuery<0> rayQuery = RayQuery<0>();
 
     if (usePreviousTLAS)
@@ -455,11 +462,19 @@ VisibilityResult traceVisibilityRay<let VisibilityMode : uint>(
     };
 
     if (rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT &&
-        !usePreviousTLAS && ds1ThinWallSkips < 2 && rayQuery.CommittedTriangleFrontFace())
+        !usePreviousTLAS && ds1ThinWallSkips < 2)
     {
       RAY_HIT_INFO_CREATE_RAY_QUERY_COMMITTED(thinWallHit, rayQuery)
-      if (ds1VisibilityPassesThinWall(visibilityRay, thinWallHit, ds1OriginNormal))
+      if (ds1VisibilityPassesThinWall(visibilityRay, thinWallHit, ds1OriginNormal, rayQuery.CommittedTriangleFrontFace(), rayQuery.CommittedRayT()))
       {
+        // A first-hit ray may have stopped here with something nearer still in the way. Once more from the same place for the nearest hit, or a ray would step over a ceiling to pass a plane above it.
+        if ((rayFlags & RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH) != 0)
+        {
+          rayFlags &= ~RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH;
+          result.attenuation = ds1AttenuationBeforeTrace;
+          continue;
+        }
+
         // Just past the face. calculatePositionError returns the largest coordinate, to be scaled by a float's precision.
         const float skip = rayQuery.CommittedRayT() + calculatePositionError(visibilityRay.origin) * 1e-5f;
         visibilityRay.origin += visibilityRay.direction * skip;
