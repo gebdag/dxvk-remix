@@ -12,7 +12,7 @@ namespace dxvk {
     static void showImguiSettings();
     RTX_OPTION("rtx.ds1Skin", bool, skinnedShadowTerminator, true,
                "Shadow terminator offset for skinned meshes (characters, armour, enemies), whatever rtx.shadowTerminator.enableOffset says for the rest of the scene.");
-    RTX_OPTION("rtx.ds1Skin", bool, enable, false, "Experimental: human skin scatters light under the surface (subsurface diffusion profile, coloured by the skin itself).");
+    RTX_OPTION("rtx.ds1Skin", bool, enable, true, "Experimental: human skin scatters light under the surface (subsurface diffusion profile, coloured by the skin itself).");
     RTX_OPTION("rtx.ds1Skin", Vector3, radius, Vector3(1.0f, 0.37f, 0.15f), "How far each colour scatters, relative to the others.");
     RTX_OPTION("rtx.ds1Skin", float, radiusScale, 0.5f, "Scale on the radius, in centimetres (the profile's unit; the world is in metres).");
     RTX_OPTION("rtx.ds1Skin", float, maxSampleRadius, 0.1f, "How far a scattering sample may reach, metres. The sample rays start this far off the skin, so a large value starts them past whatever is around the character.");
