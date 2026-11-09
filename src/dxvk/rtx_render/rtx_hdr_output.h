@@ -55,7 +55,7 @@ namespace dxvk {
                "How the roll-off treats colour, 0..1. 1 = each channel on its own: the brightest channel compresses "
                "first, so a bright saturated colour turns towards white as it brightens, as it did at the SDR clip, "
                "only higher up. 0 = all three by the brightest channel: the hue holds all the way to the peak.");
-    RTX_OPTION("rtx.hdr", bool, srgbDecode, false,
+    RTX_OPTION("rtx.hdr", bool, srgbDecode, true,
                "Decode the gamma-encoded frame and UI with the sRGB piecewise curve instead of a 2.2 power. An SDR "
                "display shows the 8-bit frame through about a 2.2 power, so 2.2 keeps blacks as they looked; the "
                "piecewise curve lifts them slightly (Windows' own SDR-in-HDR choice).");

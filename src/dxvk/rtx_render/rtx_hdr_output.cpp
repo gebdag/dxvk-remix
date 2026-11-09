@@ -35,7 +35,7 @@ namespace dxvk {
     RemixGui::DragFloat("SDR / UI White (nits)", &paperWhiteNitsObject(), 1.0f, 80.0f, 500.0f, "%.0f", ImGuiSliderFlags_AlwaysClamp);
     RemixGui::DragFloat("Display Peak (nits)", &peakNitsObject(), 5.0f, 300.0f, 10000.0f, "%.0f", ImGuiSliderFlags_AlwaysClamp);
     RemixGui::SliderFloat("Roll-off Starts (share of peak)", &shoulderStartObject(), 0.3f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
-    RemixGui::Checkbox("sRGB Piecewise Decode (default: 2.2)", &srgbDecodeObject());
+    RemixGui::Checkbox("sRGB Piecewise Decode (off: 2.2 power)", &srgbDecodeObject());
     ImGui::Separator();
     RemixGui::Checkbox("Game Image Pipeline: Keep Clipped Highlights", &ds1HeadroomObject());
     ImGui::TextDisabled("DS1 composites the frame into its own scene target: the proxy's [HDR] Enabled makes it float and\n"
