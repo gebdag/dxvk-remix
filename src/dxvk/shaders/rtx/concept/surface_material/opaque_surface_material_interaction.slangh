@@ -1534,6 +1534,10 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   if (surface.hasDs1SelfLit)
   {
     const vec3 selfLit = ds1SelfLitAlbedo * surface.ds1SelfLitAt(opaqueSurfaceMaterialInteraction.shadingNormal.y);
+    // What a replacement material emits (an emission layer in a mod), computed above. Without one, an unlit layer's emission
+    // texture is its albedo (the unlit marker's material, rtx_instance_manager), which the self-lit colour below replaces.
+    const vec3 materialEmission = opaqueSurfaceMaterial.albedoOpacityTextureIndex != BINDING_INDEX_INVALID &&
+      opaqueSurfaceMaterial.emissiveColorTextureIndex != opaqueSurfaceMaterial.albedoOpacityTextureIndex ? emissiveRadiance : vec3(0.0f);
     if (surface.isUnlit && !surface.isEmissiveBlend)
     {
       // An unlit alpha-blended glow layer (the proxy's unlit marker on a PS_UNLIT mesh: Bed of Chaos's glyph
@@ -1541,7 +1545,10 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
       // marker's fixed intensity. Display terms, so the resolve alpha-blends it in gamma space like the
       // other unlit layers (resolve.slangh).
       const float compensation = cb.opaqueMaterialArgs.unlitExposureCompensation;
-      emissiveRadiance = pow(saturate(linearToGamma(selfLit / compensation)), kSRGBGamma) * compensation;
+      // A mod's emission adds to it in display terms, as the game adds its specular to such a layer before saturating (Seath's
+      // wings, whose layers were drawn here without the emission their material carries).
+      emissiveRadiance = pow(saturate(linearToGamma(selfLit / compensation) + linearToGamma(materialEmission / compensation)), kSRGBGamma) *
+        compensation;
     }
     else if (surface.isEmissiveBlend)
     {
