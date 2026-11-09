@@ -141,6 +141,11 @@ struct ShadowTerminatorArgs
   uint  soften;
   float maxArea;
   float maxLength;
+  // Fork (DS1): the offset for skinned meshes alone.
+  uint  ds1Skinned;
+  uint  ds1Pad0;
+  uint  ds1Pad1;
+  uint  ds1Pad2;
 };
 
 #define OBJECT_PICKING_INVALID (cb.clearColorPicking)

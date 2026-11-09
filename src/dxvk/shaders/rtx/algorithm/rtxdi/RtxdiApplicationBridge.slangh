@@ -377,7 +377,7 @@ RAB_Surface RAB_GetInactiveGBufferSurface(ivec2 pixel)
   surface.minimalSurfaceInteraction = minimalSurfaceInteraction;
   surface.minimalSurfaceInteraction.positionError = calculatePositionError(minimalSurfaceInteraction.position);
 #ifdef SHADOW_TERMINATOR_FIX_ALLOWED
-  if (cb.shadowTerminatorArgs.enableOffset)
+  if (cb.shadowTerminatorArgs.enableOffset || cb.shadowTerminatorArgs.ds1Skinned != 0)
   {
     surface.minimalSurfaceInteraction.shadowTerminatorOffset = SharedTerminatorFix[pixel];
   }
@@ -457,7 +457,7 @@ RAB_Surface RAB_GetGBufferSurface(ivec2 pixel, bool previousFrame, ivec2 compact
   surface.minimalSurfaceInteraction = minimalSurfaceInteractionReadFromGBufferWithError(compactedPixel, PrimaryWorldPositionWorldTriangleNormal, PrimaryPositionError);
 #ifdef SHADOW_TERMINATOR_FIX_ALLOWED
   // NOTE: SHADOW_TERMINATOR_FIX_ALLOWED is enabled only for direct lighting passes. Terminator offset must not be present on primary, indirect, volumetrics etc.
-  if (cb.shadowTerminatorArgs.enableOffset)
+  if (cb.shadowTerminatorArgs.enableOffset || cb.shadowTerminatorArgs.ds1Skinned != 0)
   {
     surface.minimalSurfaceInteraction.shadowTerminatorOffset = SharedTerminatorFix[pixel];
   }
@@ -715,7 +715,7 @@ RAB_Surface RAB_GetSurfaceForTemporalBiasCorrection(RAB_Surface currentSurface, 
       // Note: don't copy the positionError field because it's zero.
 
 #ifdef SHADOW_TERMINATOR_FIX_ALLOWED
-      if (cb.shadowTerminatorArgs.enableOffset)
+      if (cb.shadowTerminatorArgs.enableOffset || cb.shadowTerminatorArgs.ds1Skinned != 0)
       {
         // for temporal samples, it's important to load corresponding terminator offset;
         // because, if a base sample has the offset, but a temporal sample doesn't,

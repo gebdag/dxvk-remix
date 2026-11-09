@@ -19,6 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
+#include "rtx_dark_souls_skin.h"
 #include <random>
 #include <chrono>
 #include "rtx_resources.h"
@@ -733,7 +734,8 @@ namespace dxvk {
     }
 
     // Alloc / free images based on RtxOption
-    if (RtxOptions::ShadowTerminator::enableOffset()) {
+    // Fork (DS1): the skinned meshes' own switch (rtx.ds1Skin.skinnedShadowTerminator) goes through the same buffer.
+    if (RtxOptions::ShadowTerminator::enableOffset() || DxvkDarkSoulsSkin::skinnedShadowTerminator()) {
       for (auto& terminatorResource : m_raytracingOutput.m_sharedTerminatorFix) {
         if (!terminatorResource.isValid() || terminatorResource.image->info().extent != m_downscaledExtent) {
           terminatorResource = createImageResource(ctx, "shadow terminator fix", m_downscaledExtent, VK_FORMAT_R16_SFLOAT);

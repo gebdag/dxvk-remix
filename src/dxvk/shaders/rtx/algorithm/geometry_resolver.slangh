@@ -681,7 +681,7 @@ void geometryResolverOutputSurface<
   }
 
   // Written at every pixel, because RTXDI reads the previous frame's value at reprojected pixels that may have been inactive.
-  if (cb.shadowTerminatorArgs.enableOffset)
+  if (cb.shadowTerminatorArgs.enableOffset || cb.shadowTerminatorArgs.ds1Skinned != 0)
   {
     if (PRIMARY_SURFACE || SELECTED_INTEGRATION_SURFACE)
     {

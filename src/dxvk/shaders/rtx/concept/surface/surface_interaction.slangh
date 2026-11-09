@@ -512,7 +512,12 @@ SurfaceInteraction surfaceInteractionCreateImpl<let GenerateTangents : bool, let
 
     const vec3 geometryNormal = getBentNormal(flippedTriangleNormal, interpolatedNormal, ray.direction);
 
-    if (cb.shadowTerminatorArgs.enableOffset)
+    // Everything else writes no offset into the shared buffer when only the skinned switch is on.
+    surfaceInteraction.shadowTerminatorOffset = 0.0f;
+
+    // Fork (DS1): skinned meshes have their own switch (rtx.ds1Skin.skinnedShadowTerminator): their large low-poly triangles shadow one another in hard polygon
+    // shapes where the light grazes them, which the game's lighting never does.
+    if (cb.shadowTerminatorArgs.enableOffset || (cb.shadowTerminatorArgs.ds1Skinned != 0 && surface.isDs1Skinned))
     {
       float maxQuadArea = cb.shadowTerminatorArgs.maxArea;
 

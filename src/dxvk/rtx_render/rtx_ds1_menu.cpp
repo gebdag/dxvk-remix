@@ -21,6 +21,7 @@
 #include "rtx_dark_souls_swamp.h"
 #include "rtx_dark_souls_ripples.h"
 #include "rtx_dark_souls_specular.h"
+#include "rtx_dark_souls_skin.h"
 #include "rtx_dark_souls_effect_particles.h"
 #include "rtx_hdr_output.h"
 #include "../dxvk_context.h"
@@ -146,6 +147,7 @@ namespace dxvk {
     postFx.darkSoulsHaze().showImguiSettings();
 
     showParticles();
+    DxvkDarkSoulsSkin::showImguiSettings();
     DxvkDarkSoulsEffectParticles::showImguiSettings();
     DxvkDarkSoulsSwamp::showImguiSettings();
 

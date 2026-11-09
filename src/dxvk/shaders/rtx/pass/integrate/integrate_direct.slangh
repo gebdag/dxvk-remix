@@ -198,7 +198,7 @@ void integrate_direct_pass(uvec2 threadIndex)
   // Integrate the Direct portion of the Path
 
 #ifdef SHADOW_TERMINATOR_FIX_ALLOWED
-    if (cb.shadowTerminatorArgs.enableOffset)
+    if (cb.shadowTerminatorArgs.enableOffset || cb.shadowTerminatorArgs.ds1Skinned != 0)
     {
       // NOTE: can't be inside 'deserializeInteractions', as 'sampleAndStoreIndirectRayPathSample' stores data for other passes
       minimalSurfaceInteraction.shadowTerminatorOffset = SharedTerminatorFix[pixelCoordinate];

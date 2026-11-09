@@ -80,6 +80,7 @@
 #include "rtx_legacy_specular.h"
 #include "rtx_dark_souls_exposure.h"
 #include "rtx_dark_souls_ambient.h"
+#include "rtx_dark_souls_skin.h"
 #include "rtx_dark_souls_swamp.h"
 #include "rtx_dark_souls_ripples.h"
 #include "rtx_dark_souls_look.h"
@@ -1671,6 +1672,7 @@ namespace dxvk {
 
     // Note: shadow terminator image are allocated/freed based on this RtxOption
     constants.shadowTerminatorArgs.enableOffset = RtxOptions::ShadowTerminator::enableOffset();
+    constants.shadowTerminatorArgs.ds1Skinned = DxvkDarkSoulsSkin::skinnedShadowTerminator() ? 1 : 0;
     constants.shadowTerminatorArgs.maxArea = std::max(0.f, RtxOptions::ShadowTerminator::maxArea() * RtxOptions::getMeterToWorldUnitScale() * RtxOptions::getMeterToWorldUnitScale());
     constants.shadowTerminatorArgs.maxLength = std::max(0.f, RtxOptions::ShadowTerminator::maxLength() * RtxOptions::getMeterToWorldUnitScale());
 
