@@ -239,41 +239,19 @@ GpuParticle respawn(uint particleIdx, uint spawnCtxIdx, const GpuParticleSystem 
     color.a = 1.0f;
   }
 
-  // Fork (DS1): a hit's sparks, spawned in its first frame only. Each of the game's streaks runs along one spark's flight; the DS1
-  // proxy moved every streak's middle to the burst's centre and marked its ends u = -1 and +1. A spark starts at that centre and
-  // flies towards the end on its side of the spawn point, at a speed from the streak's length.
+  // Fork (DS1): a hit's sparks (rtx_dark_souls_effect_particles.h). The DS1 proxy draws one small triangle per streak of the game's effect at the hit, with
+  // the effect's colour and its speed in u. They leave in every direction, as the game's do (its effects give a spread of 180 degrees): those that go into the
+  // surface come back off it (particle_system_evolve).
   if (particleSystem.desc.ds1Sparks != 0)
   {
-    float3 minusEnd = 0.0f, plusEnd = 0.0f;
-    float minusCount = 0.0f, plusCount = 0.0f;
-    for (uint k = 0; k < 3; k++)
-    {
-      const float3 corner = mul(spawnCtx.spawnObjectToWorld, float4(positions[k], 1.f));
-      if (ds1Texcoords[k].x < 0.0f)
-      {
-        minusEnd += corner;
-        minusCount += 1.0f;
-      }
-      else
-      {
-        plusEnd += corner;
-        plusCount += 1.0f;
-      }
-    }
-    const float3 axis = minusCount > 0.0f && plusCount > 0.0f ? plusEnd / plusCount - minusEnd / minusCount : float3(0.0f, 0.0f, 0.0f);
-    const float len = length(axis);
-    const float side = ds1Texcoords[0].x * randomBary.x + ds1Texcoords[1].x * randomBary.y + ds1Texcoords[2].x * randomBary.z;
-    ds1Spawns = color.a > 0.004f && len > 1e-4f && abs(side) > 0.05f;
-    const float3 along = (len > 1e-4f ? axis / len : float3(0.0f, 1.0f, 0.0f)) * (side > 0.0f ? 1.0f : -1.0f);
-    // Each spark leaves within a cone around its streak (initialVelocityConeAngleDegrees, the spread), so the sparks of one
-    // streak do not fly along one line.
-    const float3 heading = sampleDirectionInCone(f16vec3(along), cos(radians(particleSystem.desc.initialVelocityConeAngleDegrees)),
-      float2(randomFloat(uint2(randomSeed++, particleCb.frameIdx)), randomFloat(uint2(randomSeed++, particleCb.frameIdx))));
-    // Speed per metre of half the streak.
-    const float speed = 0.5f * len * particleSystem.desc.initialVelocityFromNormal *
-                        lerp(0.6f, 1.2f, randomFloat(uint2(randomSeed++, particleCb.frameIdx)));
-    initialVelocity = heading * speed;
-    spawnPosition = minusCount > 0.0f && plusCount > 0.0f ? 0.5f * (minusEnd / minusCount + plusEnd / plusCount) : worldPosition;
+    ds1Spawns = color.a > 0.004f;
+    const float z = 1.0f - 2.0f * randomFloat(uint2(randomSeed++, particleCb.frameIdx));
+    const float phi = 2.0f * 3.14159265f * randomFloat(uint2(randomSeed++, particleCb.frameIdx));
+    const float r = sqrt(saturate(1.0f - z * z));
+    const float speed = ds1Texcoords[0].x * particleSystem.desc.initialVelocityFromNormal *
+                        lerp(0.7f, 1.3f, randomFloat(uint2(randomSeed++, particleCb.frameIdx)));
+    initialVelocity = float3(r * cos(phi), r * sin(phi), z) * speed;
+    spawnPosition = worldPosition;
   }
 
   // Spawn a particle

@@ -533,10 +533,10 @@ namespace dxvk {
     }
 
     float lambda = spawnRate * effectiveElapsedSecs;
-    // Fork (DS1): a hit's sparks (rtx_dark_souls_effect_particles.h) spawn once, in the hit's first frame: the rate is sparks
-    // per streak (a quad, two triangles), taken whole for this call.
+    // Fork (DS1): a hit's sparks (rtx_dark_souls_effect_particles.h) spawn once: the rate is sparks per streak of the game's effect (one
+    // triangle each), taken whole for this call.
     if (desc.ds1Sparks) {
-      lambda = spawnRate * float(drawCallState.getGeometryData().calculatePrimitiveCount()) * 0.5f;
+      lambda = spawnRate * float(drawCallState.getGeometryData().calculatePrimitiveCount());
     }
 
     // Poisson dist won't work well with these values (inf loop)
@@ -545,7 +545,8 @@ namespace dxvk {
     }
 
     std::poisson_distribution<uint32_t> distribution(lambda);
-    uint32_t numParticles = std::min(distribution(particleSystem->generator), desc.maxNumParticles);
+    // Fork (DS1): a hit is always its whole burst.
+    uint32_t numParticles = std::min(desc.ds1Sparks ? uint32_t(lambda + 0.5f) : distribution(particleSystem->generator), desc.maxNumParticles);
 
     // Capacity checks
     if (particleSystem->context.particleCount + particleSystem->context.spawnParticleCount + numParticles >= desc.maxNumParticles) {
@@ -553,7 +554,8 @@ namespace dxvk {
     }
 
     // Don't allow wraparound: CPU and GPU are implicitly synchronized, and this would allow the CPU to jump ahead.
-    if (particleSystem->context.particleHeadOffset + numParticles >= desc.maxNumParticles) {
+    // Fork (DS1): the spawn pass wraps its slots by itself, so a hit's burst runs on past the end of the ring instead of being cut to the slots left there.
+    if (!desc.ds1Sparks && particleSystem->context.particleHeadOffset + numParticles >= desc.maxNumParticles) {
       numParticles = desc.maxNumParticles - particleSystem->context.particleHeadOffset;
     }
 
@@ -1187,7 +1189,8 @@ namespace dxvk {
 
       // Handle wrap around at a safe point (we have already ensured that spawning cant induce a wrap around early).
       if (particleSystem.context.particleHeadOffset >= particleSystem.context.desc.maxNumParticles) {
-        particleSystem.context.particleHeadOffset = 0;
+        // Fork (DS1): past the end when a spark burst wrapped (0 for everything else, which stops exactly at the end).
+        particleSystem.context.particleHeadOffset -= particleSystem.context.desc.maxNumParticles;
       }
 
       particleSystem.spawnContextParticleMap.clear();

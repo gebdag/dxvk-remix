@@ -100,6 +100,12 @@ void collideParticleWithScene(inout GpuParticle p)
 
   // only collide if we've gone inside but not deeper than thickness
   float thickness = particleCb.particleSystem.desc.collisionThickness * particleCb.sceneScale;
+  // Fork (DS1): a spark moves further in a frame than the collision shell is thick, and would pass through the wall it hit.
+  const bool ds1Spark = particleCb.particleSystem.desc.ds1Sparks != 0;
+  if (ds1Spark)
+  {
+    thickness = max(thickness, length(relVel) * particleCb.deltaTimeSecs * 2.0f);
+  }
   if (signedDist < 0.0f && signedDist > -thickness)
   {
     switch(particleCb.particleSystem.desc.collisionMode) 
@@ -108,7 +114,11 @@ void collideParticleWithScene(inout GpuParticle p)
       {
         // reflect & apply restitution
         float3 vRef = reflect(relVel, n);
-        p.velocity = vRef * particleCb.particleSystem.desc.collisionRestitution + sceneVel;
+        // Fork (DS1): the game throws a hit's sparks in every direction. Those thrown into the surface they came from leave it at full
+        // speed, so a hit is a whole burst off the wall; only later contacts lose speed.
+        const float ds1Age = float(p.initialTimeToLive(particleCb.particleSystem)) - float(p.timeToLive);
+        const float restitution = ds1Spark && ds1Age < 0.08f ? 1.0f : particleCb.particleSystem.desc.collisionRestitution;
+        p.velocity = vRef * restitution + sceneVel;
       } break;
       case ParticleCollisionMode::Stop:
       {

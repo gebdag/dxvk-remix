@@ -83,11 +83,11 @@ namespace dxvk {
 
   bool DxvkDarkSoulsEffectParticles::emit(DxvkContext* ctx, uint32_t instanceIdx, const DrawCallState& drawCallState, const MaterialData& renderMaterialData) {
     const uint8_t kind = drawCallState.getMaterialData().ds1EffectParticles;
-    if ((kind == 1 && !motes()) || ((kind == 2 || kind == 3) && !sparks()) || kind == 0 || kind > 3) {
+    if ((kind == 1 && !motes()) || (kind == 3 && !sparks()) || kind == 0 || kind > 3) {
       return false;
     }
-    // A hit's later frames: its sparks fly already, the game's streaks only hide.
-    if (kind == 3) {
+    // The game's streaks only hide. The emitter is never shown, and with the sparks off spawns nothing.
+    if (kind == 3 || (kind == 2 && !sparks())) {
       return true;
     }
     // The particles take the draw's own material (self-lit, its blend), with the dot for its texture.
@@ -147,14 +147,13 @@ namespace dxvk {
       const float bright = std::max(sparkBrightness(), 0.0f);
       desc.ds1Sparks = 1;
       desc.maxNumParticles = 8192;
-      // A hit's sparks all spawn in its first frame: the rate carries sparks per streak, which the spawn count takes once per
+      // A hit's sparks all spawn when the game makes the hit: the rate carries sparks per streak, which the spawn count takes once per
       // call (RtxParticleSystemManager::getNumberOfParticlesToSpawn, ds1Sparks). Constant, so every hit shares one system.
       desc.spawnRatePerSecond = std::clamp(sparkCount(), 0.0f, 20.0f);
       desc.minTimeToLive = life * 0.5f;
       desc.maxTimeToLive = life * 1.5f;
-      // initialVelocityFromNormal carries the speed per metre of half streak (1/s) for the sparks' own spawn (ds1Sparks).
+      // initialVelocityFromNormal carries the scale on the speeds of the game's effects for the sparks' own spawn (ds1Sparks).
       desc.initialVelocityFromNormal = std::max(sparkSpeed(), 0.0f);
-      desc.initialVelocityConeAngleDegrees = std::clamp(sparkSpread(), 0.0f, 90.0f);
       desc.gravityForce = -981.0f;
       desc.dragCoefficient = 0.4f;
       desc.collisionThickness = 6.0f;
@@ -218,8 +217,7 @@ namespace dxvk {
     RemixGui::DragFloat("Mote Brightness", &moteBrightnessObject(), 0.01f, 0.0f, 8.0f, "%.2f");
     RemixGui::Checkbox("Hit Sparks", &sparksObject());
     RemixGui::DragFloat("Sparks per Streak", &sparkCountObject(), 0.1f, 0.0f, 20.0f, "%.1f");
-    RemixGui::DragFloat("Spark Spread (deg)", &sparkSpreadObject(), 0.5f, 0.0f, 90.0f, "%.1f");
-    RemixGui::DragFloat("Spark Speed (1/s)", &sparkSpeedObject(), 0.5f, 0.0f, 200.0f, "%.1f");
+    RemixGui::DragFloat("Spark Speed (x game)", &sparkSpeedObject(), 0.01f, 0.0f, 5.0f, "%.2f");
     RemixGui::DragFloat("Spark Size (cm)", &sparkSizeObject(), 0.05f, 0.1f, 10.0f, "%.2f");
     RemixGui::DragFloat("Spark Life (s)", &sparkLifeObject(), 0.01f, 0.05f, 5.0f, "%.2f");
     RemixGui::DragFloat("Spark Trail (frames)", &sparkTrailObject(), 0.05f, 0.0f, 10.0f, "%.2f");
