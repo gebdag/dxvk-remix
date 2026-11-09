@@ -881,6 +881,13 @@ namespace dxvk {
 
       // There is no such BLAS - create one
       if (build) {
+        // Fork (DS1): when a character piece's acceleration structure is built, for the proxy's [Transition] log. After this it is only
+        // refit, so geometry that was bad on this frame stays as it was built. Pieces of 100 triangles and up, a budget per run.
+        static int ds1BlasLogBudget = 2000;
+        if (ds1BlasLogBudget > 0 && !blasEntry->buildRanges.empty() && blasEntry->buildRanges[0].primitiveCount >= 100) {
+          --ds1BlasLogBudget;
+          Logger::info(str::format("[DS1 BLAS] frame ", currentFrame, " dynamic built, ", selectedBlas.ptr() ? "rebuilt" : "new", ", triangles ", blasEntry->buildRanges[0].primitiveCount));
+        }
         if (selectedBlas.ptr()) {
           // Move the BLAS used by this geometry to the common pool.
           // This also ensures the dynamic blas resource that's still being used by previous TLAS is properly tracked for the next frame
