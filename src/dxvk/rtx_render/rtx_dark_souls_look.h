@@ -54,6 +54,7 @@ namespace dxvk {
       const Resources::Resource& albedo,
       const Resources::Resource& shadingNormal,
       const Resources::Resource& additiveRadiance,
+      const Resources::Resource& lowResColor,
       const DxvkDarkSoulsHaze& haze,
       const Camera& camera,
       const float jitterOffset[2],
@@ -124,6 +125,7 @@ namespace dxvk {
                "Adapt as an eye does where the game's exposure stops: below the meter's floor (its luminance clamp) the view comes up, up to what the game's "
                "own light gives on the same surfaces, so dark interiors can be seen without lights being added and places dark in the game stay dark. "
                "What is bright stays. The game's meter does not see the lift.");
+    RTX_OPTION("rtx.ds1Look", float, eyeSkyMatch, 0.25f, "At a silhouette against the sky, how near (relative) an upscaled pixel must be to the sky's own colour to be left out of the eye's lift. The depth taps that tell sky from surface are at render resolution and blurred over a few texels, so without this the sky next to a dark object was lifted with it: a light outline. 0 = the taps alone.");
     RTX_OPTION("rtx.ds1Look", float, eyeMaxGain, 3.0f, "The most a dark part of the view is lifted, on gamma values. How far an eye adapts in the dark.");
     RTX_OPTION("rtx.ds1Look", float, eyeKnee, 1.25f, "How far below the meter's floor a view may lie with no lift at all: places the game keeps dim stay as they are (measured: views up to about this already match the game).");
     RTX_OPTION("rtx.ds1Look", float, eyeStrength, 0.85f, "How fully the view's lift follows what it is short of past the knee: 1 all the way, less stays darker, as dark rooms look to an eye.");

@@ -11,6 +11,7 @@
 // run with the colours they add scaled by the exposure. The clip comes last, as in the game.
 
 #include "rtx/pass/post_fx/post_fx_dark_souls_look.h"
+#include "rtx/pass/fork_ds1_ambient.h"
 #include "rtx/utility/common.slangh"
 #include "rtx/utility/color.slangh"
 #include "rtx/concept/camera/camera.slangh"
@@ -62,6 +63,12 @@ Sampler2D<float4> AdditiveRadiance;
 
 layout(binding = POST_FX_DS_LOOK_SCENE_EYE)
 Sampler2D<float2> EyeLevel;
+
+layout(binding = POST_FX_DS_LOOK_SCENE_SKY_MATTE)
+Sampler2D<float4> SkyMatte;
+
+layout(binding = POST_FX_DS_LOOK_SCENE_LOW_RES_COLOR)
+Sampler2D<float4> LowResColor;
 
 // The haze constants of a pixel: those of its surface's own set (the game hazes each draw with
 // its region's DrawParams), or the frame's single set for untagged surfaces.
@@ -293,9 +300,28 @@ void main(uint2 pixel : SV_DispatchThreadID)
   {
     const vec2 level = EyeLevel.SampleLevel(screenUV, 0.0f);
     const float share = min(pow(level.y / max(level.x, 1e-3f), cb.eyeLocal), 2.0f);
-    const float gain = lerp(min(pow(cb.eyeViewGain, share), cb.eyeMaxGain), 1.0f, resolvedSky);
+    // Where the taps are partly sky (a silhouette), the upscaled pixel itself says how much of it is sky: next to a dark object the sky
+    // was lifted with it, a light outline. Its own colour against the sky's at this spot decides.
+    float skyShare = resolvedSky;
+    const bool skyEdge = cb.eyeSkyMatch > 0.0f && resolvedSky > 0.0f && resolvedSky < 1.0f;
+    vec3 skyGamma = vec3(0.0f);
+    if (skyEdge)
+    {
+      const vec3 sky = cb.skyBrightness * ds1SkyRadiance(cb.skyGamma, cb.skyUnexpose, SkyMatte.SampleLevel(screenUV, 0.0f).rgb);
+      const float skyLevel = max(length(sky), 1e-6f);
+      skyShare = 1.0f - saturate(length(radiance - sky) / (cb.eyeSkyMatch * skyLevel));
+      skyGamma = pow(sky, vec3(1.0f / 2.2f)) * cb.exposure;
+    }
+    const float gain = lerp(min(pow(cb.eyeViewGain, share), cb.eyeMaxGain), 1.0f, skyShare);
     const float peak = max(g.r, max(g.g, g.b));
     g *= gain / (1.0f + min(peak, 1.0f) * (gain - 1.0f));
+    // A pixel on the silhouette itself is part sky, part object: lifted whole, its sky part came out brighter than the sky beside it.
+    // There it rises no higher than the sky (or than it already was).
+    // Weighted by how much of the pixel the taps call sky, so an object in front of a dimmer sky keeps its lift.
+    if (skyEdge)
+    {
+      g = lerp(g, min(g, max(unlifted, skyGamma)), resolvedSky);
+    }
   }
   // Whatever the eye makes of it, the frame's light is the same: the meter reads the frame without the lift.
   const float liftedLuminance = dot(saturate((g - unlifted) * resolvedA.rgb), vec3(0.2125f, 0.7154f, 0.0721f));
@@ -303,7 +329,19 @@ void main(uint2 pixel : SV_DispatchThreadID)
   // The game draws its additive particles after the fog, unfogged (their vertex shader gets c159.xy = (1, 0) for
   // them), and adds them in gamma: the haze above dimmed their share of the colour by the haze gain, so it
   // goes back. And it takes its subtractive ones off in gamma, absolutely, whatever is behind them.
-  g += additive * max(1.0f - resolvedA.rgb, vec3(0.0f));
+  // The layers' buffer is at render resolution: added as it is, a sharp unhazed layer (Seath's wings) showed its blocks. It gives only
+  // their share of the colour, a smooth fraction; the upscaled colour gives the detail.
+  // The share is taken against the frame before upscaling, sampled the same way, so it is a smooth fraction.
+  if (cb.lowResShare != 0u)
+  {
+    const vec3 lowResTotal = pow(max(LowResColor.SampleLevel(viewZUV, 0.0f).rgb, vec3(0.0f)), vec3(1.0f / 2.2f)) * cb.exposure;
+    const vec3 additiveShare = saturate(additive / max(lowResTotal, vec3(1e-4f)));
+    g += additiveShare * unlifted * max(1.0f - resolvedA.rgb, vec3(0.0f));
+  }
+  else
+  {
+    g += additive * max(1.0f - resolvedA.rgb, vec3(0.0f));
+  }
   g = max(g - subtract, vec3(0.0f));
 
   // The far DoF rate in its own texture: the game keeps it in its scene's alpha, but here other

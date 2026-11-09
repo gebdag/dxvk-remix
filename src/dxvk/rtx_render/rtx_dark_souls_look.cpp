@@ -64,6 +64,8 @@ namespace dxvk {
         TEXTURE2D(POST_FX_DS_LOOK_SCENE_HAZE_REGION)
         SAMPLER2D(POST_FX_DS_LOOK_SCENE_ADDITIVE)
         SAMPLER2D(POST_FX_DS_LOOK_SCENE_EYE)
+        SAMPLER2D(POST_FX_DS_LOOK_SCENE_SKY_MATTE)
+        SAMPLER2D(POST_FX_DS_LOOK_SCENE_LOW_RES_COLOR)
       END_PARAMETER()
     };
     PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookSceneShader);
@@ -435,6 +437,7 @@ namespace dxvk {
     const Resources::Resource& albedo,
     const Resources::Resource& shadingNormal,
     const Resources::Resource& additiveRadiance,
+    const Resources::Resource& lowResColor,
     const DxvkDarkSoulsHaze& haze,
     const Camera& camera,
     const float jitterOffset[2],
@@ -465,6 +468,16 @@ namespace dxvk {
     args.eyeMaxGain = std::max(eyeMaxGain(), 1.0f);
     // HDR10 output: the scene keeps what the game's 8-bit target would clip (rtx_hdr_output.h).
     args.keepHeadroom = DxvkHdrOutput::renderHeadroom() && DxvkHdrOutput::ds1Headroom() ? 1u : 0u;
+    // The sky as the composite maps it (RtxComposite), for the eye's sky test at silhouettes.
+    const Resources::Resource skyMatte = static_cast<RtxContext*>(ctx.ptr())->getResourceManager().getSkyMatte(ctx);
+    const float skyExposure = DxvkDarkSoulsExposure::drawnExposure();
+    args.skyGamma = RtxOptions::skyForceHDR() ? 1u : 2u;
+    args.skyUnexpose = skyExposure > 0.0f ? 1.0f / skyExposure : 1.0f;
+    args.skyBrightness = RtxOptions::skyBrightness();
+    args.eyeSkyMatch = skyMatte.isValid() ? std::max(eyeSkyMatch(), 0.0f) : 0.0f;
+    const bool lowResShare = lowResColor.isValid() && lowResColor.image != inOutColor.image &&
+      lowResColor.image->mipLevelExtent(0).width < inOutColor.image->mipLevelExtent(0).width;
+    args.lowResShare = lowResShare ? 1u : 0u;
     args.hazeEnable = hazeEnable() && hazeValid ? 1u : 0u;
     const bool dof = dofEnable() && gameActive();
     args.dofFarBegin = dofFarBegin();
@@ -558,6 +571,11 @@ namespace dxvk {
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HAZE_REGION, m_hazeRegion.view, nullptr);
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_ADDITIVE, additiveRadiance.view, nullptr);
     ctx->bindResourceSampler(POST_FX_DS_LOOK_SCENE_ADDITIVE, m_linearSampler);
+    // Without a sky this frame the test is off (args.eyeSkyMatch 0) and any view stands in.
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_SKY_MATTE, skyMatte.isValid() ? skyMatte.view : additiveRadiance.view, nullptr);
+    ctx->bindResourceSampler(POST_FX_DS_LOOK_SCENE_SKY_MATTE, m_linearSampler);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_LOW_RES_COLOR, lowResShare ? lowResColor.view : additiveRadiance.view, nullptr);
+    ctx->bindResourceSampler(POST_FX_DS_LOOK_SCENE_LOW_RES_COLOR, m_linearSampler);
     ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookSceneShader::getShader());
     const VkExtent3D workgroups = util::computeBlockCount(extent, VkExtent3D { 16, 8, 1 });
     ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
