@@ -74,8 +74,8 @@ SssTracingResult traceSssRay(
   // Resolve normal and TexCoord
   RayInteraction sssRayInteraction = rayInteractionCreate(sssSampleRay, rayHitInfo);
   Surface sssSampleSurface = surfaces[sssRayInteraction.surfaceIndex];
-  // Note: The result only carries the position, normal, tangents and texture coordinates, so motion and the shadow terminator offset are skipped.
-  SurfaceInteraction surfaceInteraction = surfaceInteractionCreateWithoutMotion<SurfaceGenerateTangents>(
+  // Fork (DS1): the sample's shadow ray needs its own terminator offset: skin's diffuse is all sample rays, and low-poly character meshes shadow themselves in polygon shapes without it.
+  SurfaceInteraction surfaceInteraction = surfaceInteractionCreate<SurfaceGenerateTangents>(
     sssSampleSurface, sssRayInteraction, sssSampleRay);
 
   const OpaqueSurfaceMaterial sssOpaqueSurfaceMaterial = opaqueSurfaceMaterialCreate(surfaceMaterials[sssSampleSurface.surfaceMaterialIndex]);
@@ -87,6 +87,7 @@ SssTracingResult traceSssRay(
   sssTracingResult.subsurfaceMaterialIndex = sssTracingResult.hasHit ? sssOpaqueSurfaceMaterial.subsurfaceMaterialIndex : SURFACE_INDEX_INVALID;
   sssTracingResult.sssMinimalSurfaceInteraction.position = surfaceInteraction.position;
   sssTracingResult.sssMinimalSurfaceInteraction.positionError = surfaceInteraction.positionError;
+  sssTracingResult.sssMinimalSurfaceInteraction.shadowTerminatorOffset = surfaceInteraction.shadowTerminatorOffset;
   sssTracingResult.sssMinimalSurfaceInteraction.geometryNormal = surfaceInteraction.geometryNormal;
   sssTracingResult.sssMinimalSurfaceInteraction.geometryTangent = surfaceInteraction.geometryTangent;
   sssTracingResult.sssMinimalSurfaceInteraction.geometryBitangent = surfaceInteraction.geometryBitangent;
@@ -318,6 +319,7 @@ float3 evalSingleScatteringTransmission(
 
     const Ray transmissionRay = rayCreateDirection(minimalRayInteraction, minimalSurfaceInteraction, viewRay, refractedRayDirection, true);
     SssTracingResult transmissionTracingResult = traceSssRay(transmissionRay, OBJECT_MASK_OPAQUE, RAY_FLAG_NONE);
+    transmissionTracingResult.sssMinimalSurfaceInteraction.shadowTerminatorOffset = 0.0f; // Fork (DS1): for the diffusion samples only; this hit is the far wall, seen from inside
 
     // Note: In theory, we don't need to check hit because the model should be water tight, which is nessary for our SSS algorithm.
     //       But we still check here for extra security just in case the model is not water tight or we suffer on self-intersections.
@@ -434,6 +436,7 @@ float3 evalSingleScatteringTransmission(
       singleScatteringRay.tMax = floatMax;
 
       SssTracingResult singleScatteringTracingResult = traceSssRay(singleScatteringRay, OBJECT_MASK_OPAQUE, RAY_FLAG_NONE);
+      singleScatteringTracingResult.sssMinimalSurfaceInteraction.shadowTerminatorOffset = 0.0f; // Fork (DS1): see the transmission ray above
 
       if (!singleScatteringTracingResult.hasHit)
       {
