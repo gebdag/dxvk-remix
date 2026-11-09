@@ -160,11 +160,13 @@ SssDiffusionProfileResult evalSssDiffusionProfile(
     sssSampleRay.direction = -diskNormalWorldSpace; // Shooting a ray from sample disk towards the surface
     sssSampleRay.tMax = max(maxSampleRadius * 2.0f, 0.1f);
 
-    const SssTracingResult sssTracingResult = traceSssRay(sssSampleRay, OBJECT_MASK_OPAQUE, RAY_FLAG_CULL_BACK_FACING_TRIANGLES);
+    // Fork (DS1): character meshes wind the other way round, so culling back faces took these rays through the skin to the far side of the body, which the light does not reach.
+    const SssTracingResult sssTracingResult = traceSssRay(sssSampleRay, OBJECT_MASK_OPAQUE, surfaces[primarySurfaceIndex].isDs1Skinned ? RAY_FLAG_NONE : RAY_FLAG_CULL_BACK_FACING_TRIANGLES);
 
     // Skip this sample if the ray misses or hits a different material than the center material.
     // tMax restricts the ray distance to a local region, mitigating the risk of sampling other meshes.
-    if (!sssTracingResult.hasHit || primarySubsurfaceMaterialIndex != sssTracingResult.subsurfaceMaterialIndex)
+    if (!sssTracingResult.hasHit ||
+        primarySubsurfaceMaterialIndex != sssTracingResult.subsurfaceMaterialIndex)
     {
       continue;
     }

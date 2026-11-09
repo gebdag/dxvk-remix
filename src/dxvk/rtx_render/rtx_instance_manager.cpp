@@ -29,6 +29,7 @@
 #include "rtx_scene_manager.h"
 #include "rtx_instance_manager.h"
 #include "rtx_dark_souls_look.h"
+#include "rtx_dark_souls_skin.h"
 #include "rtx_camera_manager.h"
 #include "rtx_options.h"
 #include "rtx_materials.h"
@@ -1225,7 +1226,9 @@ namespace dxvk {
             patchedMaterialData->getOpaqueMaterialData().setEmissiveColorTexture(patchedMaterialData->getOpaqueMaterialData().getAlbedoOpacityTexture());
           }
 
-          currentInstance.m_isSubsurface = materialData->getOpaqueMaterialData().getSubsurfaceDiffusionProfile();
+          // Fork (DS1): tagged skin scatters too (rtx_dark_souls_skin.h); the sample rays only see the instances of the SSS TLAS, which this flag fills. Without it they all miss.
+          currentInstance.m_isSubsurface = materialData->getOpaqueMaterialData().getSubsurfaceDiffusionProfile() ||
+            (DxvkDarkSoulsSkin::enable() && drawCall.getMaterialData().isDs1SkinScattering());
         }
       }
 

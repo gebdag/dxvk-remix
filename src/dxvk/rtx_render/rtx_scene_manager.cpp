@@ -1752,6 +1752,10 @@ namespace dxvk {
       preCreationHash = XXH64(&texturePresenceMask, sizeof(texturePresenceMask), preCreationHash);
     }
 
+    // Fork (DS1): skin is per draw (the stage 5 tag), not part of the material's hash: without this the first untagged draw of a material in a frame decides for all of them.
+    const bool ds1SkinDraw = DxvkDarkSoulsSkin::enable() && drawCallState.getMaterialData().isDs1SkinScattering();
+    preCreationHash = XXH64(&ds1SkinDraw, sizeof(ds1SkinDraw), preCreationHash);
+
     auto iter = m_preCreationSurfaceMaterialMap.find(preCreationHash);
     if (iter != m_preCreationSurfaceMaterialMap.end()) {
       if (out_indexInCache) {
@@ -1854,7 +1858,7 @@ namespace dxvk {
       subsurfaceMeasurementDistance = opaqueMaterialData.getSubsurfaceMeasurementDistance() * RtxOptions::SubsurfaceScattering::surfaceThicknessScale();
 
       // Fork (DS1): skin scatters whatever mod material it has (rtx_dark_souls_skin.h). Not a face's blended second layer.
-      const bool ds1Skin = DxvkDarkSoulsSkin::enable() && drawCallState.getMaterialData().isDs1Skin && !drawCallState.getMaterialData().blendMode.enableBlending;
+      const bool ds1Skin = ds1SkinDraw;
       const bool isSubsurfaceScatteringDiffusionProfile = opaqueMaterialData.getSubsurfaceDiffusionProfile() || ds1Skin;
 
       if ((RtxOptions::SubsurfaceScattering::enableThinOpaque()       && subsurfaceMeasurementDistance > 0.0f) ||

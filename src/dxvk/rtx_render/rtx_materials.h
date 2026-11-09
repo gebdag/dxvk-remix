@@ -2210,6 +2210,10 @@ struct LegacyMaterialData {
   float ds1AlbedoOffset[3] = {};
   // Fork: a skin draw (rtx_dark_souls_skin.h). Per draw, not part of the identity.
   bool isDs1Skin = false;
+  // Only fully opaque skin scatters: the SSS rays commit opaque hits alone, so an alpha-tested surface would lose its diffuse to samples that all miss.
+  bool isDs1SkinScattering() const {
+    return isDs1Skin && !blendMode.enableBlending && (AlphaTestType) alphaTestCompareOp == AlphaTestType::kAlways;
+  }
   // Fork: DS1 self-lit ambient emission (linear, per unit albedo) from the stage-3 tag, see
   // Surface::ds1SelfLit. Per draw, not part of the identity.
   bool hasDs1SelfLit = false;
