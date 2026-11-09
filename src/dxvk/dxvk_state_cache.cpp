@@ -1,3 +1,4 @@
+#include <atomic>
 /*
 * Copyright (c) 2021-2023, NVIDIA CORPORATION. All rights reserved.
 *
@@ -227,6 +228,7 @@ namespace dxvk {
     }
     
     m_writerThread = dxvk::thread([this] () { writerFunc(); });
+    m_pipelineCacheSaveThread = dxvk::thread([this] () { pipelineCacheSaveFunc(); });
   }
   
 
@@ -412,6 +414,9 @@ namespace dxvk {
       worker.join();
     
     m_writerThread.join();
+    if (m_pipelineCacheSaveThread.joinable()) {
+      m_pipelineCacheSaveThread.join();
+    }
   }
 
 
@@ -1070,9 +1075,16 @@ namespace dxvk {
 
 // NV-DXVK start
       if (item.isRemixShader) {
-        // Fork: the last of a batch of Remix shaders: keep what was compiled for the next launch.
+        // Fork: the last of a batch of Remix shaders: keep what was compiled for the next launch. The startup batch at once. Not the later ones: the cache is over a
+        // gigabyte, reading it out takes seconds and holds the driver's cache while it does, so a batch finishing in play froze the game for 4.9 s at a load.
+        // Those wait for compiling to go quiet (pipelineCacheSaveFunc).
         if (--m_workerCompilingRemixShaders == 0) {
-          m_pipeManager->savePipelineCache();
+          static std::atomic<bool> s_startupBatchSaved { false };
+          if (!s_startupBatchSaved.exchange(true)) {
+            m_pipeManager->savePipelineCache();
+          } else {
+            m_pipelineCacheSaveWanted += 1;
+          }
         }
       }
 // NV-DXVK end
@@ -1083,6 +1095,25 @@ namespace dxvk {
         m_workerItemsInFlight.erase(item.hash());
       }
       // NV-DXVK end
+    }
+  }
+
+
+  void DxvkStateCache::pipelineCacheSaveFunc() {
+    // Fork: see workerFunc. A batch of Remix shaders that finished in play is written once no other has finished for this long.
+    constexpr int kQuietSeconds = 20;
+    uint32_t saved = 0;
+    int quiet = 0;
+    uint32_t seen = 0;
+    while (!m_stopThreads.load()) {
+      Sleep(1000);
+      const uint32_t wanted = m_pipelineCacheSaveWanted.load();
+      quiet = wanted == seen ? quiet + 1 : 0;
+      seen = wanted;
+      if (wanted != saved && quiet >= kQuietSeconds) {
+        m_pipeManager->savePipelineCache();
+        saved = wanted;
+      }
     }
   }
 

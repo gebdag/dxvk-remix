@@ -193,6 +193,9 @@ namespace dxvk {
     dxvk::condition_variable          m_writerCond;
     std::queue<WriterItem>            m_writerQueue;
     dxvk::thread                      m_writerThread;
+    // Fork: batches of Remix shaders finished in play, and the thread that writes them out once compiling is quiet.
+    std::atomic<uint32_t>             m_pipelineCacheSaveWanted = { 0 };
+    dxvk::thread                      m_pipelineCacheSaveThread;
 
     DxvkShaderKey getShaderKey(
       const Rc<DxvkShader>&           shader) const;
@@ -250,6 +253,8 @@ namespace dxvk {
     void workerFunc();
 
     void writerFunc();
+
+    void pipelineCacheSaveFunc();
 
     std::wstring getCacheFileName() const;
     
