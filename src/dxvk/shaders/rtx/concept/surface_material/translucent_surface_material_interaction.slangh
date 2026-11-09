@@ -226,6 +226,7 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
   translucentSurfaceMaterialInteraction.normalDetail = float(1.0 - dot(float3(translucentSurfaceMaterialInteraction.shadingNormal), float3(surfaceInteraction.geometryNormal)));
   translucentSurfaceMaterialInteraction.baseReflectivity = translucentSurfaceMaterial.baseReflectivity;
   translucentSurfaceMaterialInteraction.ds1ReflectionTint = vec3(1.0f);
+  translucentSurfaceMaterialInteraction.ds1TransmissionScale = 1.0f;
   translucentSurfaceMaterialInteraction.ds1RefractionSmear = 0.0f;
   if (cb.translucentMaterialArgs.animatedWaterEnable && surface.isAnimatedWater && surface.isDs1Water)
   {
@@ -239,6 +240,15 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
     // Never quite 0: the resolver tells a water body by it (geometryResolverDs1WaterRefraction).
     translucentSurfaceMaterialInteraction.ds1RefractionSmear =
       max(surface.ds1WaterSmear * saturate(float(surfaceInteraction.vertexColor.a)), 1e-4f);
+    if (surface.isDs1WaterGameLook)
+    {
+      // The game lerps towards its murk, c127, by c127.w * vertex alpha, in gamma; the whole surface (reflection and fog) fades in by
+      // min(alpha, 0.8) / 0.8 along the shore, so the bank shows through at the water's edge.
+      const float alpha = saturate(float(surfaceInteraction.vertexColor.a));
+      translucentSurfaceMaterialInteraction.baseReflectivity = 0.0f;
+      translucentSurfaceMaterialInteraction.ds1TransmissionScale = pow(1.0f - float(reflection >> 24) / 255.0f * alpha, 2.2f);
+      translucentSurfaceMaterialInteraction.ds1ReflectionTint *= pow(min(alpha, 0.8f) * 1.25f, 2.2f);
+    }
   }
   translucentSurfaceMaterialInteraction.refractiveIndex = translucentSurfaceMaterial.refractiveIndex;
 
@@ -282,6 +292,7 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
   translucentSurfaceMaterialInteraction.diffuseColor = polymorphicSurfaceMaterialInteraction.vdata1;
   translucentSurfaceMaterialInteraction.baseReflectivity = polymorphicSurfaceMaterialInteraction.fdata0;
   translucentSurfaceMaterialInteraction.ds1ReflectionTint = gammaToLinearFast(unorm4x8ToFloat4x32(polymorphicSurfaceMaterialInteraction.i32data0).rgb);
+  translucentSurfaceMaterialInteraction.ds1TransmissionScale = pow(unorm4x8ToFloat4x32(polymorphicSurfaceMaterialInteraction.i32data0).a, 2.2f);
   translucentSurfaceMaterialInteraction.ds1RefractionSmear = polymorphicSurfaceMaterialInteraction.fdata5;
   translucentSurfaceMaterialInteraction.refractiveIndex = polymorphicSurfaceMaterialInteraction.fdata1;
   translucentSurfaceMaterialInteraction.thicknessOrMeasurementDistance = polymorphicSurfaceMaterialInteraction.fdata2;
@@ -330,6 +341,7 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
     gBufferMemoryPolymorphicSurfaceMaterialInteraction.baseReflectivity.x;
   // Note: Not stored in the G-buffer; the reflection it tints is sampled before the G-buffer is written.
   translucentSurfaceMaterialInteraction.ds1ReflectionTint = vec3(1.0f);
+  translucentSurfaceMaterialInteraction.ds1TransmissionScale = 1.0f;
   // Fork (DS1): the water refraction smear is not stored in the G-buffer, so the PSR prepare pass (PSR
   // without NRC or SHARC) refracts without it.
   translucentSurfaceMaterialInteraction.ds1RefractionSmear = 0.0f;
@@ -720,7 +732,7 @@ SurfaceMaterialInteractionSample translucentSurfaceMaterialInteractionCalcSpecul
       // Calculate the throughput of the sample
 
       // Note: Simplified version of (weight / solidAnglePdf) * (n.l)
-      throughput = float(1.0f - outsideFresnel).xxx;
+      throughput = float(1.0f - outsideFresnel).xxx * translucentSurfaceMaterialInteraction.ds1TransmissionScale;
 
       // Flip the inside medium flag as transmission occured
 
@@ -1073,7 +1085,7 @@ SurfaceMaterialInteractionPSRSample translucentSurfaceMaterialInteractionCalcPSR
 
       // Calculate the attenuation of the sample
 
-      attenuation = float(1.0f - outsideFresnel).xxx;
+      attenuation = float(1.0f - outsideFresnel).xxx * translucentSurfaceMaterialInteraction.ds1TransmissionScale;
 
       // Calculate the vector transform matrix for the refraction event
 

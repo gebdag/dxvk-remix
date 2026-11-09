@@ -338,8 +338,8 @@ struct RtSurface {
     textureSpritesheetData |= (static_cast<uint32_t>(spriteSheetFPS) << 16);
     // pack decalSortOrder into data13.x's last 8 bits.
     // Fork: bit 31, a DS1 thin wall (Surface::isDs1ThinWall); the sort order keeps the 7 bits below it.
-    // A thin wall's sort order stays below 0x7D: 0xFD-0xFF in the top byte are the foliage, fog gate and lamp markers.
-    const uint32_t ds1SortOrder = isDs1ThinWall ? std::min<uint32_t>(decalSortOrder & 0x7F, 0x7C) : (decalSortOrder & 0x7F);
+    // A thin wall's sort order stays below 0x7C: 0xFC-0xFF in the top byte are the painted colour, foliage, fog gate and lamp markers.
+    const uint32_t ds1SortOrder = isDs1ThinWall ? std::min<uint32_t>(decalSortOrder & 0x7F, 0x7B) : (decalSortOrder & 0x7F);
     textureSpritesheetData |= (ds1SortOrder << 24) | (isDs1ThinWall ? (1u << 31) : 0);
     // Fork: all eight, a DS1 lamp lighting rays pass (Surface::isDs1NoShadow).
     textureSpritesheetData |= isDs1NoShadow ? 0xFF000000u : 0u;
@@ -350,6 +350,10 @@ struct RtSurface {
     // Fork: 0xFD, DS1 foliage lighting rays pass in part (Surface::isDs1Foliage).
     if (isDs1Foliage) {
       textureSpritesheetData = (textureSpritesheetData & 0x00FFFFFFu) | 0xFD000000u;
+    }
+    // Fork: 0xFC, a DS1 surface whose vertex colour is painted shade (Surface::isDs1PaintedColour).
+    if (isDs1PaintedColour) {
+      textureSpritesheetData = (textureSpritesheetData & 0x00FFFFFFu) | 0xFC000000u;
     }
 
     writeGPUHelper(data, offset, textureSpritesheetData);
@@ -378,6 +382,8 @@ struct RtSurface {
     textureFlags |= (static_cast<uint32_t>(ds1HazeSet) & 0xF) << 20;
     textureFlags |= (static_cast<uint32_t>(ds1UnlitExposurePower) & 0x3) << 24;
     textureFlags |= isDs1Water && !eyeParams ? (1 << 26) : 0;
+    // Fork: bit 28 on a DS1 water surface: the body takes the game's murk and reflection weight (Surface::isDs1WaterGameLook).
+    textureFlags |= isDs1Water && ds1WaterGameLook && !eyeParams ? (1 << 28) : 0;
     // Fork: bit 28, data15.x holds the DS1 lightmap level (Surface::ds1SunLightmap). Upstream took
     // data15.w for the surface material index, so the DS1 values share data15.xyz, which only eyes use.
     textureFlags |= hasDs1AlbedoOffset && !eyeParams && !isDs1Water ? (1 << 27) : 0;
@@ -499,6 +505,8 @@ struct RtSurface {
   bool isDs1NoShadow = false;
   // Fork: DS1 foliage, passed by lighting rays in part (Surface::isDs1Foliage).
   bool isDs1Foliage = false;
+  // Fork: DS1 surface whose vertex colour is painted shade, kept as the game shows it (Surface::isDs1PaintedColour).
+  bool isDs1PaintedColour = false;
   // Fork: a draw of the DS1 player's body: its vertices wet the body against the water (rtx_dark_souls_ripples.h).
   bool isDs1WetBody = false;
   // Fork: DS1 haze set slot (1-14, 0 = none, 15 = unhazed), see post_fx_dark_souls_haze.h.
@@ -510,6 +518,8 @@ struct RtSurface {
   uint32_t ds1SunLightmap = 0;
   // Fork: DS1 water's second wave layer, layer strengths and refraction smear, see Surface::isDs1Water.
   bool isDs1Water = false;
+  // Fork: the water body takes the game's murk and reflection weight (Surface::isDs1WaterGameLook).
+  bool ds1WaterGameLook = false;
   float ds1WaterLayer2[3] = {};
   uint32_t ds1WaterStrength = 0;
   float ds1WaterSmear = 0.0f;
@@ -2177,6 +2187,8 @@ struct LegacyMaterialData {
   bool isDs1CameraPasses = false;
   // Fork: drawn with the DS1 proxy's foliage marker (Surface::isDs1Foliage). Per draw, not part of the identity.
   bool isDs1Foliage = false;
+  // Fork: drawn with the DS1 proxy's painted colour marker (Surface::isDs1PaintedColour). Per draw, not part of the identity.
+  bool isDs1PaintedColour = false;
   // Fork: DS1 haze set slot from the haze marker (not part of the material's identity: the same
   // material is drawn in several regions).
   uint8_t ds1HazeSet = 0;
@@ -2189,6 +2201,8 @@ struct LegacyMaterialData {
   // layers' normal strengths (two halfs) and refraction smear, see Surface::isDs1Water. Per draw, not part of
   // the identity.
   bool isDs1Water = false;
+  // Fork: the water body takes the game's murk and reflection weight (Surface::isDs1WaterGameLook).
+  bool ds1WaterGameLook = false;
   float ds1WaterLayer2[3] = {};
   uint32_t ds1WaterStrength = 0;
   float ds1WaterSmear = 0.0f;

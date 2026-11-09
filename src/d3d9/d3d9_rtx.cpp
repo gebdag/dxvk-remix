@@ -1317,6 +1317,8 @@ namespace dxvk {
         m_activeDrawCallState.materialData.isDs1ThinWall = d3d9State().textureStages[4][DXVK_TSS_CONSTANT] == 0xD4000003u;
         // Fork: DS1 foliage (stage 4 0xD4000006), see Surface::isDs1Foliage.
         m_activeDrawCallState.materialData.isDs1Foliage = d3d9State().textureStages[4][DXVK_TSS_CONSTANT] == 0xD4000006u;
+        // Fork: DS1 painted vertex colour (stage 4 0xD400000C), see Surface::isDs1PaintedColour.
+        m_activeDrawCallState.materialData.isDs1PaintedColour = d3d9State().textureStages[4][DXVK_TSS_CONSTANT] == 0xD400000Cu;
         // Fork: DS1 albedo offset in stage 5's D3DTSS_CONSTANT (0xD3rrggbb, signed bytes / 255): the
         // character creator's skin tone, which the game's character shaders add to the diffuse
         // texture (PS c156). See Surface::ds1AlbedoOffset.
@@ -1382,6 +1384,8 @@ namespace dxvk {
           water.ds1WaterLayer2[2] = layer2.data[2].y;
           water.ds1WaterStrength = d3d9State().textureStages[1][DXVK_TSS_CONSTANT];
           water.ds1WaterSmear = layer2.data[3].x;
+          // Stage 3 BUMPENVLOFFSET 0xD9000001: this body takes the game's murk and reflection weight (Surface::isDs1WaterGameLook).
+          water.ds1WaterGameLook = d3d9State().textureStages[3][DXVK_TSS_BUMPENVLOFFSET] == 0xD9000001u;
           // Layer 3 in stage 2's transform the same way, its strength in _41 (0 without one).
           const bool hasLayer3 = (d3d9State().textureStages[2][DXVK_TSS_TEXTURETRANSFORMFLAGS] & 0x3) == D3DTTFF_COUNT2;
           const Matrix4& layer3 = d3d9State().transforms[GetTransformIndex(D3DTS_TEXTURE2)];

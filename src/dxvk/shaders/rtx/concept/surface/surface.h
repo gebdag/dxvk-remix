@@ -535,7 +535,7 @@ struct Surface
   // from outside meet a back face or a front not turned towards their origin, and stop.
   property bool isDs1ThinWall
   {
-    get { return packedFlagGet(data13.x, 1u << 31) && (data13.x >> 24) < 0xFDu; }
+    get { return packedFlagGet(data13.x, 1u << 31) && (data13.x >> 24) < 0xFCu; }
   }
 
   // Fork: the opaque quad that closes a DS1 fog gate's door, where the gate is a volume now (game/fog_gates in the proxy). The camera's rays pass it, so the door shows the
@@ -560,6 +560,14 @@ struct Surface
   property bool isDs1Foliage
   {
     get { return (data13.x >> 24) == 0xFDu; }
+  }
+
+  // Fork: a DS1 surface whose vertex colour is shade the artists painted, not baked lighting to divide out (the proxy's table
+  // sky/painted_meshes.txt): Ash Lake's bed and the trunks below the water fade to black with depth by it. It goes into the albedo
+  // unchanged, while that is still gamma, which is the game's own product. The thin wall byte value 0xFC.
+  property bool isDs1PaintedColour
+  {
+    get { return (data13.x >> 24) == 0xFCu; }
   }
 
   // Fork: the DS1 haze set the draw was tagged with (1-14, 0 = none; 15: isDs1Unhazed): the slot of its own fog and
@@ -637,7 +645,7 @@ struct Surface
   // material index); the skinned tag is textureFlags bit 29.
   property uint ds1SunLightmap
   {
-    get { return packedFlagGet(data13.z, 1 << 28) ? data15.x : packedFlagGet(data13.z, 1 << 29) ? 0xD2000000u : 0u; }
+    get { return packedFlagGet(data13.z, 1 << 28) && !isDs1Water ? data15.x : packedFlagGet(data13.z, 1 << 29) ? 0xD2000000u : 0u; }
   }
 
   // Fork: a skinned DS1 draw: a character (textureFlags bit 29).
@@ -699,6 +707,14 @@ struct Surface
   // data15.xyz (data15.w is the surface material index): x = half scale | unorm16 offset u << 16,
   // y = unorm16 offset v | half refraction smear << 16, both offsets wrapped to [0, 1); z = the two strength
   // halves (RtSurface::writeGPUData).
+  // Fork: a DS1 water body the proxy marks: its tFactor is the game's reflection colour (c132 * c131) in rgb and its murk (c127.w) in
+  // alpha, read by the translucent material with the vertex alpha along the shore. Bit 28 on a water surface only: elsewhere it is the
+  // lightmap level's flag.
+  property bool isDs1WaterGameLook
+  {
+    get { return isDs1Water && packedFlagGet(data13.z, 1 << 28); }
+  }
+
   property vec3 ds1WaterLayer2
   {
     get { return vec3(f16tof32(data15.x & 0xFFFFu), float(data15.x >> 16) / 65536.0f, float(data15.y & 0xFFFFu) / 65536.0f); }

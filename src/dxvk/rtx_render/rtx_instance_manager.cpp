@@ -1142,11 +1142,13 @@ namespace dxvk {
         currentInstance.surface.isDs1CameraPasses = drawCall.getMaterialData().isDs1CameraPasses && DxvkDarkSoulsLook::isActive();
         currentInstance.surface.isDs1NoShadow = drawCall.getMaterialData().isDs1NoShadow;
         currentInstance.surface.isDs1Foliage = drawCall.getMaterialData().isDs1Foliage;
+        currentInstance.surface.isDs1PaintedColour = drawCall.getMaterialData().isDs1PaintedColour;
         currentInstance.surface.isDs1WetBody = drawCall.getMaterialData().isDs1WetBody;
         currentInstance.surface.ds1HazeSet = drawCall.getMaterialData().ds1HazeSet;
         currentInstance.surface.ds1UnlitExposurePower = drawCall.getMaterialData().ds1UnlitExposurePower;
         currentInstance.surface.ds1SunLightmap = drawCall.getMaterialData().ds1SunLightmap;
         currentInstance.surface.isDs1Water = drawCall.getMaterialData().isDs1Water;
+        currentInstance.surface.ds1WaterGameLook = drawCall.getMaterialData().ds1WaterGameLook;
         std::copy(std::begin(drawCall.getMaterialData().ds1WaterLayer2), std::end(drawCall.getMaterialData().ds1WaterLayer2),
                   currentInstance.surface.ds1WaterLayer2);
         currentInstance.surface.ds1WaterStrength = drawCall.getMaterialData().ds1WaterStrength;

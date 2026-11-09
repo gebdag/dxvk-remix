@@ -271,6 +271,9 @@ struct TranslucentSurfaceMaterialInteraction
   // tint, grey (Surface::isDs1Water); 1 for everything else.
   vec3 ds1ReflectionTint;
 
+  // Fork (DS1): what a DS1 water body's murk leaves of the light through it (Surface::isDs1WaterGameLook); 1 for everything else.
+  float ds1TransmissionScale;
+
   // Fork (DS1): a DS1 water surface's refraction smear times its vertex alpha (Surface::ds1WaterSmear), at least
   // 1e-4: above 0 means DS1 water to the resolver. 0 for everything else.
   float ds1RefractionSmear;
