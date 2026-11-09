@@ -93,6 +93,40 @@ vec3 geometryResolverDs1RefractionShift(SurfaceMaterialInteractionPSRSample samp
   return guardRay.direction * max(rayQuery.CommittedRayT() - kMargin, 0.0f);
 }
 
+// Fork (DS1): where a view entering DS1 water continues from, near the shore. The ray leaves the surface a fraction of a millimetre under
+// it, which along the waterline, where the ground slopes up through the water at a shallow angle, is already under the ground: it missed
+// the sand and met the black lake floor below (a black line along the Ash Lake shore, frame_20261109_204705). A short ray from just above
+// the water finds the ground, and the view carries on from halfway between the water and it.
+vec3 geometryResolverDs1ShoreOrigin(vec3 rayOrigin, vec3 position, vec3 geometryNormal, vec3 direction)
+{
+  const float cosine = -dot(direction, geometryNormal);
+  if (cosine < 1e-3f)
+  {
+    return rayOrigin;
+  }
+  const float kAbove = 0.01f;
+  const float kBelow = 0.05f;
+  const float crossing = kAbove / cosine;
+
+  Ray guardRay = (Ray) 0;
+  // Back along the ray, so it crosses the water exactly at this hit (straight above it would cross centimetres further on at a shallow view).
+  guardRay.origin = position - direction * crossing;
+  guardRay.direction = direction;
+  guardRay.tMax = (kAbove + kBelow) / cosine;
+  RayQuery<0> rayQuery = RayQuery<0>();
+  rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_CULL_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES,
+                          OBJECT_MASK_OPAQUE, rayToRayDesc(guardRay));
+  while (rayQuery.Proceed())
+  {
+  }
+  if (rayQuery.CommittedStatus() != COMMITTED_TRIANGLE_HIT || rayQuery.CommittedRayT() <= crossing)
+  {
+    return rayOrigin;
+  }
+  const float gap = rayQuery.CommittedRayT() - crossing;
+  return guardRay.origin + direction * (crossing + max(0.5f * gap, cb.ds1Ripple.shoreMinDepth / cosine));
+}
+
 // Fork (DS1): how far a view entering DS1 water bends, by the water's depth there. IOR 1.33 is right for a pool
 // seen from far away, but a player wading in water to the knee looks cut off at the shin, more so at oblique angles
 // (the legs fold towards the viewer). So the depth is measured straight down from each water pixel, and the view
@@ -2739,6 +2773,11 @@ void geometryResolverVertex(
       sampledRay.origin += geometryResolverDs1RefractionShift(
         surfaceMaterialInteractionTransmissionPSRSample, surfaceInteraction.triangleNormal, surfaceInteraction.position,
         sampledRay.origin);
+      if (surface.isDs1WaterGameLook)
+      {
+        sampledRay.origin = geometryResolverDs1ShoreOrigin(sampledRay.origin, surfaceInteraction.position,
+          vec3(surfaceInteraction.geometryNormal), sampledRay.direction);
+      }
 
       vec4 vectorTransform = quaternionMultiply(geometryResolverState.accumulatedRotation, surfaceMaterialInteractionTransmissionPSRSample.vectorTransform, true);
       
@@ -3313,6 +3352,11 @@ void geometryPSRResolverVertex(
     geometryPSRResolverState.origin = sampledRay.origin + geometryResolverDs1RefractionShift(
       surfaceMaterialInteractionTransmissionPSRSample, surfaceInteraction.triangleNormal, surfaceInteraction.position,
       sampledRay.origin);
+    if (surface.isDs1WaterGameLook)
+    {
+      geometryPSRResolverState.origin = geometryResolverDs1ShoreOrigin(geometryPSRResolverState.origin, surfaceInteraction.position,
+        vec3(surfaceInteraction.geometryNormal), sampledRay.direction);
+    }
     geometryPSRResolverState.coneRadius = sampledRay.coneRadius;
     geometryPSRResolverState.direction = sampledRay.direction;
     geometryPSRResolverState.attenuation *= surfaceMaterialInteractionTransmissionPSRSample.attenuation;

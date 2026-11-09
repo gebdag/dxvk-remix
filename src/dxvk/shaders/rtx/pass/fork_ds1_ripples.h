@@ -329,6 +329,7 @@ struct Ds1RippleArgs {
   float refractionFullDepth;
   // The game's refraction smear shifts the view in full from this depth in metres, less in shallower water.
   float smearFullDepth;
-  float pad1;
+  // How far under DS1 water, in metres, a view continues from at the shore at the least (geometryResolverDs1ShoreOrigin).
+  float shoreMinDepth;
   float pad2;
 };
