@@ -810,8 +810,12 @@ namespace dxvk {
       // TODO: warn the user about id collision,
       //       or just overwriting existing one is fine?
       uint32_t stableIdentity = found->second.getStableIdentity();
+      // Fork (DS1): the buffer slot too, as updateLight does for the runtime's own lights. Without it a light whose values change (a moving
+      // player light, a flickering torch) arrives as a new light every frame, and RTXDI's temporal samples of it are thrown away each time.
+      const uint32_t bufferIdx = found->second.getBufferIdx();
       found->second = rtlight;
       found->second.setStableIdentity(stableIdentity);
+      found->second.setBufferIdx(bufferIdx);
     } else {
       m_externalLights.emplace(handle, rtlight);
     }
