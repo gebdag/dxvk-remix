@@ -35,6 +35,7 @@
 #include "rtx_options.h"
 #include "rtx_preserved_object_picking.h"
 #include "rtx_terrain_baker.h"
+#include "rtx_dark_souls_swamp.h"
 #include "rtx_dark_souls_ripples.h"
 #include "rtx_dark_souls_effect_particles.h"
 #include "rtx_texture_manager.h"
@@ -2304,6 +2305,7 @@ namespace dxvk {
 
     // Fork (DS1): registers the ripple slope texture before the bindless tables are built.
     DxvkDarkSoulsRipples::prepare(ctx.ptr());
+    DxvkDarkSoulsSwamp::prepare(ctx.ptr());
 
     auto& textureManager = m_device->getCommon()->getTextureManager();
     if (m_bindlessResourceManager.prepareSceneData(

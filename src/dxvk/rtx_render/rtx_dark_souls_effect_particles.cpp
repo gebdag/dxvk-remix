@@ -1,5 +1,6 @@
 #include "rtx_dark_souls_effect_particles.h"
 #include "rtx_dark_souls_ripples.h"
+#include "rtx_dark_souls_swamp.h"
 
 #include "rtx_imgui.h"
 #include "rtx_particle_system.h"
@@ -83,6 +84,14 @@ namespace dxvk {
 
   bool DxvkDarkSoulsEffectParticles::emit(DxvkContext* ctx, uint32_t instanceIdx, const DrawCallState& drawCallState, const MaterialData& renderMaterialData) {
     const uint8_t kind = drawCallState.getMaterialData().ds1EffectParticles;
+    // The snow's footprint textures (rtx_dark_souls_swamp.h): this draw only carries one.
+    if (kind == 4 || kind == 5) {
+      if (renderMaterialData.getType() == MaterialDataType::Opaque) {
+        MaterialData carried(renderMaterialData);
+        DxvkDarkSoulsSwamp::setStampTexture(kind - 4, carried.getOpaqueMaterialData().getAlbedoOpacityTexture());
+      }
+      return true;
+    }
     if ((kind == 1 && !motes()) || (kind == 3 && !sparks()) || kind == 0 || kind > 3) {
       return false;
     }

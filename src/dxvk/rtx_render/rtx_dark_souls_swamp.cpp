@@ -1,5 +1,7 @@
 #include "rtx_dark_souls_swamp.h"
 #include "rtx_imgui.h"
+#include "rtx_context.h"
+#include "rtx_scene_manager.h"
 #include "../imgui/imgui.h"
 
 #include <algorithm>
@@ -29,6 +31,10 @@ namespace dxvk {
       return n;
     }
 
+    // The snow's footprint textures, from the proxy's hidden draws, and their bindless indices this frame.
+    TextureRef s_stampTexture[2];
+    uint32_t s_stampIndex[2] = { BINDING_INDEX_INVALID, BINDING_INDEX_INVALID };
+
     // The rings come as one string per frame; parsed when it changes.
     std::string s_ringText;
     uint32_t s_ringCount = 0;
@@ -37,12 +43,28 @@ namespace dxvk {
     void parseRings(const std::string& text) {
       s_ringText = text;
       s_ringCount = 0;
-      float values[ds1SwampMaxRings * 7];
+      float values[ds1SwampMaxRings * 8];
       const size_t n = parseNumbers(text, values);
-      for (size_t i = 0; i + 6 < n && s_ringCount < ds1SwampMaxRings; i += 7) {
+      for (size_t i = 0; i + 7 < n && s_ringCount < ds1SwampMaxRings; i += 8) {
         s_rings[s_ringCount * 2] = vec4 { values[i], values[i + 1], values[i + 2], values[i + 6] };
-        s_rings[s_ringCount * 2 + 1] = vec4 { values[i + 3], values[i + 4], values[i + 5], 0.0f };
+        s_rings[s_ringCount * 2 + 1] = vec4 { values[i + 3], values[i + 4], values[i + 5], values[i + 7] };
         ++s_ringCount;
+      }
+    }
+  }
+
+  void DxvkDarkSoulsSwamp::setStampTexture(uint32_t slot, const TextureRef& texture) {
+    if (slot < 2) {
+      s_stampTexture[slot] = texture;
+    }
+  }
+
+  void DxvkDarkSoulsSwamp::prepare(DxvkContext* ctx) {
+    SceneManager& scene = ctx->getCommonObjects()->getSceneManager();
+    for (uint32_t i = 0; i < 2; ++i) {
+      s_stampIndex[i] = BINDING_INDEX_INVALID;
+      if (s_stampTexture[i].isValid()) {
+        scene.trackTexture(s_stampTexture[i], s_stampIndex[i], true, false);
       }
     }
   }
@@ -92,8 +114,10 @@ namespace dxvk {
     if (rings() != s_ringText) {
       parseRings(rings());
     }
-    // A baked height texture's alpha holds the height, not the ring texture: no rings on it.
-    args.ringCount = heightInAlpha() ? 0u : s_ringCount;
+    // On a baked height texture the shader skips the wake rings: its alpha holds the height, not the ring texture. Footprints have their own.
+    args.ringCount = s_ringCount;
+    args.stampTexture0 = s_stampIndex[0];
+    args.stampTexture1 = s_stampIndex[1];
     for (uint32_t i = 0; i < s_ringCount * 2; ++i) {
       args.rings[i] = s_rings[i];
     }

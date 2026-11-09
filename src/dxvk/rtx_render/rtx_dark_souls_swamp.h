@@ -2,10 +2,13 @@
 
 #include "rtx_option.h"
 #include "rtx/pass/fork_ds1_swamp.h"
+#include "rtx_texture.h"
 
 #include <string>
 
 namespace dxvk {
+
+  class DxvkContext;
 
   // Dark Souls 1 FRPG_Snow surfaces (the Blighttown swamp): the game's height field, colour,
   // reflection and wake rings, evaluated in the material (fork_ds1_swamp.h). The DS1 proxy tags
@@ -14,6 +17,9 @@ namespace dxvk {
   public:
     static void fillShaderArgs(Ds1SwampArgs& args);
     static void showImguiSettings();
+    // The proxy's hidden draws hand over the snow's footprint textures (two slots); tracked for the bindless table every frame.
+    static void setStampTexture(uint32_t slot, const TextureRef& texture);
+    static void prepare(DxvkContext* ctx);
 
     RTX_OPTION("rtx.ds1Swamp", bool, enable, true,
                "Shade surfaces the DS1 proxy tags as FRPG_Snow (the Blighttown swamp) from the game's height field: "

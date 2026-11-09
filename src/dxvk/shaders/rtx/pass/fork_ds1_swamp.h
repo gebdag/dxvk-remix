@@ -36,7 +36,7 @@
 
 #include "rtx/utility/shader_types.h"
 
-static const uint ds1SwampMaxRings = 16;
+static const uint ds1SwampMaxRings = 64;
 
 struct Ds1SwampArgs {
   // c170: the deep (tar) colour, stored (gamma) value.
@@ -91,11 +91,12 @@ struct Ds1SwampArgs {
   float pad4;
   // 1: a liquid that lies still until a body moves it (the ripple field's slope and height).
   uint wade;
-  uint pad5;
-  uint pad6;
+  // The footprint textures (bindless indices), read by rings with a slot >= 0.
+  uint stampTexture0;
+  uint stampTexture1;
   uint pad7;
 
   // Each ring's texture coordinates from world x, z: u = dot(rings[2i].xyz, (x, z, 1)), v = dot(rings[2i + 1].xyz, (x, z, 1));
-  // rings[2i].w = its strength.
+  // rings[2i].w = its strength, rings[2i + 1].w = its footprint texture (0 or 1), or -1: a wake ring, whose texture is the colour texture's alpha.
   vec4 rings[ds1SwampMaxRings * 2];
 };

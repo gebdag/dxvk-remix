@@ -746,7 +746,21 @@ float ds1SwampRingDepth(uint16_t textureIndex, uint16_t samplerIndex, SurfaceInt
     ring.textureCoordinates = uv;
     ring.textureGradientX = surfaceInteraction.textureGradientX * scale;
     ring.textureGradientY = surfaceInteraction.textureGradientY * scale;
-    depth += min(textureRead(textureIndex, samplerIndex, ring, 0.0f).a * rowU.w, 1.0f);
+    // A footprint reads its own texture's red; a wake ring the colour texture's alpha, which a baked height takes over.
+    const int slot = int(rowV.w);
+    if (slot < 0)
+    {
+      if (cb.ds1Swamp.heightInAlpha == 0)
+      {
+        depth += min(textureRead(textureIndex, samplerIndex, ring, 0.0f).a * rowU.w, 1.0f);
+      }
+      continue;
+    }
+    const uint stamp = slot == 0 ? cb.ds1Swamp.stampTexture0 : cb.ds1Swamp.stampTexture1;
+    if (stamp != BINDING_INDEX_INVALID)
+    {
+      depth += min(textureRead(uint16_t(stamp), samplerIndex, ring, 0.0f).r * rowU.w, 1.0f);
+    }
   }
   return depth;
 }
