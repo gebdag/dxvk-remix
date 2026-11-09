@@ -42,6 +42,49 @@ RWStructuredBuffer<uint4> lightWords;
 layout(push_constant)
 ConstantBuffer<Ds1PlayerLightClearanceArgs> cb;
 
+// Whether an opaque surface seen from the head's side stands in the way, and how far the light may go along the ray if one does.
+// Cutouts and blended surfaces (foliage, grates, glass) let light through and do not count. A few character layers at most lie on the way out.
+bool ds1ClearanceBlocked(vec3 origin, vec3 direction, float distance, float radius, out float reach)
+{
+  reach = distance;
+
+  RayDesc ray;
+  ray.Origin = origin;
+  ray.Direction = direction;
+  ray.TMin = cb.ignore;
+  ray.TMax = distance + radius + cb.margin;
+
+  for (uint layer = 0; layer < 4; ++layer)
+  {
+    RayQuery<0> rayQuery = RayQuery<0>();
+    rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_CULL_NON_OPAQUE,
+                            OBJECT_MASK_OPAQUE, ray);
+    while (rayQuery.Proceed())
+    {
+    }
+    if (rayQuery.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
+    {
+      return false;
+    }
+
+    const float hitT = rayQuery.CommittedRayT();
+    const uint surfaceIndex = (rayQuery.CommittedInstanceID() & CUSTOM_INDEX_SURFACE_MASK) + rayQuery.CommittedGeometryIndex();
+    if ((surfaceWords[surfaceIndex * DS1_PLC_SURFACE_UVEC4S + 13].z & DS1_PLC_SKINNED_FLAG) != 0)
+    {
+      ray.TMin = hitT + 1e-3f;
+      if (ray.TMin >= ray.TMax)
+      {
+        return false;
+      }
+      continue;
+    }
+
+    reach = max(hitT - radius - cb.margin, 0.0f);
+    return true;
+  }
+  return false;
+}
+
 [shader("compute")]
 [numthreads(1, 1, 1)]
 void main()
@@ -60,41 +103,35 @@ void main()
   }
   const vec3 direction = toTarget / distance;
 
-  RayDesc ray;
-  ray.Origin = cb.anchor;
-  ray.Direction = direction;
-  ray.TMin = cb.ignore;
-  ray.TMax = distance + radius + cb.margin;
-
-  // Opaque surfaces seen from the head's side; cutouts and blended surfaces (foliage, grates, glass)
-  // let light through and do not count. A few character layers at most lie on the way out.
-  for (uint layer = 0; layer < 4; ++layer)
+  float reach = distance;
+  if (!ds1ClearanceBlocked(cb.anchor, direction, distance, radius, reach) || reach >= distance)
   {
-    RayQuery<0> rayQuery = RayQuery<0>();
-    rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_CULL_NON_OPAQUE,
-                            OBJECT_MASK_OPAQUE, ray);
-    while (rayQuery.Proceed())
-    {
-    }
-    if (rayQuery.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
-    {
-      return;
-    }
-
-    const float hitT = rayQuery.CommittedRayT();
-    const uint surfaceIndex = (rayQuery.CommittedInstanceID() & CUSTOM_INDEX_SURFACE_MASK) + rayQuery.CommittedGeometryIndex();
-    if ((surfaceWords[surfaceIndex * DS1_PLC_SURFACE_UVEC4S + 13].z & DS1_PLC_SKINNED_FLAG) != 0)
-    {
-      ray.TMin = hitT + 1e-3f;
-      continue;
-    }
-
-    const float reach = max(hitT - radius - cb.margin, 0.0f);
-    if (reach < distance)
-    {
-      data0.xyz = asuint(cb.anchor + direction * reach);
-      lightWords[first] = data0;
-    }
     return;
+  }
+
+  // A wall stops rays beside this one too; a rope, rung, bar or pipe across the line does not. Without this check the light
+  // jumped to the head and back as the player swayed against a ladder (frame_20261109_171134) or walked past thin things.
+  vec3 side = cross(direction, vec3(0.0f, 1.0f, 0.0f));
+  side = dot(side, side) < 1e-4f ? cross(direction, vec3(1.0f, 0.0f, 0.0f)) : side;
+  side = normalize(side);
+  const vec3 above = cross(side, direction);
+  const float kSpread = 0.15f;
+  const vec3 offsets[4] = { side * kSpread, -side * kSpread, above * kSpread, -above * kSpread };
+  uint blocked = 1;
+  float sum = reach;
+  for (uint i = 0; i < 4; ++i)
+  {
+    float sideReach = distance;
+    if (ds1ClearanceBlocked(cb.anchor + offsets[i], direction, distance, radius, sideReach))
+    {
+      ++blocked;
+      sum += min(sideReach, distance);
+    }
+  }
+  // The mean of the blocked rays: on bumpy rock one ray's hit jumps as the head sways, and a single ray moved the light with it.
+  if (blocked >= 4)
+  {
+    data0.xyz = asuint(cb.anchor + direction * min(sum / float(blocked), distance));
+    lightWords[first] = data0;
   }
 }
