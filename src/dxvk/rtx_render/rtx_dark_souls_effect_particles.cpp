@@ -83,8 +83,12 @@ namespace dxvk {
 
   bool DxvkDarkSoulsEffectParticles::emit(DxvkContext* ctx, uint32_t instanceIdx, const DrawCallState& drawCallState, const MaterialData& renderMaterialData) {
     const uint8_t kind = drawCallState.getMaterialData().ds1EffectParticles;
-    if (kind != 1 || !motes()) {
+    if ((kind == 1 && !motes()) || ((kind == 2 || kind == 3) && !sparks()) || kind == 0 || kind > 3) {
       return false;
+    }
+    // A hit's later frames: its sparks fly already, the game's streaks only hide.
+    if (kind == 3) {
+      return true;
     }
     // The particles take the draw's own material (self-lit, its blend), with the dot for its texture.
     if (renderMaterialData.getType() != MaterialDataType::Opaque) {
@@ -110,32 +114,61 @@ namespace dxvk {
     desc.maxRotationSpeed = { 0.0f };
     desc.maxVelocity = { vec3(2000.0f, 2000.0f, 2000.0f) };
 
-    const float life = std::max(moteLife(), 0.1f);
-    const float size = std::max(moteSize(), 0.1f); // cm, as the particle system takes sizes
-    const float bright = std::max(moteBrightness(), 0.0f);
-    desc.ds1Motes = 1;
-    desc.maxNumParticles = 32768;
-    // Below the pool's size, or the first draw of a frame would take all of it (RtxParticleSystemManager::spawnParticles).
-    desc.spawnRatePerSecond = std::clamp(moteRate(), 0.0f, 30000.0f);
-    desc.minTimeToLive = life * 0.6f;
-    desc.maxTimeToLive = life * 1.4f;
-    // initialVelocityFromNormal carries the drift speed (cm/s) for the motes' own spawn (ds1Motes).
-    desc.initialVelocityFromNormal = std::max(moteDrift(), 0.0f);
-    desc.useTurbulence = moteTurbulence() > 0.0f ? 1 : 0;
-    desc.turbulenceForce = std::max(moteTurbulence(), 0.0f);
-    // Per cm, scaled by sceneScale: 150 is swirls of about 70 cm, gentle against the rise.
-    desc.turbulenceFrequency = 150.0f;
-    desc.dragCoefficient = 0.4f;
-    desc.gravityForce = 0.0f;
-    desc.collisionThickness = 12.0f;
-    desc.collisionRestitution = 0.5f;
-    desc.billboardType = FaceCamera_Spherical;
-    // Quickly in, full while rising, out over the last 40%: the game's cards fade as they climb.
-    desc.minColor = { vec4(bright, bright, bright, 0.0f), vec4(bright, bright, bright, 1.0f), vec4(bright, bright, bright, 1.0f),
-                      vec4(bright, bright, bright, 1.0f), vec4(bright, bright, bright, 0.6f), vec4(bright, bright, bright, 0.0f) };
-    desc.maxColor = desc.minColor;
-    desc.minSize = { vec2(size * 0.6f, size * 0.6f) };
-    desc.maxSize = { vec2(size * 1.3f, size * 1.3f) };
+    if (kind == 1) {
+      const float life = std::max(moteLife(), 0.1f);
+      const float size = std::max(moteSize(), 0.1f); // cm, as the particle system takes sizes
+      const float bright = std::max(moteBrightness(), 0.0f);
+      desc.ds1Motes = 1;
+      desc.maxNumParticles = 32768;
+      // Below the pool's size, or the first draw of a frame would take all of it (RtxParticleSystemManager::spawnParticles).
+      desc.spawnRatePerSecond = std::clamp(moteRate(), 0.0f, 30000.0f);
+      desc.minTimeToLive = life * 0.6f;
+      desc.maxTimeToLive = life * 1.4f;
+      // initialVelocityFromNormal carries the drift speed (cm/s) for the motes' own spawn (ds1Motes).
+      desc.initialVelocityFromNormal = std::max(moteDrift(), 0.0f);
+      desc.useTurbulence = moteTurbulence() > 0.0f ? 1 : 0;
+      desc.turbulenceForce = std::max(moteTurbulence(), 0.0f);
+      // Per cm, scaled by sceneScale: 150 is swirls of about 70 cm, gentle against the rise.
+      desc.turbulenceFrequency = 150.0f;
+      desc.dragCoefficient = 0.4f;
+      desc.gravityForce = 0.0f;
+      desc.collisionThickness = 12.0f;
+      desc.collisionRestitution = 0.5f;
+      desc.billboardType = FaceCamera_Spherical;
+      // Quickly in, full while rising, out over the last 40%: the game's cards fade as they climb.
+      desc.minColor = { vec4(bright, bright, bright, 0.0f), vec4(bright, bright, bright, 1.0f), vec4(bright, bright, bright, 1.0f),
+                        vec4(bright, bright, bright, 1.0f), vec4(bright, bright, bright, 0.6f), vec4(bright, bright, bright, 0.0f) };
+      desc.maxColor = desc.minColor;
+      desc.minSize = { vec2(size * 0.6f, size * 0.6f) };
+      desc.maxSize = { vec2(size * 1.3f, size * 1.3f) };
+    } else {
+      const float life = std::max(sparkLife(), 0.05f);
+      const float size = std::max(sparkSize(), 0.1f); // cm
+      const float bright = std::max(sparkBrightness(), 0.0f);
+      desc.ds1Sparks = 1;
+      desc.maxNumParticles = 8192;
+      // A hit's sparks all spawn in its first frame: the rate carries sparks per streak, which the spawn count takes once per
+      // call (RtxParticleSystemManager::getNumberOfParticlesToSpawn, ds1Sparks). Constant, so every hit shares one system.
+      desc.spawnRatePerSecond = std::clamp(sparkCount(), 0.0f, 20.0f);
+      desc.minTimeToLive = life * 0.5f;
+      desc.maxTimeToLive = life * 1.5f;
+      // initialVelocityFromNormal carries the speed per metre of half streak (1/s) for the sparks' own spawn (ds1Sparks).
+      desc.initialVelocityFromNormal = std::max(sparkSpeed(), 0.0f);
+      desc.initialVelocityConeAngleDegrees = std::clamp(sparkSpread(), 0.0f, 90.0f);
+      desc.gravityForce = -981.0f;
+      desc.dragCoefficient = 0.4f;
+      desc.collisionThickness = 6.0f;
+      desc.collisionRestitution = std::clamp(sparkBounce(), 0.0f, 1.0f);
+      desc.billboardType = FaceCamera_Spherical;
+      desc.alignParticlesToVelocity = 1;
+      desc.enableMotionTrail = sparkTrail() > 0.0f ? 1 : 0;
+      desc.motionTrailMultiplier = std::max(sparkTrail(), 0.0f);
+      // Hot, then cooling to red as it fades.
+      desc.minColor = { vec4(bright, bright, bright, 1.0f), vec4(bright, bright * 0.85f, bright * 0.7f, 1.0f), vec4(bright, bright * 0.45f, bright * 0.25f, 0.0f) };
+      desc.maxColor = desc.minColor;
+      desc.minSize = { vec2(size * 0.7f, size * 0.7f), vec2(size * 0.5f, size * 0.5f) };
+      desc.maxSize = { vec2(size * 1.2f, size * 1.2f), vec2(size * 0.8f, size * 0.8f) };
+    }
 
     ctx->getCommonObjects()->metaParticleSystem().spawnParticles(ctx, desc, instanceIdx, state, material);
     return true;
@@ -168,7 +201,7 @@ namespace dxvk {
   }
 
   void DxvkDarkSoulsEffectParticles::showImguiSettings() {
-    if (!ImGui::CollapsingHeader("Effect particles (motes)")) {
+    if (!ImGui::CollapsingHeader("Effect particles (motes, sparks)")) {
       return;
     }
     ImGui::Indent();
@@ -183,6 +216,15 @@ namespace dxvk {
     RemixGui::DragFloat("Mote Push (m/s)", &motePushObject(), 0.05f, 0.0f, 10.0f, "%.2f");
     RemixGui::DragFloat("Mote Push Radius (cm)", &motePushRadiusObject(), 1.0f, 5.0f, 150.0f, "%.0f");
     RemixGui::DragFloat("Mote Brightness", &moteBrightnessObject(), 0.01f, 0.0f, 8.0f, "%.2f");
+    RemixGui::Checkbox("Hit Sparks", &sparksObject());
+    RemixGui::DragFloat("Sparks per Streak", &sparkCountObject(), 0.1f, 0.0f, 20.0f, "%.1f");
+    RemixGui::DragFloat("Spark Spread (deg)", &sparkSpreadObject(), 0.5f, 0.0f, 90.0f, "%.1f");
+    RemixGui::DragFloat("Spark Speed (1/s)", &sparkSpeedObject(), 0.5f, 0.0f, 200.0f, "%.1f");
+    RemixGui::DragFloat("Spark Size (cm)", &sparkSizeObject(), 0.05f, 0.1f, 10.0f, "%.2f");
+    RemixGui::DragFloat("Spark Life (s)", &sparkLifeObject(), 0.01f, 0.05f, 5.0f, "%.2f");
+    RemixGui::DragFloat("Spark Trail (frames)", &sparkTrailObject(), 0.05f, 0.0f, 10.0f, "%.2f");
+    RemixGui::DragFloat("Spark Bounce", &sparkBounceObject(), 0.01f, 0.0f, 1.0f, "%.2f");
+    RemixGui::DragFloat("Spark Brightness", &sparkBrightnessObject(), 0.01f, 0.0f, 8.0f, "%.2f");
     ImGui::Unindent();
   }
 

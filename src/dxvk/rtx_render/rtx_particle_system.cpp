@@ -98,7 +98,7 @@ namespace dxvk {
     };
 
     // Fork (DS1): compiled at launch, not when the first particle system spawns (a drip or splash at the first water
-    // contact), which stalled the game for the compile.
+    // contact, the first hit's sparks), which stalled the game for the compile.
     PREWARM_SHADER_PIPELINE(ParticleSystemSpawn);
     PREWARM_SHADER_PIPELINE(ParticleSystemEvolve);
     PREWARM_SHADER_PIPELINE(ParticleSystemGenerateGeometry);
@@ -533,6 +533,11 @@ namespace dxvk {
     }
 
     float lambda = spawnRate * effectiveElapsedSecs;
+    // Fork (DS1): a hit's sparks (rtx_dark_souls_effect_particles.h) spawn once, in the hit's first frame: the rate is sparks
+    // per streak (a quad, two triangles), taken whole for this call.
+    if (desc.ds1Sparks) {
+      lambda = spawnRate * float(drawCallState.getGeometryData().calculatePrimitiveCount()) * 0.5f;
+    }
 
     // Poisson dist won't work well with these values (inf loop)
     if (isnan(lambda) || lambda <= 0.0f) {

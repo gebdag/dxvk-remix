@@ -71,7 +71,7 @@ GpuParticle respawn(uint particleIdx, uint spawnCtxIdx, const GpuParticleSystem 
   float3 prevPositions[3];
   float4 color = (spawnCtx.spawnMeshColorsIdx != BINDING_INDEX_INVALID) ? 0.0f : 1.0f;
   float4 uvMinMax = float4(0..xx, 1..xx);
-  // Fork (DS1): each corner's texcoord, for the effect particles' own spawn (ds1Motes).
+  // Fork (DS1): each corner's texcoord, for the effect particles' own spawn (ds1Motes, ds1Sparks).
   float2 ds1Texcoords[3];
   
   uint randomSeed = particleIdx;
@@ -239,6 +239,43 @@ GpuParticle respawn(uint particleIdx, uint spawnCtxIdx, const GpuParticleSystem 
     color.a = 1.0f;
   }
 
+  // Fork (DS1): a hit's sparks, spawned in its first frame only. Each of the game's streaks runs along one spark's flight; the DS1
+  // proxy moved every streak's middle to the burst's centre and marked its ends u = -1 and +1. A spark starts at that centre and
+  // flies towards the end on its side of the spawn point, at a speed from the streak's length.
+  if (particleSystem.desc.ds1Sparks != 0)
+  {
+    float3 minusEnd = 0.0f, plusEnd = 0.0f;
+    float minusCount = 0.0f, plusCount = 0.0f;
+    for (uint k = 0; k < 3; k++)
+    {
+      const float3 corner = mul(spawnCtx.spawnObjectToWorld, float4(positions[k], 1.f));
+      if (ds1Texcoords[k].x < 0.0f)
+      {
+        minusEnd += corner;
+        minusCount += 1.0f;
+      }
+      else
+      {
+        plusEnd += corner;
+        plusCount += 1.0f;
+      }
+    }
+    const float3 axis = minusCount > 0.0f && plusCount > 0.0f ? plusEnd / plusCount - minusEnd / minusCount : float3(0.0f, 0.0f, 0.0f);
+    const float len = length(axis);
+    const float side = ds1Texcoords[0].x * randomBary.x + ds1Texcoords[1].x * randomBary.y + ds1Texcoords[2].x * randomBary.z;
+    ds1Spawns = color.a > 0.004f && len > 1e-4f && abs(side) > 0.05f;
+    const float3 along = (len > 1e-4f ? axis / len : float3(0.0f, 1.0f, 0.0f)) * (side > 0.0f ? 1.0f : -1.0f);
+    // Each spark leaves within a cone around its streak (initialVelocityConeAngleDegrees, the spread), so the sparks of one
+    // streak do not fly along one line.
+    const float3 heading = sampleDirectionInCone(f16vec3(along), cos(radians(particleSystem.desc.initialVelocityConeAngleDegrees)),
+      float2(randomFloat(uint2(randomSeed++, particleCb.frameIdx)), randomFloat(uint2(randomSeed++, particleCb.frameIdx))));
+    // Speed per metre of half the streak.
+    const float speed = 0.5f * len * particleSystem.desc.initialVelocityFromNormal *
+                        lerp(0.6f, 1.2f, randomFloat(uint2(randomSeed++, particleCb.frameIdx)));
+    initialVelocity = heading * speed;
+    spawnPosition = minusCount > 0.0f && plusCount > 0.0f ? 0.5f * (minusEnd / minusCount + plusEnd / plusCount) : worldPosition;
+  }
+
   // Spawn a particle
   newParticle.reset(particleSystem, spawnPosition, initialVelocity, uvMinMax, color, randSeed);
   // Fork (DS1): a mote's distance travelled (particle_system_evolve), for its fade with distance.
@@ -246,9 +283,9 @@ GpuParticle respawn(uint particleIdx, uint spawnCtxIdx, const GpuParticleSystem 
   if (!ds1Spawns)
   {
     newParticle.timeToLive = 0.0f;
-    // Fork (DS1): a refused mote dies at the next step instead of holding its slot (counted until its life passes
+    // Fork (DS1): a refused mote or spark dies at the next step instead of holding its slot (counted until its life passes
     // initial - max), which filled the pool at the motes' rate.
-    if (particleSystem.desc.ds1Motes != 0)
+    if (particleSystem.desc.ds1Motes != 0 || particleSystem.desc.ds1Sparks != 0)
     {
       newParticle.timeToLive = half(float(newParticle.initialTimeToLive(particleSystem)) - particleSystem.desc.maxTimeToLive - 1.0f);
     }
