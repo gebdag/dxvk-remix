@@ -372,6 +372,13 @@ namespace dxvk {
       m_linearizedLights.emplace_back(&pair.second);
     }
 
+    // Fork (DS1): a light left out of this frame's list is not written below, so it would come back with the index of an older frame's buffer.
+    for (auto& [handle, light] : m_externalLights) {
+      if (m_externalActiveLightList.find(handle) == m_externalActiveLightList.end()) {
+        light.setBufferIdx(kNewLightIdx);
+      }
+    }
+
     DxvkDarkSoulsLightFalloff::beginFrame();
     for (auto& handle : m_externalActiveLightList) {
       auto found = m_externalLights.find(handle);
