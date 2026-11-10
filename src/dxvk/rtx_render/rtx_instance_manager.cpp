@@ -1204,27 +1204,15 @@ namespace dxvk {
             // the surface's texture is its emission; the shader drops its albedo and premultiplies
             // the emission by its alpha for non-emissive blends. Additive surfaces reach their
             // brightness by stacking layers, ordinary blends do not, so each has its own intensity.
-            // Fork (DS1): a mod's own emission (an emission layer over the replacement material, Seath's wings) is kept; the
-            // shader adds it to the layer's colour (opaque_surface_material_interaction, Surface::ds1SelfLit).
-            const auto& source = materialData->getOpaqueMaterialData();
-            const XXH64_hash_t modEmissionHash = source.getEmissiveColorTexture().getImageHash();
-            // Only on a self-lit glow layer (an alpha blend), whose colour the shader keeps and adds the emission to: any other unlit draw
-            // shows its emission alone, and a mod's mask there would replace its own colour.
-            const bool selfLitLayer = currentInstance.surface.ds1SelfLit[0] + currentInstance.surface.ds1SelfLit[1] +
-              currentInstance.surface.ds1SelfLit[2] > 0.0f && !currentInstance.surface.alphaState.emissiveBlend;
-            const bool modEmission = selfLitLayer && source.getEnableEmission() && source.getEmissiveIntensity() > 0.0f && modEmissionHash != 0 &&
-              modEmissionHash != source.getAlbedoOpacityTexture().getImageHash();
             patchedMaterialData.emplace(*materialData);
             materialData = &*patchedMaterialData;
             patchedMaterialData->getOpaqueMaterialData().setEnableEmission(true);
-            if (!modEmission) {
-              // An additive or subtractive layer adds or takes off exactly the game's colour: the proxy folds the game's
-              // own factors into it (ffp_state::draw_sprite_up). A further intensity of 2 showed a crystal lizard's halo
-              // +17 where the game adds +10 (frame_20261101_135906).
-              patchedMaterialData->getOpaqueMaterialData().setEmissiveIntensity(currentInstance.surface.alphaState.emissiveBlend
-                || currentInstance.surface.alphaState.blendType == BlendType::kSubtractive ? 1.0f : RtxOptions::unlitBlendedEmissiveIntensity());
-              patchedMaterialData->getOpaqueMaterialData().setEmissiveColorTexture(patchedMaterialData->getOpaqueMaterialData().getAlbedoOpacityTexture());
-            }
+            // An additive or subtractive layer adds or takes off exactly the game's colour: the proxy folds the game's
+            // own factors into it (ffp_state::draw_sprite_up). A further intensity of 2 showed a crystal lizard's halo
+            // +17 where the game adds +10 (frame_20261101_135906).
+            patchedMaterialData->getOpaqueMaterialData().setEmissiveIntensity(currentInstance.surface.alphaState.emissiveBlend
+              || currentInstance.surface.alphaState.blendType == BlendType::kSubtractive ? 1.0f : RtxOptions::unlitBlendedEmissiveIntensity());
+            patchedMaterialData->getOpaqueMaterialData().setEmissiveColorTexture(patchedMaterialData->getOpaqueMaterialData().getAlbedoOpacityTexture());
           } else if (!drawCall.isUsingRaytracedRenderTarget && currentInstance.surface.alphaState.emissiveBlend && RtxOptions::enableEmissiveBlendEmissiveOverride() && useLegacyAlphaState) {
             // Here we need to do deep copy and patch the material
             patchedMaterialData.emplace(*materialData);
