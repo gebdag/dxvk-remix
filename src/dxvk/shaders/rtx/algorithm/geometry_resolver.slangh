@@ -2309,8 +2309,9 @@ void geometryResolverVertex(
   const vec2 ds1HazedDepthBefore = ds1LaterSegment ? Ds1HazedLayerDepth[geometryResolverState.pixelCoordinate] : vec2(0.0f);
   Ds1HazedLayers[geometryResolverState.pixelCoordinate] = vec4(
     ds1HazedBefore.rgb + ds1HazedLayers.rgb * geometryResolverState.attenuation, ds1HazedBefore.a * ds1HazedLayers.a);
+  // Coverage is a share of the display value: what the earlier segments let through of it, not of the radiance.
   Ds1HazedLayerDepth[geometryResolverState.pixelCoordinate] = ds1HazedDepthBefore +
-    ds1HazedLayerDepth * dot(geometryResolverState.attenuation, vec3(1.0f / 3.0f));
+    ds1HazedLayerDepth * pow(saturate(dot(geometryResolverState.attenuation, vec3(1.0f / 3.0f))), 1.0f / 2.2f);
 
   geometryResolverState.decalCandidateSeen = decalCandidateSeen;
 
