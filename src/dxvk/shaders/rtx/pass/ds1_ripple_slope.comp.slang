@@ -38,6 +38,10 @@ RWTexture2D<float> water;
 layout(binding = DS1_RIPPLE_BINDING_SLOPE)
 RWTexture2D<float4> slope;
 
+// This frame's bodies, for the test view only.
+layout(binding = DS1_RIPPLE_BINDING_OCCUPANCY)
+RWTexture2D<float> occupancy;
+
 layout(push_constant)
 ConstantBuffer<Ds1RippleSlopeArgs> cb;
 
@@ -77,6 +81,29 @@ void main(uint2 thread : SV_DispatchThreadID)
   if (waterHeight <= DS1_RIPPLE_NO_WATER)
   {
     slope[texel] = float4(0.0f, 0.0f, DS1_RIPPLE_NO_WATER_RELATIVE, 0.0f);
+    return;
+  }
+
+  if (cb.showBodies > 0.0f)
+  {
+    // The test view: a flat step wherever a body fills a cell within four cells, so it shows around the body that hides its own cells.
+    bool nearBody = false;
+    for (int dy = -4; dy <= 4 && !nearBody; ++dy)
+    {
+      for (int dx = -4; dx <= 4; ++dx)
+      {
+        const int2 other = windowCell + int2(dx, dy);
+        if (all(other >= 0) && all(other < n) && occupancy[wrapTexel(int2(cb.origin.x, cb.origin.y) + other, n)] > 0.5f)
+        {
+          nearBody = true;
+          break;
+        }
+      }
+    }
+    // The cells falling water lands in, as a step down.
+    const float own = occupancy[texel];
+    const bool fall = own > 0.5f * DS1_RIPPLE_OCCUPANCY_FALL && own < 0.5f;
+    slope[texel] = float4(0.0f, 0.0f, waterHeight - cb.referenceHeight, fall ? -cb.showBodies : nearBody ? cb.showBodies : 0.0f);
     return;
   }
 

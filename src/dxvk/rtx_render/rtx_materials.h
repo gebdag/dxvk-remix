@@ -199,6 +199,11 @@ struct RtSurface {
     flags0 |= isVertexColorBakedLighting ? (1 << 1) : 0;
     // Fork: bits 2-15, the DS1 view fade (Surface::ds1ViewFade), already packed.
     flags0 |= ds1ViewFade & 0xFFFCu;
+    // Fork: on a surface without that fade (bit 2 clear), bits 3 to 5 are the DS1 ripple marks (Surface::isDs1RigidPart,
+    // Surface::isDs1OtherCharacter, Surface::isDs1FallingWater).
+    if ((ds1ViewFade & 0x4u) == 0) {
+      flags0 |= static_cast<uint16_t>((ds1RippleMarks & 0x7u) << 3);
+    }
 
     writeGPUHelper(data, offset, flags0);
 
@@ -515,6 +520,9 @@ struct RtSurface {
   bool isDs1Fur = false;
   // Fork: a draw of the DS1 player's body: its vertices wet the body against the water (rtx_dark_souls_ripples.h).
   bool isDs1WetBody = false;
+  // Fork: the DS1 proxy's marks for the ripple field. Bit 0: a rigid part of a character (a weapon, a shield), which moves water
+  // as the skinned body does. Bit 1: another character's than the player's (an enemy). Bit 2: a waterfall's mesh.
+  uint8_t ds1RippleMarks = 0;
   // Fork: DS1 haze set slot (1-14, 0 = none, 15 = unhazed), see post_fx_dark_souls_haze.h.
   uint8_t ds1HazeSet = 0;
   // Fork: exposure power of a DS1 unlit sprite (0-2), see Surface::ds1UnlitExposurePower.
@@ -2181,6 +2189,8 @@ struct LegacyMaterialData {
   bool isDs1WetBody = false;
   // Fork: a body draw that armour covers: no drops come off it. Per draw, not part of the identity.
   bool isDs1WetCovered = false;
+  // Fork: the DS1 proxy's marks for the ripple field (RtSurface::ds1RippleMarks). Per draw, not part of the identity.
+  uint8_t ds1RippleMarks = 0;
   // Fork: a DS1 sprite effect replaced by particles (stage 4 0xD4000007 motes = 1, 0xD4000008 a hit's first frame of sparks = 2,
   // 0xD4000009 its later frames = 3, hidden without spawning,
   // rtx_dark_souls_effect_particles.h). Per draw, not part of the identity.

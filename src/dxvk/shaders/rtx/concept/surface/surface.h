@@ -342,6 +342,27 @@ struct Surface
     get { return float((uint(data0b.z) >> 9) & 0x7Fu) / 8.0f; }
   }
 
+  // Fork: the DS1 ripple marks, on a surface without the view fade (data0b.z bit 2 clear; no character has that fade).
+  // Bit 3: a rigid part of a character, a weapon or a shield (the proxy's stage 6 tag 0xD2000010), which moves water as the
+  // skinned body does. Bit 4: the draw is another character's than the player's (bit 5 of the proxy's tag). The ripple field's
+  // map pass reads them from the surface's words (ds1_ripple_map, fork_ds1_ripples.h).
+  property bool isDs1RigidPart
+  {
+    get { return (uint(data0b.z) & 0xCu) == 0x8u; }
+  }
+
+  property bool isDs1OtherCharacter
+  {
+    get { return (uint(data0b.z) & 0x14u) == 0x10u; }
+  }
+
+  // Bit 5, with the same condition: a waterfall's mesh (the proxy's stage 6 tag 0xD2000040). Where its sheet meets water, the
+  // ripple field stirs the water.
+  property bool isDs1FallingWater
+  {
+    get { return (uint(data0b.z) & 0x24u) == 0x20u; }
+  }
+
   property uint16_t hashPacked
   {
     get { return data0b.w; }

@@ -1324,9 +1324,18 @@ namespace dxvk {
         // rendered as Remix hair cards.
         const uint32_t lightmapTag = d3d9State().textureStages[6][DXVK_TSS_CONSTANT];
         // 0xD2000002: a draw of the player's body, which gets wet (rtx_dark_souls_ripples.h). 0xD2000003: one that armour covers.
-        const bool skinnedTag = lightmapTag == 0xD2000000u || lightmapTag == 0xD2000001u || lightmapTag == 0xD2000002u || lightmapTag == 0xD2000003u;
-        m_activeDrawCallState.materialData.isDs1WetBody = lightmapTag == 0xD2000002u || lightmapTag == 0xD2000003u;
-        m_activeDrawCallState.materialData.isDs1WetCovered = lightmapTag == 0xD2000003u;
+        // 0xD2000010: no skinned draw but a rigid part of a character, a weapon or a shield. Bit 5 (0x20) on any of these: the
+        // draw is another character's than the player's. Both are for the ripple field (RtSurface::ds1RippleMarks).
+        const bool characterTag = (lightmapTag >> 24) == 0xD2u && (lightmapTag & 0x00FFFFC0u) == 0;
+        const uint32_t characterKind = lightmapTag & 0xFu;
+        const bool rigidPartTag = characterTag && (lightmapTag & 0x10u) != 0 && characterKind == 0;
+        const bool skinnedTag = characterTag && (lightmapTag & 0x10u) == 0 && characterKind <= 3;
+        m_activeDrawCallState.materialData.isDs1WetBody = skinnedTag && characterKind >= 2;
+        m_activeDrawCallState.materialData.isDs1WetCovered = skinnedTag && characterKind == 3;
+        // 0xD2000040: no character but a waterfall's mesh, which stirs the water it falls into.
+        m_activeDrawCallState.materialData.ds1RippleMarks = static_cast<uint8_t>(
+          (rigidPartTag ? 1u : 0u) | ((skinnedTag || rigidPartTag) && (lightmapTag & 0x20u) != 0 ? 2u : 0u) |
+          (lightmapTag == 0xD2000040u ? 4u : 0u));
         // Fork: DS1 sprite effects replaced by particles (rtx_dark_souls_effect_particles.h).
         {
           const uint32_t effectTag = d3d9State().textureStages[4][DXVK_TSS_CONSTANT];
@@ -1336,7 +1345,7 @@ namespace dxvk {
         }
         m_activeDrawCallState.materialData.ds1SunLightmap =
           (lightmapTag >> 24) == 0xD1u ? lightmapTag : skinnedTag ? 0xD2000000u : 0;
-        if (lightmapTag == 0xD2000001u) {
+        if (skinnedTag && characterKind == 1) {
           m_activeDrawCallState.setCategory(InstanceCategories::HairCards, true);
         }
         // Fork: DS1 window glass pass (stage 4 0xD4000002): blended, but single-sided as the game draws it

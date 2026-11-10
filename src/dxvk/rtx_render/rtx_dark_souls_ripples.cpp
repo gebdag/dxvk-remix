@@ -29,6 +29,7 @@ namespace dxvk {
 
       BEGIN_PARAMETER()
         ACCELERATION_STRUCTURE(DS1_RIPPLE_BINDING_TLAS)
+        ACCELERATION_STRUCTURE(DS1_RIPPLE_BINDING_TLAS_UNORDERED)
         STRUCTURED_BUFFER(DS1_RIPPLE_BINDING_SURFACES)
         RW_TEXTURE2D(DS1_RIPPLE_BINDING_HEIGHT)
         RW_TEXTURE2D(DS1_RIPPLE_BINDING_HEIGHT_PREV)
@@ -64,6 +65,7 @@ namespace dxvk {
         RW_TEXTURE2D(DS1_RIPPLE_BINDING_HEIGHT_PREV)
         RW_TEXTURE2D(DS1_RIPPLE_BINDING_WATER)
         RW_TEXTURE2D(DS1_RIPPLE_BINDING_SLOPE)
+        RW_TEXTURE2D(DS1_RIPPLE_BINDING_OCCUPANCY)
       END_PARAMETER()
     };
 
@@ -180,6 +182,8 @@ namespace dxvk {
     // Fixed-step clock: time not yet stepped.
     double s_lastTime = -1.0;
     double s_accumulator = 0.0;
+    // The field's own time, in steps: what falling water's pushes change by.
+    uint32_t s_stepCount = 0;
     // Drips: when the player last touched water, read back from the GPU a few frames late, and whether they run.
     double s_lastInWater = -1e9;
     // The splash grid has been traced, around here, since the player went into falling water. The particles run before the ripple pass: they read the last frame's.
@@ -512,12 +516,15 @@ namespace dxvk {
   void DxvkDarkSoulsRipples::dispatch(RtxContext* ctx) {
     if (!s_frame.active) {
       s_bodyTopReady = false;
+      // The window may have moved without its new cells being cleared: start over when the passes run again.
+      s_field.reset = true;
       return;
     }
     const auto& tlas = ctx->getResourceManager().getTLAS(Tlas::Opaque).accelStructure;
     const Rc<DxvkBuffer> surfaceBuffer = ctx->getSceneManager().getSurfaceBuffer();
     if (tlas.ptr() == nullptr || surfaceBuffer == nullptr) {
       s_bodyTopReady = false;
+      s_field.reset = true;
       return;
     }
 
@@ -531,11 +538,14 @@ namespace dxvk {
 
     const uint32_t n = s_field.gridSize;
     const uint32_t groups = (n + DS1_RIPPLE_GROUP_SIZE - 1) / DS1_RIPPLE_GROUP_SIZE;
-    // The bodies are looked for in a square centred on the player, inside the window.
-    const uint32_t collisionCells = std::min(uint32_t(std::max(collisionSize(), 0.0f) / s_field.cellSize), n);
+    // The bodies are looked for in the whole window, or with the enemies left out in a square centred on the player, inside it.
+    const uint32_t collisionCells = enemies() ? n : std::min(uint32_t(std::max(collisionSize(), 0.0f) / s_field.cellSize), n);
     const ivec2 collisionMin { int(n - collisionCells) / 2, int(n - collisionCells) / 2 };
+    // The map pass writes this frame's bodies here; the steps below may swap the two.
+    const uint32_t mappedOccupancy = s_field.current;
 
     {
+      ScopedGpuProfileZone(ctx, "DS1 Ripple Map");
       Ds1RippleMapArgs args = {};
       args.origin = s_field.origin;
       args.previousOrigin = s_field.previousOrigin;
@@ -548,6 +558,26 @@ namespace dxvk {
       args.collisionSize = collisionCells;
       args.swampIsLiquid = DxvkDarkSoulsSwamp::wade() ? 1u : 0u;
       args.collisionMin = collisionMin;
+      args.enemies = enemies() ? 1u : 0u;
+      args.testLift = testLift();
+      args.enemyReach = std::clamp(enemyReach(), kBodyReach, 5.0f);
+      // The sheets are looked for only while a waterfall's mesh is drawn at all.
+      if (waterfalls() && fallStrength() > 0.0f) {
+        const uint32_t frameId = ctx->getDevice()->getCurrentFrameId();
+        for (const RtInstance* instance : ctx->getSceneManager().getInstanceManager().getInstanceTable()) {
+          if ((instance->surface.ds1RippleMarks & 4u) != 0 && instance->getFrameLastUpdated() == frameId) {
+            args.falls = 1;
+            break;
+          }
+        }
+      }
+      args.fallHeight = std::clamp(fallHeight(), 0.02f, 2.0f);
+      args.fallReach = std::clamp(fallReach(), 0.005f, 1.0f);
+      // The sheets are decals, in the unordered TLAS. Without one, nothing is looked for.
+      const auto& unorderedTlas = ctx->getResourceManager().getTLAS(Tlas::Unordered).accelStructure;
+      if (unorderedTlas.ptr() == nullptr) {
+        args.falls = 0;
+      }
       const Vector3 test = testBody();
       if (test.x > 0.0f) {
         const float angle = float(std::fmod(nowSeconds() * double(test.z) / double(std::max(test.y, 0.01f)), 2.0 * double(kPi)));
@@ -556,6 +586,8 @@ namespace dxvk {
       }
       ctx->pushConstants(0, sizeof(args), &args);
       ctx->bindAccelerationStructure(DS1_RIPPLE_BINDING_TLAS, tlas);
+      // As the common bindings have it, on the same slot (fork_ds1_ripples.h): nothing else may land there.
+      ctx->bindAccelerationStructure(DS1_RIPPLE_BINDING_TLAS_UNORDERED, unorderedTlas);
       ctx->bindResourceBuffer(DS1_RIPPLE_BINDING_SURFACES, DxvkBufferSlice(surfaceBuffer, 0, surfaceBuffer->info().size));
       ctx->bindResourceView(DS1_RIPPLE_BINDING_HEIGHT, s_field.heights[0].view, nullptr);
       ctx->bindResourceView(DS1_RIPPLE_BINDING_HEIGHT_PREV, s_field.heights[1].view, nullptr);
@@ -694,6 +726,7 @@ namespace dxvk {
     const double viscosityStep = std::min(2.0 * std::max(double(viscosity()), 0.0) * stepTime / (cell * cell), 0.2);
 
     for (uint32_t step = 0; step < s_frame.steps; ++step) {
+      ScopedGpuProfileZone(ctx, "DS1 Ripple Step");
       Ds1RippleStepArgs args = {};
       args.origin = s_field.origin;
       args.gridSize = n;
@@ -711,6 +744,10 @@ namespace dxvk {
       args.collisionSize = collisionCells;
       // The bodies' movement since the last step, shared out over this frame's steps.
       args.displacement = displacement() / float(s_frame.steps);
+      args.fallStrength = waterfalls() ? std::clamp(fallStrength(), 0.0f, 0.02f) : 0.0f;
+      args.fallRate = std::clamp(fallRate(), 0.1f, 60.0f);
+      // Wrapped every 4096 s, where the pattern jumps once.
+      args.fallTime = float(double(s_stepCount++ % uint32_t(4096.0 / stepTime)) * stepTime);
       const uint32_t previous = (s_field.newest + 2) % 3;
       const uint32_t next = (s_field.newest + 1) % 3;
       ctx->pushConstants(0, sizeof(args), &args);
@@ -731,17 +768,20 @@ namespace dxvk {
     }
 
     {
+      ScopedGpuProfileZone(ctx, "DS1 Ripple Slope");
       Ds1RippleSlopeArgs args = {};
       args.origin = s_field.origin;
       args.gridSize = n;
       args.cellSize = s_field.cellSize;
       args.alpha = s_frame.alpha;
       args.referenceHeight = s_frame.player.y;
+      args.showBodies = showBodies() ? 0.03f : 0.0f;
       ctx->pushConstants(0, sizeof(args), &args);
       ctx->bindResourceView(DS1_RIPPLE_BINDING_HEIGHT, s_field.heights[s_field.newest].view, nullptr);
       ctx->bindResourceView(DS1_RIPPLE_BINDING_HEIGHT_PREV, s_field.heights[(s_field.newest + 2) % 3].view, nullptr);
       ctx->bindResourceView(DS1_RIPPLE_BINDING_WATER, s_field.water.view, nullptr);
       ctx->bindResourceView(DS1_RIPPLE_BINDING_SLOPE, s_field.slope.view, nullptr);
+      ctx->bindResourceView(DS1_RIPPLE_BINDING_OCCUPANCY, s_field.occupancy[mappedOccupancy].view, nullptr);
       ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, Ds1RippleSlopeShader::getShader());
       ctx->dispatch(groups, groups, 1);
     }

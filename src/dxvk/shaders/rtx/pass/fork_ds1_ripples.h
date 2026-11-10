@@ -46,6 +46,11 @@
 // The common ray tracing indices for the TLAS and the surfaces (BINDING_ACCELERATION_STRUCTURE,
 // BINDING_SURFACE_DATA_BUFFER), so they are what every later pass binds there anyway.
 #define DS1_RIPPLE_BINDING_TLAS          0
+// The unordered TLAS: blended map meshes are decals to the runtime (the DS1 proxy's decal marker), and those live there.
+// The same slot as the common bindings' (BINDING_ACCELERATION_STRUCTURE_UNORDERED): the context's slots are shared with the
+// ray tracing passes that follow, which bound theirs before this pass runs. On slot 1, their previous frame's TLAS, the
+// shadow and reuse checks of the whole frame ran against the decals alone, and the picture came out half as bright again.
+#define DS1_RIPPLE_BINDING_TLAS_UNORDERED 2
 #define DS1_RIPPLE_BINDING_SURFACES      4
 #define DS1_RIPPLE_BINDING_HEIGHT        21
 #define DS1_RIPPLE_BINDING_HEIGHT_PREV   22
@@ -80,6 +85,14 @@
 #define DS1_RIPPLE_SURFACE_UVEC4S        16
 #define DS1_RIPPLE_WATER_FLAG            (1u << 26)
 #define DS1_RIPPLE_SKINNED_FLAG          (1u << 29)
+// data0b.z, the low half of the record's first uvec4's w (RtSurface::writeGPUData's flags0): the view fade's bit, and without
+// it Surface::isDs1RigidPart and Surface::isDs1OtherCharacter.
+#define DS1_RIPPLE_VIEW_FADE_MARK        (1u << 2)
+#define DS1_RIPPLE_RIGID_PART_MARK       (1u << 3)
+#define DS1_RIPPLE_OTHER_CHARACTER_MARK  (1u << 4)
+#define DS1_RIPPLE_FALLING_WATER_MARK    (1u << 5)
+// The occupancy texture: 1 in a cell a body fills, this in an open cell falling water lands in, 0 elsewhere.
+#define DS1_RIPPLE_OCCUPANCY_FALL        0.25f
 // Surface::isDs1Swamp: a liquid too where rtx.ds1Swamp.wade says so.
 #define DS1_RIPPLE_SWAMP_FLAG            (1u << 19)
 // Surface::hasDs1SelfLit: on an opaque surface that is not a character, the game's lava.
@@ -123,7 +136,7 @@ struct Ds1RippleMapArgs {
 
   float rayLength;
   // A cell is inside a body when rays along +-x and +-z, bodyReach long, all hit a character (a skinned
-  // surface) at the waterline: a leg is narrower than that, the gap between two legs is open sideways.
+  // surface or a rigid part) at the waterline: a leg is narrower than that, the gap between two legs is open sideways.
   float bodyReach;
   // The bodies are looked for in the window cells collisionMin .. collisionMin + collisionSize - 1.
   uint collisionSize;
@@ -133,8 +146,18 @@ struct Ds1RippleMapArgs {
   // Test: a body of this radius at this world x, z, 0 for none.
   vec2 testBody;
   float testBodyRadius;
-  uint pad1;
-  uint pad2;
+  // 0: only the player's own body and gear move the water (rtx.ds1Ripple.enemies).
+  uint enemies;
+  // Test (rtx.ds1Ripple.testLift): the bodies are looked for this far above the waterline.
+  float testLift;
+  // bodyReach for the surfaces marked as another character's than the player's: an enemy's body can be much wider than a leg.
+  float enemyReach;
+
+  // 1: a waterfall's mesh is in the scene, and the cells its sheet falls into are looked for.
+  uint falls;
+  // The sheet is looked for this far above the waterline, and this far to each side of the cell along x and z.
+  float fallHeight;
+  float fallReach;
   uint pad3;
 };
 
@@ -166,6 +189,13 @@ struct Ds1RippleStepArgs {
   // Share of the height difference to the neighbours evened out each step.
   float smoothing;
   uint pad0;
+
+  // Falling water: the height a cell it lands in is pushed by per step at the most, either way (metres); the field's time in
+  // seconds; and how many times a second the pattern of pushes changes.
+  float fallStrength;
+  float fallTime;
+  float fallRate;
+  uint pad1;
 };
 
 struct Ds1RippleSlopeArgs {
@@ -177,7 +207,8 @@ struct Ds1RippleSlopeArgs {
   float alpha;
   // Ds1RippleArgs::referenceHeight.
   float referenceHeight;
-  float pad0;
+  // Test (rtx.ds1Ripple.showBodies): the cells bodies fill, and a few around them, stand this high. 0: off.
+  float showBodies;
   float pad1;
 };
 

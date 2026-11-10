@@ -24,7 +24,14 @@
 // water surface (textureFlags bit 26) straight below the ray top; cells without one hold no water. Cells
 // that were outside last frame's window start at rest. In the collision window, a water cell is inside a
 // body when rays along +-x and +-z just above the waterline all meet a character (a skinned surface, textureFlags
-// bit 29) within reach: the shins, a robe's hem, an enemy wading beside the player.
+// bit 29, or a rigid part of one, Surface::isDs1RigidPart) within reach: the shins, a robe's hem, an enemy wading
+// beside the player, the head of a club. A blade or a shield's rim is thinner than a cell and encloses none: a cell
+// a rigid part's surface passes through is filled too. With rtx.ds1Ripple.enemies off, the surfaces marked as another
+// character's than the player's (Surface::isDs1OtherCharacter) move no water; with it on, their bodies may be wider
+// (enemyReach): a boss's foot is no leg.
+//
+// Where a waterfall's sheet (Surface::isDs1FallingWater) stands in a water cell or right beside it, the cell is marked as
+// one falling water lands in, and the step stirs it.
 //
 // Shallow water (the game has plenty: a few centimetres over cobbles, rubble or mud) lies at or under the
 // ground in places. Just above its waterline the rays started in the floor or met it first, so only the odd
@@ -38,6 +45,9 @@
 
 layout(binding = DS1_RIPPLE_BINDING_TLAS)
 RaytracingAccelerationStructure topLevelAS;
+
+layout(binding = DS1_RIPPLE_BINDING_TLAS_UNORDERED)
+RaytracingAccelerationStructure unorderedAS;
 
 layout(binding = DS1_RIPPLE_BINDING_SURFACES)
 StructuredBuffer<uint4> surfaceWords;
@@ -67,6 +77,36 @@ uint surfaceFlags(uint instanceId, uint geometryIndex)
 {
   const uint surfaceIndex = (instanceId & CUSTOM_INDEX_SURFACE_MASK) + geometryIndex;
   return surfaceWords[surfaceIndex * DS1_RIPPLE_SURFACE_UVEC4S + 13].z;
+}
+
+// What a surface is to the water. The marks share their bits with the view fade's values, which no character has.
+static const uint kNothing = 0;
+static const uint kBody = 1;
+static const uint kRigidPart = 2;
+// Added to either: another character's than the player's.
+static const uint kOther = 4;
+
+uint characterKind(uint instanceId, uint geometryIndex, bool countOthers)
+{
+  const uint record = ((instanceId & CUSTOM_INDEX_SURFACE_MASK) + geometryIndex) * DS1_RIPPLE_SURFACE_UVEC4S;
+  const uint marks = surfaceWords[record].w;
+  const bool marked = (marks & DS1_RIPPLE_VIEW_FADE_MARK) == 0;
+  const bool other = marked && (marks & DS1_RIPPLE_OTHER_CHARACTER_MARK) != 0;
+  if (!countOthers && other)
+  {
+    return kNothing;
+  }
+  if ((surfaceWords[record + 13].z & DS1_RIPPLE_SKINNED_FLAG) != 0)
+  {
+    return kBody | (other ? kOther : 0u);
+  }
+  return marked && (marks & DS1_RIPPLE_RIGID_PART_MARK) != 0 ? (kRigidPart | (other ? kOther : 0u)) : kNothing;
+}
+
+bool isFallingWater(uint instanceId, uint geometryIndex)
+{
+  const uint marks = surfaceWords[((instanceId & CUSTOM_INDEX_SURFACE_MASK) + geometryIndex) * DS1_RIPPLE_SURFACE_UVEC4S].w;
+  return (marks & (DS1_RIPPLE_VIEW_FADE_MARK | DS1_RIPPLE_FALLING_WATER_MARK)) == DS1_RIPPLE_FALLING_WATER_MARK;
 }
 
 // The distance down to the first DS1 water surface, or -1.
@@ -129,26 +169,78 @@ float traceSwamp(vec3 origin, float length)
 // The ground, as a height above the water, may be up to this far above the water for a body there to push it.
 static const float kMaxGroundAboveWater = 0.15f;
 
-// Whether a character's surface lies along the ray within reach; the floor, rubble and walls do not count. Both
-// faces count: from inside a leg the ray meets its back faces.
-bool hitsBody(vec3 origin, vec3 direction)
+// Whether a character's surface lies along the ray within reach (only a rigid part's, with partsOnly); the floor, rubble
+// and walls do not count. Both faces count: from inside a leg the ray meets its back faces. Another character's surface
+// may lie up to otherReach away.
+bool hitsBody(vec3 origin, vec3 direction, float reach, float otherReach, bool partsOnly)
 {
   RayDesc ray;
   ray.Origin = origin;
   ray.Direction = direction;
   ray.TMin = 0.0f;
-  ray.TMax = cb.bodyReach;
+  ray.TMax = cb.enemies != 0 ? max(reach, otherReach) : reach;
 
   RayQuery<0> rayQuery = RayQuery<0>();
   rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES, OBJECT_MASK_OPAQUE, ray);
   while (rayQuery.Proceed())
   {
-    if ((surfaceFlags(rayQuery.CandidateInstanceID(), rayQuery.CandidateGeometryIndex()) & DS1_RIPPLE_SKINNED_FLAG) != 0)
+    const uint kind = characterKind(rayQuery.CandidateInstanceID(), rayQuery.CandidateGeometryIndex(), cb.enemies != 0);
+    const uint what = kind & ~kOther;
+    if ((what == kRigidPart || (what == kBody && !partsOnly)) &&
+        rayQuery.CandidateTriangleRayT() <= ((kind & kOther) != 0 ? otherReach : reach))
     {
       rayQuery.CommitNonOpaqueTriangleHit();
     }
   }
   return rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
+}
+
+// Whether a waterfall's sheet stands within reach along the ray. The game blends it, which makes it a decal to the runtime, in
+// the unordered TLAS; where a mod made it opaque or it is no decal, it is in the main one.
+bool hitsFallingWater(vec3 origin, vec3 direction, float reach)
+{
+  RayDesc ray;
+  ray.Origin = origin;
+  ray.Direction = direction;
+  ray.TMin = 0.0f;
+  ray.TMax = reach;
+
+  {
+    RayQuery<0> rayQuery = RayQuery<0>();
+    rayQuery.TraceRayInline(unorderedAS, RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES, 0xFF, ray);
+    while (rayQuery.Proceed())
+    {
+      if (rayQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
+          isFallingWater(rayQuery.CandidateInstanceID(), rayQuery.CandidateGeometryIndex()))
+      {
+        rayQuery.CommitNonOpaqueTriangleHit();
+      }
+    }
+    if (rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+    {
+      return true;
+    }
+  }
+
+  RayQuery<0> rayQuery = RayQuery<0>();
+  rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES,
+                          OBJECT_MASK_OPAQUE | OBJECT_MASK_ALPHA_BLEND, ray);
+  while (rayQuery.Proceed())
+  {
+    if (isFallingWater(rayQuery.CandidateInstanceID(), rayQuery.CandidateGeometryIndex()))
+    {
+      rayQuery.CommitNonOpaqueTriangleHit();
+    }
+  }
+  return rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
+}
+
+// Whether falling water lands in the cell: its sheet crosses a level segment through the cell, along x or z. Level only: the
+// flat pools at a fall's foot share its texture and its mark, and no level segment meets those.
+bool fallsInto(vec3 position)
+{
+  return hitsFallingWater(position - vec3(cb.fallReach, 0.0f, 0.0f), vec3(1.0f, 0.0f, 0.0f), 2.0f * cb.fallReach) ||
+         hitsFallingWater(position - vec3(0.0f, 0.0f, cb.fallReach), vec3(0.0f, 0.0f, 1.0f), 2.0f * cb.fallReach);
 }
 
 // The ground's height above the water at a cell (characters' surfaces skipped: the foot standing there), or
@@ -165,7 +257,8 @@ float groundAboveWater(vec3 waterPoint)
   rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES, OBJECT_MASK_OPAQUE, ray);
   while (rayQuery.Proceed())
   {
-    if ((surfaceFlags(rayQuery.CandidateInstanceID(), rayQuery.CandidateGeometryIndex()) & DS1_RIPPLE_SKINNED_FLAG) == 0)
+    // No character is ground, whoever's it is.
+    if (characterKind(rayQuery.CandidateInstanceID(), rayQuery.CandidateGeometryIndex(), true) == kNothing)
     {
       rayQuery.CommitNonOpaqueTriangleHit();
     }
@@ -181,8 +274,21 @@ float groundAboveWater(vec3 waterPoint)
 
 bool insideBody(vec3 position)
 {
-  return hitsBody(position, vec3(1.0f, 0.0f, 0.0f)) && hitsBody(position, vec3(-1.0f, 0.0f, 0.0f)) &&
-         hitsBody(position, vec3(0.0f, 0.0f, 1.0f)) && hitsBody(position, vec3(0.0f, 0.0f, -1.0f));
+  return hitsBody(position, vec3(1.0f, 0.0f, 0.0f), cb.bodyReach, cb.enemyReach, false) &&
+         hitsBody(position, vec3(-1.0f, 0.0f, 0.0f), cb.bodyReach, cb.enemyReach, false) &&
+         hitsBody(position, vec3(0.0f, 0.0f, 1.0f), cb.bodyReach, cb.enemyReach, false) &&
+         hitsBody(position, vec3(0.0f, 0.0f, -1.0f), cb.bodyReach, cb.enemyReach, false);
+}
+
+// Whether a rigid part's surface passes through the cell: segments along the three axes through its centre, 3/4 of a cell
+// to each side, which a sheet at any angle within about half a cell of the centre meets. The skinned bodies stay with the
+// enclosure test alone, as they were tuned.
+bool crossesRigidPart(vec3 position)
+{
+  const float reach = 0.75f * cb.cellSize;
+  return hitsBody(position - vec3(reach, 0.0f, 0.0f), vec3(1.0f, 0.0f, 0.0f), 2.0f * reach, 2.0f * reach, true) ||
+         hitsBody(position - vec3(0.0f, 0.0f, reach), vec3(0.0f, 0.0f, 1.0f), 2.0f * reach, 2.0f * reach, true) ||
+         hitsBody(position - vec3(0.0f, reach, 0.0f), vec3(0.0f, 1.0f, 0.0f), 2.0f * reach, 2.0f * reach, true);
 }
 
 int2 wrapTexel(int2 cell, int n)
@@ -228,7 +334,8 @@ void main(uint2 thread : SV_DispatchThreadID)
   if (inCollision && waterT >= 0.0f)
   {
     const float ground = groundAboveWater(vec3(top.x, waterHeight, top.z));
-    if (ground <= kMaxGroundAboveWater && insideBody(vec3(top.x, waterHeight + ground + 0.02f, top.z)))
+    const vec3 waterline = vec3(top.x, waterHeight + ground + 0.02f + cb.testLift, top.z);
+    if (ground <= kMaxGroundAboveWater && (insideBody(waterline) || crossesRigidPart(waterline)))
     {
       body = 1.0f;
     }
@@ -236,6 +343,11 @@ void main(uint2 thread : SV_DispatchThreadID)
   if (inCollision && waterT >= 0.0f && cb.testBodyRadius > 0.0f && length(top.xz - cb.testBody) < cb.testBodyRadius)
   {
     body = 1.0f;
+  }
+  // Falling water, anywhere in the window: the cell stays open.
+  if (body == 0.0f && cb.falls != 0 && waterT >= 0.0f && fallsInto(vec3(top.x, waterHeight + cb.fallHeight, top.z)))
+  {
+    body = DS1_RIPPLE_OCCUPANCY_FALL;
   }
   occupancy[texel] = body;
   // A body already standing in a cell that just entered the window has pushed no water yet.

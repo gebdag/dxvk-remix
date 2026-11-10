@@ -1145,6 +1145,7 @@ namespace dxvk {
         currentInstance.surface.isDs1Fur = drawCall.getMaterialData().isDs1Fur;
         currentInstance.surface.isDs1PaintedColour = drawCall.getMaterialData().isDs1PaintedColour;
         currentInstance.surface.isDs1WetBody = drawCall.getMaterialData().isDs1WetBody;
+        currentInstance.surface.ds1RippleMarks = drawCall.getMaterialData().ds1RippleMarks;
         currentInstance.surface.ds1HazeSet = drawCall.getMaterialData().ds1HazeSet;
         currentInstance.surface.ds1UnlitExposurePower = drawCall.getMaterialData().ds1UnlitExposurePower;
         currentInstance.surface.ds1SunLightmap = drawCall.getMaterialData().ds1SunLightmap;

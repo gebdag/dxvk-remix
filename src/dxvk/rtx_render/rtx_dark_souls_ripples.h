@@ -92,7 +92,9 @@ namespace dxvk {
     RTX_OPTION("rtx.ds1Water", float, refractionFullDepth, 2.5f, "DS1 water this deep, in metres, bends the view fully (IOR 1.33). 0 bends it fully at every depth.");
     RTX_OPTION_FLAG("rtx.ds1Ripple", Vector3, playerPosition, Vector3(0.0f), RtxOptionFlags::NoSave,
                     "Set by the DS1 proxy every frame the player moves: their position (feet), where the ripple window is centred.");
-    RTX_OPTION("rtx.ds1Ripple", int, gridSize, 512, "Cells along each side of the ripple window (a multiple of 16).");
+    RTX_OPTION("rtx.ds1Ripple", int, gridSize, 768,
+               "Cells along each side of the ripple window, which follows the player (a multiple of 16). 768 cells of 1.5 cm are 11.5 m: ripples at full strength "
+               "up to 5 m from the player. Measured on open water, ripples showed clearly up to 4.5 m away and faintly at 6 m; 512 cells cost 0.20 ms a frame, 768 0.27, 1024 0.36.");
     RTX_OPTION("rtx.ds1Ripple", float, cellSize, 0.015f,
                "Size of a ripple cell in metres. The shortest ripple that travels is about 8 cells long.");
     RTX_OPTION("rtx.ds1Ripple", float, stepRate, 60.0f, "Ripple simulation steps per second (fixed, independent of the frame rate).");
@@ -110,8 +112,13 @@ namespace dxvk {
     RTX_OPTION("rtx.ds1Ripple", float, smoothing, 0.0f, "Share of the height difference to the neighbours evened out each step, at most 0.2: rounds the edge a body leaves in a thick liquid.");
     RTX_OPTION("rtx.ds1Ripple", float, displacement, 0.01f,
                "Height of the water a body pushes aside per cell it moves into, in metres (spread over the cells around it).");
-    RTX_OPTION("rtx.ds1Ripple", float, collisionSize, 3.0f,
-               "Side of the square around the player in which characters' bodies push the water, in metres.");
+    RTX_OPTION("rtx.ds1Ripple", float, collisionSize, 5.0f,
+               "With rtx.ds1Ripple.enemies off: side of the square around the player in which bodies push the water, in metres. "
+               "The player's weapon reaches about 2.5 m.");
+    RTX_OPTION("rtx.ds1Ripple", bool, enemies, true,
+               "Enemies move the water too, anywhere in the ripple window. Off: only what is not marked as an enemy's by the DS1 proxy, "
+               "within rtx.ds1Ripple.collisionSize of the player: the player's body, armour, weapon and shield "
+               "(and a character built from the player's parts standing that close: a human NPC, a phantom).");
     RTX_OPTION("rtx.ds1Ripple", float, normalScale, 0.5f, "Scale on the ripple slope added to the water normal (1 = the real slope).");
     RTX_OPTION("rtx.ds1Ripple", float, borderFade, 0.75f, "Metres over which ripples fade towards the window's border.");
     RTX_OPTION("rtx.ds1Ripple", float, parallaxScale, 1.0f,
@@ -121,6 +128,23 @@ namespace dxvk {
     RTX_OPTION("rtx.ds1Ripple", int, parallaxSteps, 8, "Steps of the parallax walk at the least (looking straight down).");
     RTX_OPTION("rtx.ds1Ripple", int, parallaxMaxSteps, 48, "Steps of the parallax walk at the most (looking along the surface, where a step would otherwise skip a crest). "
                "With 5 cm of rtx.ds1Ripple.parallaxBound and 1.5 cm cells, 48 steps keep under a cell a step down to about 11 degrees over the surface; lower than that, short steep crests can be missed.");
+    RTX_OPTION("rtx.ds1Ripple", float, enemyReach, 0.3f,
+               "With rtx.ds1Ripple.enemies on: an enemy's body fills a cell when its surface lies within this of it on all four sides, in metres. "
+               "0.3 m, a leg's width, is what the player's own takes. A boss's foot or a neck is wider and fills no cell at that; a larger value lets it, "
+               "but also fills open water that enemies stand around on all four sides. Not proven on a capture: to try.");
+    RTX_OPTION("rtx.ds1Ripple", bool, waterfalls, true,
+               "Where a waterfall's sheet meets water, it stirs the water, and ripples run out from there.");
+    RTX_OPTION("rtx.ds1Ripple", float, fallStrength, 0.002f,
+               "Falling water pushes a cell it lands in up or down by this much per step at the most, in metres. 0: none.");
+    RTX_OPTION("rtx.ds1Ripple", float, fallRate, 12.0f, "How many times a second the pattern of falling water's pushes changes.");
+    RTX_OPTION("rtx.ds1Ripple", float, fallReach, 0.15f, "Falling water lands in the cells within this of its sheet, in metres.");
+    RTX_OPTION("rtx.ds1Ripple", float, fallHeight, 0.15f,
+               "The sheet is looked for this far above the waterline, in metres: some sheets end short of the water, and the flat pool at a fall's foot is not it.");
+    RTX_OPTION_FLAG("rtx.ds1Ripple", bool, showBodies, false, RtxOptionFlags::NoSave,
+                    "Test: the cells bodies fill at the waterline, and four cells around them, stand 3 cm high and flat instead of the ripples, "
+                    "so what moves the water shows around it (plainly in the Ripple Parallax Shift debug view). The cells falling water lands in lie 3 cm low.");
+    RTX_OPTION_FLAG("rtx.ds1Ripple", float, testLift, 0.0f, RtxOptionFlags::NoSave,
+                    "Test on a replay: the bodies are looked for this many metres above the waterline, where a weapon or a shield is held.");
     RTX_OPTION_FLAG("rtx.ds1Ripple", Vector3, testBody, Vector3(0.0f), RtxOptionFlags::NoSave,
                     "Test on a replay, where nothing moves: x > 0 is a body of that radius, walking a circle of radius y around the player at z m/s.");
   };

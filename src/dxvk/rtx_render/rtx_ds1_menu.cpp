@@ -62,12 +62,17 @@ namespace dxvk {
       RemixGui::SliderFloat("Ripple Damping (1/s)", &DxvkDarkSoulsRipples::dampingObject(), 0.0f, 5.0f, "%.2f", kClamp);
       RemixGui::DragFloat("Ripple Viscosity (m2/s)", &DxvkDarkSoulsRipples::viscosityObject(), 1.0e-5f, 0.0f, 2.0e-3f, "%.5f", kClamp);
       RemixGui::SliderFloat("Ripple Displacement (m)", &DxvkDarkSoulsRipples::displacementObject(), 0.0f, 0.05f, "%.4f", kClamp);
-      RemixGui::SliderFloat("Ripple Collision Area (m)", &DxvkDarkSoulsRipples::collisionSizeObject(), 0.5f, 7.0f, "%.1f", kClamp);
+      RemixGui::Checkbox("Ripples From Enemies", &DxvkDarkSoulsRipples::enemiesObject());
+      RemixGui::SliderFloat("Enemy Body Reach (m)", &DxvkDarkSoulsRipples::enemyReachObject(), 0.3f, 5.0f, "%.2f", kClamp);
+      RemixGui::Checkbox("Ripples From Waterfalls", &DxvkDarkSoulsRipples::waterfallsObject());
+      RemixGui::DragFloat("Waterfall Strength (m)", &DxvkDarkSoulsRipples::fallStrengthObject(), 1.0e-5f, 0.0f, 0.01f, "%.5f", kClamp);
+      RemixGui::SliderFloat("Ripple Collision Area (m), Enemies Off", &DxvkDarkSoulsRipples::collisionSizeObject(), 0.5f, 7.0f, "%.1f", kClamp);
       RemixGui::SliderFloat("Ripple Normal Scale", &DxvkDarkSoulsRipples::normalScaleObject(), 0.0f, 5.0f, "%.2f", kClamp);
       RemixGui::SliderFloat("Ripple Parallax Scale", &DxvkDarkSoulsRipples::parallaxScaleObject(), 0.0f, 4.0f, "%.2f", kClamp);
       RemixGui::SliderFloat("Ripple Parallax Reach (m)", &DxvkDarkSoulsRipples::parallaxBoundObject(), 0.01f, 0.3f, "%.3f", kClamp);
       RemixGui::DragInt("Ripple Parallax Steps (max)", &DxvkDarkSoulsRipples::parallaxMaxStepsObject(), 1.0f, 8, 128, "%d", kClamp);
       RemixGui::SliderFloat("Ripple Cell Size (m)", &DxvkDarkSoulsRipples::cellSizeObject(), 0.01f, 0.05f, "%.3f", kClamp);
+      RemixGui::DragInt("Ripple Window (cells)", &DxvkDarkSoulsRipples::gridSizeObject(), 16.0f, 256, 1024, "%d", kClamp);
       ImGui::Unindent();
     }
 

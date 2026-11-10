@@ -96,10 +96,40 @@ float displaced(int2 windowCell)
         continue;
       }
       const int2 texel = wrapTexel(int2(cb.origin.x, cb.origin.y) + other, n);
-      sum += weights[dy + 2] * weights[dx + 2] * (occupancy[texel] - occupancyPrev[texel]);
+      // Bodies only: a cell falling water lands in is open.
+      sum += weights[dy + 2] * weights[dx + 2] * (step(0.5f, occupancy[texel]) - step(0.5f, occupancyPrev[texel]));
     }
   }
   return sum / 256.0f;
+}
+
+float latticeValue(int3 p)
+{
+  uint h = uint(p.x) * 0x8DA6B343u ^ uint(p.y) * 0xD8163841u ^ uint(p.z) * 0xCB1AB31Fu;
+  h ^= h >> 15;
+  h *= 0x2C1B3C6Du;
+  h ^= h >> 12;
+  h *= 0x297A2D39u;
+  h ^= h >> 15;
+  return float(h & 0xFFFFu) / 32767.5f - 1.0f;
+}
+
+// Falling water's push on a cell it lands in, -1 to 1: smooth noise in patches of a few cells that change fallRate times a
+// second, so the water is thrown about in splashes of a hand's size instead of cell by cell.
+float fallPush(int2 cell)
+{
+  const vec3 p = vec3(float(cell.x) * 0.25f, float(cell.y) * 0.25f, cb.fallTime * cb.fallRate);
+  const int3 base = int3(floor(p));
+  vec3 f = p - floor(p);
+  f = f * f * (3.0f - 2.0f * f);
+  float value = 0.0f;
+  for (int corner = 0; corner < 8; ++corner)
+  {
+    const int3 o = int3(corner & 1, (corner >> 1) & 1, (corner >> 2) & 1);
+    const vec3 w = lerp(1.0f - f, f, vec3(o));
+    value += latticeValue(base + o) * w.x * w.y * w.z;
+  }
+  return value;
 }
 
 [shader("compute")]
@@ -167,6 +197,10 @@ void main(uint2 thread : SV_DispatchThreadID, uint2 groupThread : SV_GroupThread
   next += cb.smoothing * (tile[centre.y][centre.x + 1] + tile[centre.y][centre.x - 1] + tile[centre.y + 1][centre.x] + tile[centre.y - 1][centre.x] - 4.0f * h);
 
   next += cb.displacement * displaced(windowCell);
+  if (cb.fallStrength > 0.0f && occupancy[texel] > 0.5f * DS1_RIPPLE_OCCUPANCY_FALL)
+  {
+    next += cb.fallStrength * fallPush(cell);
+  }
 
   // Damped to 0 over the window's outer cells.
   const int edge = min(min(int(thread.x), int(thread.y)), min(n - 1 - int(thread.x), n - 1 - int(thread.y)));
