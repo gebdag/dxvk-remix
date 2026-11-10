@@ -428,6 +428,34 @@ namespace dxvk {
     dispatchFilter(ctx, m_dofFilterConstants[constantsIndex + 1], m_dofScratch, output, taps, vertical, 1);
   }
 
+  bool DxvkDarkSoulsLook::dispatchSceneBeforeUpscale(
+    Rc<DxvkContext> ctx,
+    const Resources::Resource& compositeOutput,
+    const Resources::Resource& linearViewZ,
+    const Resources::Resource& surfaceFlags,
+    const Resources::Resource& motionVector,
+    const Resources::Resource& albedo,
+    const Resources::Resource& shadingNormal,
+    const Resources::Resource& additiveRadiance,
+    const DxvkDarkSoulsHaze& haze,
+    const Camera& camera,
+    float missLinearViewZ,
+    bool resetHistory) {
+    // Only at the composite's own size, which is view Z's: then each pixel is its own view Z texel.
+    const VkExtent3D colorExtent = compositeOutput.image->mipLevelExtent(0);
+    const VkExtent3D viewZExtent = linearViewZ.image->mipLevelExtent(0);
+    if (!hazeBeforeUpscale() || colorExtent.width != viewZExtent.width || colorExtent.height != viewZExtent.height) {
+      return false;
+    }
+    const float noJitter[2] = { 0.0f, 0.0f };
+    m_sceneMode = 1;
+    dispatchScene(ctx, compositeOutput, linearViewZ, surfaceFlags, motionVector, albedo, shadingNormal, additiveRadiance, haze, camera,
+                  noJitter, missLinearViewZ, resetHistory);
+    m_sceneMode = 0;
+    m_preFrame = ctx->getDevice()->getCurrentFrameId();
+    return true;
+  }
+
   void DxvkDarkSoulsLook::dispatchScene(
     Rc<DxvkContext> ctx,
     const Resources::Resource& inOutColor,
@@ -444,25 +472,38 @@ namespace dxvk {
     bool resetHistory) {
     ScopedGpuProfileZone(ctx, "Dark Souls 1 Look: Scene");
     ensureResources(ctx, std::max(bloomWidth(), 2), std::max(bloomHeight(), 2));
+    const uint32_t frameId = ctx->getDevice()->getCurrentFrameId();
+    // 1: called by dispatchSceneBeforeUpscale on the composite. 2: the upscaled frame after it (only the clip, DoF rate and meter left).
+    const uint32_t mode = m_sceneMode == 1 ? 1u : (m_preFrame == frameId ? 2u : 0u);
 
     // The ambient meter reads the radiance the scene pass is about to overwrite.
-    if (DxvkDarkSoulsExposure::wantsMeter()) {
+    if (mode != 2 && DxvkDarkSoulsExposure::wantsMeter()) {
       dispatchAmbientMeter(ctx, inOutColor, albedo, shadingNormal, linearViewZ, missLinearViewZ);
     }
 
     const VkExtent3D extent = inOutColor.image->mipLevelExtent(0);
-    ensureDofResources(ctx, extent);
+    if (mode == 1) {
+      if (!m_preLifted.isValid() || m_preLifted.image->mipLevelExtent(0).width != extent.width ||
+          m_preLifted.image->mipLevelExtent(0).height != extent.height) {
+        m_preLifted = Resources::createImageResource(ctx, "DS1 look lift before upscale", extent, VK_FORMAT_R16G16_SFLOAT);
+      }
+    } else {
+      ensureDofResources(ctx, extent);
+    }
     PostFxDarkSoulsHazeArgs hazeArgs;
     const bool hazeValid = haze.fillArgs(hazeArgs, extent, linearViewZ, camera, jitterOffset, missLinearViewZ);
 
     PostFxDarkSoulsLookSceneArgs args = {};
+    args.mode = mode;
     args.exposure = sceneExposure();
     // With no meter (a menu's character view, or metering off) there is nothing to go by: the eye returns to no lift, not to stay where it was.
-    if (!DxvkDarkSoulsExposure::wantsMeter()) {
+    if (mode != 2 && !DxvkDarkSoulsExposure::wantsMeter()) {
       updateEye(0.0f, 1.0f, false);
     }
-    args.eyeViewGain = eyeEnable() ? m_eyeViewGain : 1.0f;
-    m_eyeLifted = args.eyeViewGain > 1.0f;
+    args.eyeViewGain = eyeEnable() && mode != 2 ? m_eyeViewGain : 1.0f;
+    if (mode != 2) {
+      m_eyeLifted = args.eyeViewGain > 1.0f;
+    }
     args.eyeLocal = std::clamp(eyeLocal(), 0.0f, 2.0f);
     args.eyeMaxGain = std::max(eyeMaxGain(), 1.0f);
     // HDR10 output: the scene keeps what the game's 8-bit target would clip (rtx_hdr_output.h).
@@ -474,19 +515,19 @@ namespace dxvk {
     args.skyUnexpose = skyExposure > 0.0f ? 1.0f / skyExposure : 1.0f;
     args.skyBrightness = ds1SkyBrightness();
     args.eyeSkyMatch = skyMatte.isValid() ? std::max(eyeSkyMatch(), 0.0f) : 0.0f;
-    args.hazeEnable = hazeEnable() && hazeValid ? 1u : 0u;
+    args.hazeEnable = hazeEnable() && hazeValid && mode != 2 ? 1u : 0u;
     const bool dof = dofEnable() && gameActive();
     args.dofFarBegin = dofFarBegin();
     args.dofFarEnd = dofFarEnd();
     args.dofFarStrength = dof ? dofFarStrength() : 0.0f;
     // Without camera jitter the raster does not flip, so there is nothing to stabilize.
+    // Before the upscaler each pixel is its own view Z texel: nothing to stabilize, and the history is the upscaled pass's.
     const bool jittered = jitterOffset[0] != 0.0f || jitterOffset[1] != 0.0f;
-    args.depthStabilizationTexels = jittered ? std::max(depthStabilizationTexels(), 0.0f) : 0.0f;
+    args.depthStabilizationTexels = jittered && mode != 1 ? std::max(depthStabilizationTexels(), 0.0f) : 0.0f;
     args.temporalBlend = std::clamp(depthTemporalBlend(), 0.01f, 1.0f);
     // The history is last frame's output of this pass; any gap (a frame without the game's image
     // pipeline, a resize), a camera cut or a history reset leaves it describing another image.
-    const uint32_t frameId = ctx->getDevice()->getCurrentFrameId();
-    args.historyValid = !resetHistory && m_depthHistoryFrame != kInvalidFrameIndex && m_depthHistoryFrame + 1 == frameId ? 1u : 0u;
+    args.historyValid = mode != 1 && !resetHistory && m_depthHistoryFrame != kInvalidFrameIndex && m_depthHistoryFrame + 1 == frameId ? 1u : 0u;
     const auto& historyIn = m_depthHistory[m_depthHistoryIndex ^ 1];
     const auto& historyOut = m_depthHistory[m_depthHistoryIndex];
 
@@ -522,7 +563,7 @@ namespace dxvk {
     }
 
     // The eye's level of each part of the view, from the radiance the scene pass is about to overwrite. Nothing to do while the view takes no lift.
-    if (args.eyeViewGain > 1.0f) {
+    if (args.eyeViewGain > 1.0f && mode != 2) {
       ScopedGpuProfileZone(ctx, "Dark Souls 1 Look: Eye");
       const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
       const float dt = float(std::clamp(now - m_eyeTime, 0.0, 0.5));
@@ -555,15 +596,20 @@ namespace dxvk {
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_LINEAR_VIEW_Z, linearViewZ.view, nullptr);
     ctx->bindResourceBuffer(POST_FX_DS_LOOK_SCENE_HAZE, DxvkBufferSlice(m_hazeConstants, 0, m_hazeConstants->info().size));
     ctx->bindResourceBuffer(POST_FX_DS_LOOK_SCENE_CONSTANTS, DxvkBufferSlice(m_sceneConstants, 0, m_sceneConstants->info().size));
-    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_DOF_RATE, m_dofRate.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_DOF_RATE, mode == 1 ? m_preLifted.view : m_dofRate.view, nullptr);
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_SURFACE_FLAGS, surfaceFlags.view, nullptr);
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_MOTION_VECTOR, motionVector.view, nullptr);
-    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HISTORY_A_IN, historyIn[0].view, nullptr);
+    // Mode 1 neither reads nor writes the history (it may not exist yet on the first frame): any view of its own stands in.
+    const bool historyBound = mode != 1 && historyIn[0].isValid() && historyOut[0].isValid();
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HISTORY_A_IN, historyBound ? historyIn[0].view : m_preLifted.view, nullptr);
     ctx->bindResourceSampler(POST_FX_DS_LOOK_SCENE_HISTORY_A_IN, m_linearSampler);
-    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HISTORY_B_IN, historyIn[1].view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HISTORY_B_IN, historyBound ? historyIn[1].view : m_preLifted.view, nullptr);
     ctx->bindResourceSampler(POST_FX_DS_LOOK_SCENE_HISTORY_B_IN, m_linearSampler);
-    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HISTORY_A_OUT, historyOut[0].view, nullptr);
-    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HISTORY_B_OUT, historyOut[1].view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HISTORY_A_OUT, historyBound ? historyOut[0].view : m_preLifted.view, nullptr);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HISTORY_B_OUT, historyBound ? historyOut[1].view : m_preLifted.view, nullptr);
+    // What the lift before the upscaler added (mode 2); otherwise unread, any view stands in.
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_PRE_LIFTED, m_preLifted.isValid() ? m_preLifted.view : additiveRadiance.view, nullptr);
+    ctx->bindResourceSampler(POST_FX_DS_LOOK_SCENE_PRE_LIFTED, m_linearSampler);
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HAZE_REGION, m_hazeRegion.view, nullptr);
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_ADDITIVE, additiveRadiance.view, nullptr);
     ctx->bindResourceSampler(POST_FX_DS_LOOK_SCENE_ADDITIVE, m_linearSampler);
@@ -573,6 +619,9 @@ namespace dxvk {
     ctx->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, PostFxDarkSoulsLookSceneShader::getShader());
     const VkExtent3D workgroups = util::computeBlockCount(extent, VkExtent3D { 16, 8, 1 });
     ctx->dispatch(workgroups.width, workgroups.height, workgroups.depth);
+    if (mode == 1) {
+      return;
+    }
     m_depthHistoryIndex ^= 1;
     m_depthHistoryFrame = frameId;
 

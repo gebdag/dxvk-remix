@@ -37,6 +37,8 @@
 #define POST_FX_DS_LOOK_SCENE_EYE            13
 // The sky matte (the game's sky raster at output resolution), for the eye lift's sky test at silhouettes.
 #define POST_FX_DS_LOOK_SCENE_SKY_MATTE      14
+// After the pass ran before the upscaler (mode 2): what its eye lift added to the luminance, per render texel (in .y).
+#define POST_FX_DS_LOOK_SCENE_PRE_LIFTED     15
 
 #define POST_FX_DS_LOOK_EYE_FRAME            0
 #define POST_FX_DS_LOOK_EYE_LINEAR_VIEW_Z    1
@@ -203,6 +205,14 @@ struct PostFxDarkSoulsLookSceneArgs {
   float skyUnexpose;
   float skyBrightness;
   float eyeSkyMatch;
+
+  // 0: the whole chain on the upscaled frame. 1: before the upscaler, on the composite at render resolution: eye lift, haze and the
+  // particle layers at each pixel's own view Z texel; the result goes back as radiance and the lift's luminance into DofRate.y.
+  // 2: on the upscaled frame after mode 1: only the clip, the DoF rate and the meter's luminance (from PreLifted).
+  uint mode;
+  uint pad0;
+  uint pad1;
+  uint pad2;
 };
 
 struct PostFxDarkSoulsLookEyeArgs {

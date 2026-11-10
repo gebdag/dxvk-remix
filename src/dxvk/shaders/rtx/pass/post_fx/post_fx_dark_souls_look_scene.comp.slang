@@ -67,6 +67,9 @@ Sampler2D<float2> EyeLevel;
 layout(binding = POST_FX_DS_LOOK_SCENE_SKY_MATTE)
 Sampler2D<float4> SkyMatte;
 
+layout(binding = POST_FX_DS_LOOK_SCENE_PRE_LIFTED)
+Sampler2D<float2> PreLifted;
+
 // The haze constants of a pixel: those of its surface's own set (the game hazes each draw with
 // its region's DrawParams), or the frame's single set for untagged surfaces.
 struct HazeTerms
@@ -269,11 +272,24 @@ void main(uint2 pixel : SV_DispatchThreadID)
     resolvedB = lerp(historyB, currentB, cb.temporalBlend);
     resolvedSky = lerp(clamp(HistoryBIn.SampleLevel(historyUV, 0.0f).a, minSky, maxSky), resolvedSky, cb.temporalBlend);
   }
-  HistoryAOut[pixel] = resolvedA;
-  HistoryBOut[pixel] = vec4(resolvedB, resolvedSky);
+  // Mode 1 runs at render resolution: the history is the upscaled pass's.
+  if (cb.mode != 1)
+  {
+    HistoryAOut[pixel] = resolvedA;
+    HistoryBOut[pixel] = vec4(resolvedB, resolvedSky);
+  }
 
   const vec4 frame = InOutColor[pixel];
   const vec3 radiance = max(frame.rgb, vec3(0.0f));
+
+  // After the pass that ran before the upscaler: the lift, the haze and the layers are in the colour already.
+  if (cb.mode == 2)
+  {
+    const vec3 scene = pow(radiance, vec3(1.0f / 2.2f)) * cb.exposure;
+    DofRate[pixel] = float2(resolvedA.a, PreLifted.SampleLevel(viewZUV, 0.0f).y);
+    InOutColor[pixel] = vec4(cb.keepHeadroom != 0 ? scene : saturate(scene), frame.a);
+    return;
+  }
 
   // The primary additive sprites' share of the colour and, in negative channels, what subtractive ones take off
   // (Ds1AdditiveRadiance), at this frame's jittered sample positions, as for view Z.
@@ -328,6 +344,14 @@ void main(uint2 pixel : SV_DispatchThreadID)
   // goes back. And it takes its subtractive ones off in gamma, absolutely, whatever is behind them.
   g += additive * max(1.0f - resolvedA.rgb, vec3(0.0f));
   g = max(g - subtract, vec3(0.0f));
+
+  // Before the upscaler: back to radiance for the upscaler, unclipped (mode 2 clips), and the lift's luminance for the meter.
+  if (cb.mode == 1)
+  {
+    DofRate[pixel] = float2(0.0f, liftedLuminance);
+    InOutColor[pixel] = vec4(pow(max(g, vec3(0.0f)) / max(cb.exposure, 1e-6f), vec3(2.2f)), frame.a);
+    return;
+  }
 
   // The far DoF rate in its own texture: the game keeps it in its scene's alpha, but here other
   // passes run before the DoF.

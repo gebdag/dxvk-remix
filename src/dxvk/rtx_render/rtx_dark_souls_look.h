@@ -60,6 +60,22 @@ namespace dxvk {
       float missLinearViewZ,
       bool resetHistory);
 
+    // The scene chain's per-pixel part (eye lift, haze, particle layers) before the upscaler, on the composite at render resolution
+    // (rtx.ds1Look.hazeBeforeUpscale). True when it ran: dispatchScene then does only the clip, the DoF rate and the meter.
+    bool dispatchSceneBeforeUpscale(
+      Rc<DxvkContext> ctx,
+      const Resources::Resource& compositeOutput,
+      const Resources::Resource& linearViewZ,
+      const Resources::Resource& surfaceFlags,
+      const Resources::Resource& motionVector,
+      const Resources::Resource& albedo,
+      const Resources::Resource& shadingNormal,
+      const Resources::Resource& additiveRadiance,
+      const DxvkDarkSoulsHaze& haze,
+      const Camera& camera,
+      float missLinearViewZ,
+      bool resetHistory);
+
     // FRPG_Fil_Dof and its chain, after the scene pass (which writes the far rate into alpha).
     void dispatchDof(
       Rc<DxvkContext> ctx,
@@ -124,6 +140,7 @@ namespace dxvk {
                "Adapt as an eye does where the game's exposure stops: below the meter's floor (its luminance clamp) the view comes up, up to what the game's "
                "own light gives on the same surfaces, so dark interiors can be seen without lights being added and places dark in the game stay dark. "
                "What is bright stays. The game's meter does not see the lift.");
+    RTX_OPTION("rtx.ds1Look", bool, hazeBeforeUpscale, true, "Eye lift, haze and particle layers before the upscaler, at render resolution, where each pixel has its own depth. After the upscaler (false), they read render-resolution depth at output pixels: along silhouettes against the sky, edge pixels taken for sky kept the unhazed colour of the object, a light rim.");
     RTX_OPTION("rtx.ds1Look", float, eyeSkyMatch, 0.25f, "At a silhouette against the sky, how near (relative) an upscaled pixel must be to the sky's own colour to be left out of the eye's lift. The depth taps that tell sky from surface are at render resolution and blurred over a few texels, so without this the sky next to a dark object was lifted with it: a light outline. 0 = the taps alone.");
     RTX_OPTION("rtx.ds1Look", float, eyeMaxGain, 3.0f, "The most a dark part of the view is lifted, on gamma values. How far an eye adapts in the dark.");
     RTX_OPTION("rtx.ds1Look", float, eyeKnee, 1.25f, "How far below the meter's floor a view may lie with no lift at all: places the game keeps dim stay as they are (measured: views up to about this already match the game).");
@@ -310,6 +327,11 @@ namespace dxvk {
     Resources::Resource m_fogGateMask;
     bool m_fogGateMaskUsed = false;
     Resources::Resource m_dofRate;
+    // dispatchSceneBeforeUpscale's lift luminance per render texel (.y), and the frame it was written.
+    Resources::Resource m_preLifted;
+    uint32_t m_preFrame = kInvalidFrameIndex;
+    // The mode of the scene pass being recorded (PostFxDarkSoulsLookSceneArgs::mode).
+    uint32_t m_sceneMode = 0;
     VkExtent3D m_dofExtent = { 0, 0, 0 };
     bool m_dofIsFullRes = false;
     // The scene pass's depth-derived terms over time (ping-pong, [A, B] each, see dispatchScene).

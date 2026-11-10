@@ -795,6 +795,27 @@ namespace dxvk {
         getCommonObjects()->getTextureManager().copySamplerFeedbackToHost(this);
         dispatchObjectPicking(rtOutput, downscaledExtent, targetImage->info().extent);
 
+        // NV-DXVK start: DS1 port - the game's per-pixel scene chain (eye lift, haze, particle layers) before the upscaler, at render
+        // resolution where each pixel has its own depth (rtx.ds1Look.hazeBeforeUpscale). Not with intensity below 1, whose stock
+        // half blends with the frame as Remix made it, nor in the pre-tonemap debug view.
+        if (DxvkDarkSoulsLook::isActive() && DxvkDarkSoulsLook::intensityClamped() >= 1.0f
+            && m_common->metaDebugView().debugViewIdx() != DEBUG_VIEW_PRE_TONEMAP_OUTPUT
+            && m_common->metaDebugView().debugViewIdx() == DEBUG_VIEW_DISABLED) {
+          NrdArgs preDirect, preIndirect, preSecondary;
+          getDenoiseArgs(preDirect, preIndirect, preSecondary);
+          this->spillRenderPass(false);
+          this->unbindComputePipeline();
+          m_common->metaPostFx().darkSoulsLook().dispatchSceneBeforeUpscale(this,
+            rtOutput.m_compositeOutput.resource(Resources::AccessType::ReadWrite), rtOutput.m_primaryLinearViewZ,
+            rtOutput.m_primarySurfaceFlags, rtOutput.m_primaryScreenSpaceMotionVector,
+            rtOutput.m_primaryAlbedo, rtOutput.m_primaryWorldShadingNormal, rtOutput.m_ds1AdditiveRadiance,
+            m_common->metaPostFx().darkSoulsHaze(), getSceneManager().getCamera().getShaderConstants(),
+            preDirect.missLinearViewZ, m_resetHistory || getSceneManager().getCamera().isCameraCut());
+          this->spillRenderPass(false);
+          this->unbindComputePipeline();
+        }
+        // NV-DXVK end
+
         // Upscaling if DLSS/NIS enabled, or the Composition Pass will do upscaling
         if (m_currentUpscaler == InternalUpscaler::DLSS) {
           // xxxnsubtil: the DLSS indicator reads our exposure texture even with DLSS autoexposure on
