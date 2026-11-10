@@ -39,7 +39,8 @@
 float ds1RippleHeight(vec2 xz, float planeHeight)
 {
   const vec2 local = xz - cb.ds1Ripple.windowMin;
-  const float edge = min(min(local.x, local.y), min(cb.ds1Ripple.windowSize - local.x, cb.ds1Ripple.windowSize - local.y));
+  // The window is round.
+  const float edge = 0.5f * cb.ds1Ripple.windowSize - length(local - 0.5f * cb.ds1Ripple.windowSize);
   if (!(edge > 0.0f))
   {
     return 0.0f;

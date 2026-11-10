@@ -30,8 +30,11 @@
 // character's than the player's (Surface::isDs1OtherCharacter) move no water; with it on, their bodies may be wider
 // (enemyReach): a boss's foot is no leg.
 //
-// Where a waterfall's sheet (Surface::isDs1FallingWater) stands in a water cell or right beside it, the cell is marked as
-// one falling water lands in, and the step stirs it.
+// Falling water lands where the game draws its flat splash sprites on the water (DS1_RIPPLE_FALL_LANDING_MARK); a cell under
+// one is marked, and the step stirs it. A fall without such sprites is stirred where its sheet (Surface::isDs1FallingWater)
+// stands in a water cell or right beside it.
+//
+// The window is round: its corners would show as square ends of the rippled water, whichever way the camera looks.
 //
 // Shallow water (the game has plenty: a few centimetres over cobbles, rubble or mud) lies at or under the
 // ground in places. Just above its waterline the rays started in the floor or met it first, so only the odd
@@ -103,10 +106,10 @@ uint characterKind(uint instanceId, uint geometryIndex, bool countOthers)
   return marked && (marks & DS1_RIPPLE_RIGID_PART_MARK) != 0 ? (kRigidPart | (other ? kOther : 0u)) : kNothing;
 }
 
-bool isFallingWater(uint instanceId, uint geometryIndex)
+bool isMarked(uint instanceId, uint geometryIndex, uint mark)
 {
   const uint marks = surfaceWords[((instanceId & CUSTOM_INDEX_SURFACE_MASK) + geometryIndex) * DS1_RIPPLE_SURFACE_UVEC4S].w;
-  return (marks & (DS1_RIPPLE_VIEW_FADE_MARK | DS1_RIPPLE_FALLING_WATER_MARK)) == DS1_RIPPLE_FALLING_WATER_MARK;
+  return (marks & (DS1_RIPPLE_VIEW_FADE_MARK | mark)) == mark;
 }
 
 // The distance down to the first DS1 water surface, or -1.
@@ -197,7 +200,7 @@ bool hitsBody(vec3 origin, vec3 direction, float reach, float otherReach, bool p
 
 // Whether a waterfall's sheet stands within reach along the ray. The game blends it, which makes it a decal to the runtime, in
 // the unordered TLAS; where a mod made it opaque or it is no decal, it is in the main one.
-bool hitsFallingWater(vec3 origin, vec3 direction, float reach)
+bool hitsFallingWater(vec3 origin, vec3 direction, float reach, uint mark)
 {
   RayDesc ray;
   ray.Origin = origin;
@@ -211,7 +214,7 @@ bool hitsFallingWater(vec3 origin, vec3 direction, float reach)
     while (rayQuery.Proceed())
     {
       if (rayQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
-          isFallingWater(rayQuery.CandidateInstanceID(), rayQuery.CandidateGeometryIndex()))
+          isMarked(rayQuery.CandidateInstanceID(), rayQuery.CandidateGeometryIndex(), mark))
       {
         rayQuery.CommitNonOpaqueTriangleHit();
       }
@@ -227,7 +230,7 @@ bool hitsFallingWater(vec3 origin, vec3 direction, float reach)
                           OBJECT_MASK_OPAQUE | OBJECT_MASK_ALPHA_BLEND, ray);
   while (rayQuery.Proceed())
   {
-    if (isFallingWater(rayQuery.CandidateInstanceID(), rayQuery.CandidateGeometryIndex()))
+    if (isMarked(rayQuery.CandidateInstanceID(), rayQuery.CandidateGeometryIndex(), mark))
     {
       rayQuery.CommitNonOpaqueTriangleHit();
     }
@@ -239,8 +242,10 @@ bool hitsFallingWater(vec3 origin, vec3 direction, float reach)
 // flat pools at a fall's foot share its texture and its mark, and no level segment meets those.
 bool fallsInto(vec3 position)
 {
-  return hitsFallingWater(position - vec3(cb.fallReach, 0.0f, 0.0f), vec3(1.0f, 0.0f, 0.0f), 2.0f * cb.fallReach) ||
-         hitsFallingWater(position - vec3(0.0f, 0.0f, cb.fallReach), vec3(0.0f, 0.0f, 1.0f), 2.0f * cb.fallReach);
+  return hitsFallingWater(position - vec3(cb.fallReach, 0.0f, 0.0f), vec3(1.0f, 0.0f, 0.0f), 2.0f * cb.fallReach, DS1_RIPPLE_FALLING_WATER_MARK) ||
+         hitsFallingWater(position - vec3(0.0f, 0.0f, cb.fallReach), vec3(0.0f, 0.0f, 1.0f), 2.0f * cb.fallReach, DS1_RIPPLE_FALLING_WATER_MARK) ||
+         // Up to 1.7 m over the water: these are soft sprites, whose quads the proxy pushes towards the camera.
+         hitsFallingWater(position - vec3(0.0f, cb.fallHeight + 0.5f, 0.0f), vec3(0.0f, 1.0f, 0.0f), cb.fallHeight + 2.2f, DS1_RIPPLE_FALL_LANDING_MARK);
 }
 
 // The ground's height above the water at a cell (characters' surfaces skipped: the foot standing there), or
@@ -316,6 +321,18 @@ void main(uint2 thread : SV_DispatchThreadID)
     height[texel] = 0.0f;
     heightPrev[texel] = 0.0f;
     heightNext[texel] = 0.0f;
+  }
+
+  // Outside the round window: no water, and nothing to trace.
+  if (length(vec2(thread) + 0.5f - 0.5f * float(n)) > 0.5f * float(n))
+  {
+    water[texel] = DS1_RIPPLE_NO_WATER;
+    occupancy[texel] = 0.0f;
+    if (entered)
+    {
+      occupancyPrev[texel] = 0.0f;
+    }
+    return;
   }
 
   const vec3 top = vec3((float(cell.x) + 0.5f) * cb.cellSize, cb.rayTop, (float(cell.y) + 0.5f) * cb.cellSize);

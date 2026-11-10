@@ -245,7 +245,15 @@ namespace dxvk {
       return;
     }
 
-    const uint32_t size = uint32_t(std::clamp(gridSize(), 64, 1024) / DS1_RIPPLE_GROUP_SIZE * DS1_RIPPLE_GROUP_SIZE);
+    // A new size takes effect once it has held for a moment: dragging the menu's slider would allocate the field anew at every step.
+    const uint32_t wantedSize = uint32_t(std::clamp(gridSize(), 64, 4096) / DS1_RIPPLE_GROUP_SIZE * DS1_RIPPLE_GROUP_SIZE);
+    static uint32_t s_wantedSize = 0;
+    static double s_wantedSince = 0.0;
+    if (wantedSize != s_wantedSize) {
+      s_wantedSize = wantedSize;
+      s_wantedSince = nowSeconds();
+    }
+    const uint32_t size = s_field.gridSize == 0 || nowSeconds() - s_wantedSince > 0.5 ? wantedSize : s_field.gridSize;
     const float cell = std::clamp(cellSize(), 0.01f, 0.5f);
     if (size != s_field.gridSize || cell != s_field.cellSize || !s_field.slope.isValid()) {
       createField(ctx, size, cell);
@@ -565,7 +573,7 @@ namespace dxvk {
       if (waterfalls() && fallStrength() > 0.0f) {
         const uint32_t frameId = ctx->getDevice()->getCurrentFrameId();
         for (const RtInstance* instance : ctx->getSceneManager().getInstanceManager().getInstanceTable()) {
-          if ((instance->surface.ds1RippleMarks & 4u) != 0 && instance->getFrameLastUpdated() == frameId) {
+          if ((instance->surface.ds1RippleMarks & (4u | 8u)) != 0 && instance->getFrameLastUpdated() == frameId) {
             args.falls = 1;
             break;
           }
@@ -739,7 +747,8 @@ namespace dxvk {
       args.thickDamping = float(std::max(thickDamping(), 0.0f) * stepTime);
       args.thickSettle = float(std::clamp(double(thickSettle()) * stepTime, 0.0, 1.0));
       args.smoothing = std::clamp(smoothing(), 0.0f, 0.2f);
-      args.borderCells = kBorderCells;
+      // As wide as the picture's own fade, so a wave is gone by the time it reaches the rim, and does not come back.
+      args.borderCells = std::max(kBorderCells, std::max(borderFade(), 0.01f) / float(cell));
       args.collisionMin = collisionMin;
       args.collisionSize = collisionCells;
       // The bodies' movement since the last step, shared out over this frame's steps.

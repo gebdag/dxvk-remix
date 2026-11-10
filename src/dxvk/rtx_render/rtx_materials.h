@@ -199,10 +199,10 @@ struct RtSurface {
     flags0 |= isVertexColorBakedLighting ? (1 << 1) : 0;
     // Fork: bits 2-15, the DS1 view fade (Surface::ds1ViewFade), already packed.
     flags0 |= ds1ViewFade & 0xFFFCu;
-    // Fork: on a surface without that fade (bit 2 clear), bits 3 to 5 are the DS1 ripple marks (Surface::isDs1RigidPart,
-    // Surface::isDs1OtherCharacter, Surface::isDs1FallingWater).
+    // Fork: on a surface without that fade (bit 2 clear), bits 3 to 6 are the DS1 ripple marks (Surface::isDs1RigidPart,
+    // Surface::isDs1OtherCharacter, Surface::isDs1FallingWater; bit 6, a sprite where falling water lands).
     if ((ds1ViewFade & 0x4u) == 0) {
-      flags0 |= static_cast<uint16_t>((ds1RippleMarks & 0x7u) << 3);
+      flags0 |= static_cast<uint16_t>((ds1RippleMarks & 0xFu) << 3);
     }
 
     writeGPUHelper(data, offset, flags0);
@@ -521,7 +521,7 @@ struct RtSurface {
   // Fork: a draw of the DS1 player's body: its vertices wet the body against the water (rtx_dark_souls_ripples.h).
   bool isDs1WetBody = false;
   // Fork: the DS1 proxy's marks for the ripple field. Bit 0: a rigid part of a character (a weapon, a shield), which moves water
-  // as the skinned body does. Bit 1: another character's than the player's (an enemy). Bit 2: a waterfall's mesh.
+  // as the skinned body does. Bit 1: another character's than the player's (an enemy). Bit 2: a waterfall's mesh. Bit 3: a sprite where falling water lands.
   uint8_t ds1RippleMarks = 0;
   // Fork: DS1 haze set slot (1-14, 0 = none, 15 = unhazed), see post_fx_dark_souls_haze.h.
   uint8_t ds1HazeSet = 0;

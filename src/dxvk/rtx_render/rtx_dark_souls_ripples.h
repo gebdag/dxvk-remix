@@ -92,9 +92,9 @@ namespace dxvk {
     RTX_OPTION("rtx.ds1Water", float, refractionFullDepth, 2.5f, "DS1 water this deep, in metres, bends the view fully (IOR 1.33). 0 bends it fully at every depth.");
     RTX_OPTION_FLAG("rtx.ds1Ripple", Vector3, playerPosition, Vector3(0.0f), RtxOptionFlags::NoSave,
                     "Set by the DS1 proxy every frame the player moves: their position (feet), where the ripple window is centred.");
-    RTX_OPTION("rtx.ds1Ripple", int, gridSize, 768,
-               "Cells along each side of the ripple window, which follows the player (a multiple of 16). 768 cells of 1.5 cm are 11.5 m: ripples at full strength "
-               "up to 5 m from the player. Measured on open water, ripples showed clearly up to 4.5 m away and faintly at 6 m; 512 cells cost 0.20 ms a frame, 768 0.27, 1024 0.36.");
+    RTX_OPTION("rtx.ds1Ripple", int, gridSize, 1024,
+               "Cells across the round ripple window, which follows the player (a multiple of 16, up to 4096). 1024 cells of 1.5 cm are 15.4 m across. "
+               "32 bytes of video memory per cell: 32 MB at 1024, 128 MB at 2048, 512 MB at 4096.");
     RTX_OPTION("rtx.ds1Ripple", float, cellSize, 0.015f,
                "Size of a ripple cell in metres. The shortest ripple that travels is about 8 cells long.");
     RTX_OPTION("rtx.ds1Ripple", float, stepRate, 60.0f, "Ripple simulation steps per second (fixed, independent of the frame rate).");
@@ -135,7 +135,7 @@ namespace dxvk {
                "but also fills open water that enemies stand around on all four sides. Not proven on a capture: to try.");
     RTX_OPTION("rtx.ds1Ripple", bool, waterfalls, true,
                "Where a waterfall's sheet meets water, it stirs the water, and ripples run out from there.");
-    RTX_OPTION("rtx.ds1Ripple", float, fallStrength, 0.002f,
+    RTX_OPTION("rtx.ds1Ripple", float, fallStrength, 0.001f,
                "Falling water pushes a cell it lands in up or down by this much per step at the most, in metres. 0: none.");
     RTX_OPTION("rtx.ds1Ripple", float, fallRate, 6.0f, "How many times a second the pattern of falling water's pushes changes.");
     RTX_OPTION("rtx.ds1Ripple", float, fallPatch, 0.12f,

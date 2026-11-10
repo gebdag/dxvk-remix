@@ -72,7 +72,7 @@ namespace dxvk {
       RemixGui::SliderFloat("Ripple Parallax Reach (m)", &DxvkDarkSoulsRipples::parallaxBoundObject(), 0.01f, 0.3f, "%.3f", kClamp);
       RemixGui::DragInt("Ripple Parallax Steps (max)", &DxvkDarkSoulsRipples::parallaxMaxStepsObject(), 1.0f, 8, 128, "%d", kClamp);
       RemixGui::SliderFloat("Ripple Cell Size (m)", &DxvkDarkSoulsRipples::cellSizeObject(), 0.01f, 0.05f, "%.3f", kClamp);
-      RemixGui::DragInt("Ripple Window (cells)", &DxvkDarkSoulsRipples::gridSizeObject(), 16.0f, 256, 1024, "%d", kClamp);
+      RemixGui::DragInt("Ripple Window (cells)", &DxvkDarkSoulsRipples::gridSizeObject(), 16.0f, 256, 4096, "%d", kClamp);
       ImGui::Unindent();
     }
 

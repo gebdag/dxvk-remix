@@ -91,6 +91,8 @@
 #define DS1_RIPPLE_RIGID_PART_MARK       (1u << 3)
 #define DS1_RIPPLE_OTHER_CHARACTER_MARK  (1u << 4)
 #define DS1_RIPPLE_FALLING_WATER_MARK    (1u << 5)
+// A flat splash sprite where falling water comes down on the water.
+#define DS1_RIPPLE_FALL_LANDING_MARK     (1u << 6)
 // The occupancy texture: 1 in a cell a body fills, this in an open cell falling water lands in, 0 elsewhere.
 #define DS1_RIPPLE_OCCUPANCY_FALL        0.25f
 // Surface::isDs1Swamp: a liquid too where rtx.ds1Swamp.wade says so.

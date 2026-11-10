@@ -203,9 +203,10 @@ void main(uint2 thread : SV_DispatchThreadID, uint2 groupThread : SV_GroupThread
     next += cb.fallStrength * fallPush(cell);
   }
 
-  // Damped to 0 over the window's outer cells.
-  const int edge = min(min(int(thread.x), int(thread.y)), min(n - 1 - int(thread.x), n - 1 - int(thread.y)));
-  next *= lerp(0.8f, 1.0f, saturate(float(edge) / cb.borderCells));
+  // Damped to 0 over the round window's outer cells, gently at first, so waves leave instead of bouncing back.
+  const float edge = 0.5f * float(n) - length(vec2(thread) + 0.5f - 0.5f * float(n));
+  const float inBorder = 1.0f - saturate(edge / cb.borderCells);
+  next *= 1.0f - 0.2f * inBorder * inBorder;
 
   heightNext[texel] = next;
 }

@@ -1335,7 +1335,7 @@ namespace dxvk {
         // 0xD2000040: no character but a waterfall's mesh, which stirs the water it falls into.
         m_activeDrawCallState.materialData.ds1RippleMarks = static_cast<uint8_t>(
           (rigidPartTag ? 1u : 0u) | ((skinnedTag || rigidPartTag) && (lightmapTag & 0x20u) != 0 ? 2u : 0u) |
-          (lightmapTag == 0xD2000040u ? 4u : 0u));
+          (lightmapTag == 0xD2000040u ? 4u : 0u) | (lightmapTag == 0xD2000080u ? 8u : 0u));
         // Fork: DS1 sprite effects replaced by particles (rtx_dark_souls_effect_particles.h).
         {
           const uint32_t effectTag = d3d9State().textureStages[4][DXVK_TSS_CONSTANT];

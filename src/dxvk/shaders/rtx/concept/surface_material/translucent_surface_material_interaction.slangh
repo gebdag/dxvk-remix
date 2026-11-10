@@ -50,7 +50,8 @@ f16vec3 translucentSurfaceMaterialInteractionResolveTransmittanceColor(f16vec3 t
 vec3 ds1RippleNormal(vec3 normal, vec3 position, vec3 geometryNormal)
 {
   const vec2 local = position.xz - cb.ds1Ripple.windowMin;
-  const float edge = min(min(local.x, local.y), min(cb.ds1Ripple.windowSize - local.x, cb.ds1Ripple.windowSize - local.y));
+  // The window is round.
+  const float edge = 0.5f * cb.ds1Ripple.windowSize - length(local - 0.5f * cb.ds1Ripple.windowSize);
   if (!(edge > 0.0f))
   {
     return normal;
