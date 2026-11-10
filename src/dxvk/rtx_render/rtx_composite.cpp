@@ -160,6 +160,7 @@ namespace dxvk {
       ImGui::Indent();
       RemixGui::Checkbox("Enable Stochastic Alpha Blend", &enableStochasticAlphaBlendObject());
       RemixGui::DragFloat("Max Blend Opacity", &stochasticAlphaBlendOpacityThresholdObject(), 0.005f, 0.0f, 1.f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
+      RemixGui::DragFloat("Max Blend Opacity (DS1 fur)", &stochasticAlphaBlendOpacityThresholdFurObject(), 0.005f, 0.0f, 1.f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
       RemixGui::Checkbox("Use Neighbor Search", &stochasticAlphaBlendUseNeighborSearchObject());
       RemixGui::Checkbox("Search The Same Object", &stochasticAlphaBlendSearchTheSameObjectObject());
       RemixGui::Checkbox("Share Search Result", &stochasticAlphaBlendShareNeighborsObject());

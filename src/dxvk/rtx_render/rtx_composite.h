@@ -105,6 +105,7 @@ namespace dxvk {
     RTX_OPTION_ARGS("rtx", bool, enableStochasticAlphaBlend, true, "Use stochastic alpha blend.",
                     args.flags = RtxOptionFlags::UserSetting);
     RTX_OPTION("rtx", float, stochasticAlphaBlendOpacityThreshold, 0.95f, "Max opacity to use stochastic alpha blend.");
+    RTX_OPTION("rtx", float, stochasticAlphaBlendOpacityThresholdFur, 0.5f, "DS1: Max opacity to use stochastic alpha blend on fur shells (the proxy's fur marker). Denser fur texels blend in order: stochastic, the dense shells looked grainy and see-through.");
     RTX_OPTION("rtx", bool, stochasticAlphaBlendUseNeighborSearch, true, "Get radiance from neighbor opaque pixels.");
     RTX_OPTION("rtx", bool, stochasticAlphaBlendSearchTheSameObject, true, "Only use radiance samples from the same object.");
     RTX_OPTION("rtx", int, stochasticAlphaBlendSearchIteration, 6, "Search iterations.");

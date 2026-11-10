@@ -338,8 +338,8 @@ struct RtSurface {
     textureSpritesheetData |= (static_cast<uint32_t>(spriteSheetFPS) << 16);
     // pack decalSortOrder into data13.x's last 8 bits.
     // Fork: bit 31, a DS1 thin wall (Surface::isDs1ThinWall); the sort order keeps the 7 bits below it.
-    // A thin wall's sort order stays below 0x7C: 0xFC-0xFF in the top byte are the painted colour, foliage, fog gate and lamp markers.
-    const uint32_t ds1SortOrder = isDs1ThinWall ? std::min<uint32_t>(decalSortOrder & 0x7F, 0x7B) : (decalSortOrder & 0x7F);
+    // A thin wall's sort order stays below 0x7B: 0xFB-0xFF in the top byte are the fur, painted colour, foliage, fog gate and lamp markers.
+    const uint32_t ds1SortOrder = isDs1ThinWall ? std::min<uint32_t>(decalSortOrder & 0x7F, 0x7A) : (decalSortOrder & 0x7F);
     textureSpritesheetData |= (ds1SortOrder << 24) | (isDs1ThinWall ? (1u << 31) : 0);
     // Fork: all eight, a DS1 lamp lighting rays pass (Surface::isDs1NoShadow).
     textureSpritesheetData |= isDs1NoShadow ? 0xFF000000u : 0u;
@@ -354,6 +354,10 @@ struct RtSurface {
     // Fork: 0xFC, a DS1 surface whose vertex colour is painted shade (Surface::isDs1PaintedColour).
     if (isDs1PaintedColour) {
       textureSpritesheetData = (textureSpritesheetData & 0x00FFFFFFu) | 0xFC000000u;
+    }
+    // Fork: 0xFB, a DS1 fur shell with its own stochastic alpha blend limit (Surface::isDs1Fur).
+    if (isDs1Fur) {
+      textureSpritesheetData = (textureSpritesheetData & 0x00FFFFFFu) | 0xFB000000u;
     }
 
     writeGPUHelper(data, offset, textureSpritesheetData);
@@ -507,6 +511,8 @@ struct RtSurface {
   bool isDs1Foliage = false;
   // Fork: DS1 surface whose vertex colour is painted shade, kept as the game shows it (Surface::isDs1PaintedColour).
   bool isDs1PaintedColour = false;
+  // Fork: a DS1 fur shell, blended stochastically only up to its own opacity limit (Surface::isDs1Fur).
+  bool isDs1Fur = false;
   // Fork: a draw of the DS1 player's body: its vertices wet the body against the water (rtx_dark_souls_ripples.h).
   bool isDs1WetBody = false;
   // Fork: DS1 haze set slot (1-14, 0 = none, 15 = unhazed), see post_fx_dark_souls_haze.h.
@@ -2189,6 +2195,8 @@ struct LegacyMaterialData {
   bool isDs1Foliage = false;
   // Fork: drawn with the DS1 proxy's painted colour marker (Surface::isDs1PaintedColour). Per draw, not part of the identity.
   bool isDs1PaintedColour = false;
+  // Fork: drawn with the DS1 proxy's fur marker (Surface::isDs1Fur). Per draw, not part of the identity.
+  bool isDs1Fur = false;
   // Fork: DS1 haze set slot from the haze marker (not part of the material's identity: the same
   // material is drawn in several regions).
   uint8_t ds1HazeSet = 0;

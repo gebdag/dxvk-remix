@@ -156,7 +156,8 @@ vec3 handleVisibilityVertex<let VisibilityMode : uint>(Ray ray, RayHitInfo rayHi
     const bool handleStochasticAlphaBlend =
       cb.enableStochasticAlphaBlend &&
       opaqueSurfaceMaterialInteraction.opacity > cb.resolveTransparencyThreshold &&
-      opaqueSurfaceMaterialInteraction.opacity <= cb.resolveStochasticAlphaBlendThreshold;
+      opaqueSurfaceMaterialInteraction.opacity <=
+        (surface.isDs1Fur ? cb.resolveStochasticAlphaBlendThresholdFur : cb.resolveStochasticAlphaBlendThreshold);
 
     // We need to calculate the attenuation with opaque surface opacity in these 2 cases:
     //   1. The surface doesn't have subsurface (do traditional alpha-blending)

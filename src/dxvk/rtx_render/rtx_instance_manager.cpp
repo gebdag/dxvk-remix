@@ -163,7 +163,7 @@ namespace dxvk {
   namespace {
     template<int RtInstanceSize> struct CheckRtInstanceSize {
       // The second line of the build error should contain the new size of RtInstance in the template argument, i.e. `dxvk::CheckRtInstanceSize<newSize>`
-      static_assert(RtInstanceSize == 920,"RtInstance size has changed. Fix the copy constructor above this message, then update the expected size.");
+      static_assert(RtInstanceSize == 928,"RtInstance size has changed. Fix the copy constructor above this message, then update the expected size.");
     };
     CheckRtInstanceSize<sizeof(RtInstance)> _rtInstanceSizeTest;
   }
@@ -1142,6 +1142,7 @@ namespace dxvk {
         currentInstance.surface.isDs1CameraPasses = drawCall.getMaterialData().isDs1CameraPasses && DxvkDarkSoulsLook::isActive();
         currentInstance.surface.isDs1NoShadow = drawCall.getMaterialData().isDs1NoShadow;
         currentInstance.surface.isDs1Foliage = drawCall.getMaterialData().isDs1Foliage;
+        currentInstance.surface.isDs1Fur = drawCall.getMaterialData().isDs1Fur;
         currentInstance.surface.isDs1PaintedColour = drawCall.getMaterialData().isDs1PaintedColour;
         currentInstance.surface.isDs1WetBody = drawCall.getMaterialData().isDs1WetBody;
         currentInstance.surface.ds1HazeSet = drawCall.getMaterialData().ds1HazeSet;

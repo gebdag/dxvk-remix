@@ -543,7 +543,8 @@ float resolveVertex<T: IBasePayloadState>(
     // came out black (frame_20261028_223122). It is resolved as an ordinary blended hit instead.
     bool handleStochasticAlphaBlend =
       useStochasticAlphaBlend && cb.enableStochasticAlphaBlend && !surface.isDs1Glass &&
-      opacity > cb.resolveTransparencyThreshold && opacity <= cb.resolveStochasticAlphaBlendThreshold;
+      opacity > cb.resolveTransparencyThreshold &&
+      opacity <= (surface.isDs1Fur ? cb.resolveStochasticAlphaBlendThresholdFur : cb.resolveStochasticAlphaBlendThreshold);
 
     isStochasticAlphaBlend = handleStochasticAlphaBlend;
 #else
@@ -861,7 +862,8 @@ float ds1SeeThroughSpan(Ray ray, RayHitInfo orderedHit, uint orderedRayMask, boo
       const OpaqueSurfaceMaterialInteraction materialInteraction =
         opaqueSurfaceMaterialInteractionCreate(material, surface, surfaceInteraction, rayInteraction);
       const bool stochastic = stochasticPasses && cb.enableStochasticAlphaBlend && !surface.isDs1Glass;
-      if (materialInteraction.opacity > (stochastic ? cb.resolveStochasticAlphaBlendThreshold : cb.resolveTransparencyThreshold))
+      const float stochasticLimit = surface.isDs1Fur ? cb.resolveStochasticAlphaBlendThresholdFur : cb.resolveStochasticAlphaBlendThreshold;
+      if (materialInteraction.opacity > (stochastic ? stochasticLimit : cb.resolveTransparencyThreshold))
       {
         break;
       }

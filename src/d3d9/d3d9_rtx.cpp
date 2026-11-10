@@ -1334,6 +1334,8 @@ namespace dxvk {
         m_activeDrawCallState.materialData.isDs1ThinWall = d3d9State().textureStages[4][DXVK_TSS_CONSTANT] == 0xD4000003u;
         // Fork: DS1 foliage (stage 4 0xD4000006), see Surface::isDs1Foliage.
         m_activeDrawCallState.materialData.isDs1Foliage = d3d9State().textureStages[4][DXVK_TSS_CONSTANT] == 0xD4000006u;
+        // Fork: DS1 fur shells (stage 4 0xD400000F), see Surface::isDs1Fur.
+        m_activeDrawCallState.materialData.isDs1Fur = d3d9State().textureStages[4][DXVK_TSS_CONSTANT] == 0xD400000Fu;
         // Fork: DS1 painted vertex colour (stage 4 0xD400000C), see Surface::isDs1PaintedColour.
         m_activeDrawCallState.materialData.isDs1PaintedColour = d3d9State().textureStages[4][DXVK_TSS_CONSTANT] == 0xD400000Cu;
         // Fork: DS1 albedo offset in stage 5's D3DTSS_CONSTANT (0xD3rrggbb, signed bytes / 255): the

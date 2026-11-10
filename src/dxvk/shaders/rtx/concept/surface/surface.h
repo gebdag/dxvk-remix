@@ -535,7 +535,7 @@ struct Surface
   // from outside meet a back face or a front not turned towards their origin, and stop.
   property bool isDs1ThinWall
   {
-    get { return packedFlagGet(data13.x, 1u << 31) && (data13.x >> 24) < 0xFCu; }
+    get { return packedFlagGet(data13.x, 1u << 31) && (data13.x >> 24) < 0xFBu; }
   }
 
   // Fork: the opaque quad that closes a DS1 fog gate's door, where the gate is a volume now (game/fog_gates in the proxy). The camera's rays pass it, so the door shows the
@@ -568,6 +568,13 @@ struct Surface
   property bool isDs1PaintedColour
   {
     get { return (data13.x >> 24) == 0xFCu; }
+  }
+
+  // Fork: a DS1 fur shell (the proxy's fur marker, skinning's fur shells). Its texels go the stochastic alpha blend way only up to
+  // rtx.stochasticAlphaBlendOpacityThresholdFur; denser ones blend in order. The thin wall byte value 0xFB.
+  property bool isDs1Fur
+  {
+    get { return (data13.x >> 24) == 0xFBu; }
   }
 
   // Fork: the DS1 haze set the draw was tagged with (1-14, 0 = none; 15: isDs1Unhazed): the slot of its own fog and

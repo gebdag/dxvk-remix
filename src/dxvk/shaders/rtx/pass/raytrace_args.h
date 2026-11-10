@@ -472,6 +472,12 @@ struct RaytraceArgs {
 
   uint enableRtxdiBestLightJitter;
 
+  // Fork (DS1): resolveStochasticAlphaBlendThreshold for fur shells (Surface::isDs1Fur).
+  float resolveStochasticAlphaBlendThresholdFur;
+  uint ds1FurPad0;
+  uint ds1FurPad1;
+  uint ds1FurPad2;
+
   // NOTE: Add structs to the top section of RaytraceArgs, not the bottom.
   // NOTE: bool does not work in debug builds, use uint instead.
 };

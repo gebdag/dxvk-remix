@@ -1611,6 +1611,7 @@ namespace dxvk {
     constants.resolveTransparencyThreshold = RtxOptions::resolveTransparencyThreshold();
     constants.resolveOpaquenessThreshold = RtxOptions::resolveOpaquenessThreshold();
     constants.resolveStochasticAlphaBlendThreshold = m_common->metaComposite().stochasticAlphaBlendOpacityThreshold();
+    constants.resolveStochasticAlphaBlendThresholdFur = m_common->metaComposite().stochasticAlphaBlendOpacityThresholdFur();
 
     constants.skyBrightness = ds1SkyBrightness();
     constants.isLastCompositeOutputValid = restirGI.isActive() && restirGI.getLastCompositeOutput().matchesWriteFrameIdx(frameIdx - 1);
