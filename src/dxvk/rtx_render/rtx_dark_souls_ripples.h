@@ -119,7 +119,8 @@ namespace dxvk {
                "and the surface is shaded as it is there. Scale on the heights walked against (they follow rtx.ds1Ripple.normalScale too); 0 = none, the ripples only tilt the normal.");
     RTX_OPTION("rtx.ds1Ripple", float, parallaxBound, 0.05f, "The parallax walk covers ripples up to this high and this deep, in metres. Higher ones are cut off flat there.");
     RTX_OPTION("rtx.ds1Ripple", int, parallaxSteps, 8, "Steps of the parallax walk at the least (looking straight down).");
-    RTX_OPTION("rtx.ds1Ripple", int, parallaxMaxSteps, 32, "Steps of the parallax walk at the most (looking along the surface, where a step would otherwise skip a crest).");
+    RTX_OPTION("rtx.ds1Ripple", int, parallaxMaxSteps, 48, "Steps of the parallax walk at the most (looking along the surface, where a step would otherwise skip a crest). "
+               "With 5 cm of rtx.ds1Ripple.parallaxBound and 1.5 cm cells, 48 steps keep under a cell a step down to about 11 degrees over the surface; lower than that, short steep crests can be missed.");
     RTX_OPTION_FLAG("rtx.ds1Ripple", Vector3, testBody, Vector3(0.0f), RtxOptionFlags::NoSave,
                     "Test on a replay, where nothing moves: x > 0 is a body of that radius, walking a circle of radius y around the player at z m/s.");
   };

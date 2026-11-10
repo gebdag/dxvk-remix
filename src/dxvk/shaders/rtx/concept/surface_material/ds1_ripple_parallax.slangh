@@ -21,6 +21,8 @@
 */
 #pragma once
 
+#include "rtx/concept/camera/camera.slangh"
+
 // Fork (DS1): parallax for the ripple field (fork_ds1_ripples.h) on DS1 water and liquid mud. The field is a height field, and
 // read at the flat surface's hit it only tilts the normal: a crest does not hide the trough behind it. Here the view ray is
 // walked through the slab of heights the ripples can have, down to where it meets the rippled surface, and the surface is
@@ -28,7 +30,8 @@
 //
 // The walk is the one of the water plane simulation in NVIDIA's dxvk-remix (waterSimEvaluate, water_sim_surface.slangh,
 // commit 878b12bc): steps of about 3/4 of a cell through the slab, a bisection of the crossing, then a linear fit. Only the
-// camera's rays do it (RAY_TRACING_PRIMARY_RAY: the G-buffer passes); reflections and bounces read the field flat, as before.
+// G-buffer passes do it (RAY_TRACING_PRIMARY_RAY): the camera's rays, and their continuation where the primary surface is
+// replaced (through glass, in a mirror). The lighting and bounce passes read the field flat, as before.
 
 // The ripple field's height in metres at a world x, z of the liquid whose surface lies at planeHeight, as the parallax and the
 // normal take it (scaled by rtx.ds1Ripple.normalScale like the slope): 0 outside the window, towards its border, and where the
@@ -76,24 +79,27 @@ vec3 ds1RippleParallax(vec3 position, vec3 geometryNormal, vec3 viewDirection)
   // side: 1 for a view from above. depth = side * (s - height) is positive while the ray is on the viewer's side of the surface.
   const float side = cosUp < 0.0f ? 1.0f : -1.0f;
   const float bound = cb.ds1Ripple.parallaxBound;
-  const float cellsTravelled = 2.0f * bound * sqrt(max(1.0f - cosUp * cosUp, 0.0f)) / (absCosUp * cb.ds1Ripple.cellSize);
+  // The walk never starts behind the camera: with the camera a few centimetres over the surface, a crest behind it would catch
+  // the ray. (A replaced primary surface's ray starts farther back than the camera is; the camera's distance is the safe one.)
+  const float startBound = min(bound, absCosUp * length(position - cameraGetWorldPosition(cb.camera)));
+  const float cellsTravelled = (startBound + bound) * sqrt(max(1.0f - cosUp * cosUp, 0.0f)) / (absCosUp * cb.ds1Ripple.cellSize);
   const uint stepCount = clamp(uint(ceil(cellsTravelled / 0.75f)), cb.ds1Ripple.parallaxSteps,
                                max(cb.ds1Ripple.parallaxMaxSteps, cb.ds1Ripple.parallaxSteps));
 
-  float aboveS = side * bound;
+  float aboveS = side * startBound;
   float aboveDepth = side * (aboveS - ds1RippleHeight(position.xz + rayDirection.xz * (aboveS / cosUp), position.y));
   // Without a crossing the ray leaves the slab under the surface.
   float hitS = -side * bound;
   if (aboveDepth <= 0.0f)
   {
-    // The walk starts inside a wave higher than the slab: the surface is taken where the slab begins.
+    // The walk starts inside a wave (one higher than the slab, or the camera is in it): the surface is taken where the walk begins.
     hitS = aboveS;
   }
   else
   {
     for (uint i = 1; i <= stepCount; ++i)
     {
-      float belowS = side * bound * (1.0f - 2.0f * float(i) / float(stepCount));
+      float belowS = side * (startBound - (startBound + bound) * float(i) / float(stepCount));
       float belowDepth = side * (belowS - ds1RippleHeight(position.xz + rayDirection.xz * (belowS / cosUp), position.y));
       if (belowDepth <= 0.0f)
       {
