@@ -37,8 +37,6 @@
 #define POST_FX_DS_LOOK_SCENE_EYE            13
 // The sky matte (the game's sky raster at output resolution), for the eye lift's sky test at silhouettes.
 #define POST_FX_DS_LOOK_SCENE_SKY_MATTE      14
-// The frame before upscaling (Composite Output), at the additive layers' resolution: their share of the colour.
-#define POST_FX_DS_LOOK_SCENE_LOW_RES_COLOR  15
 
 #define POST_FX_DS_LOOK_EYE_FRAME            0
 #define POST_FX_DS_LOOK_EYE_LINEAR_VIEW_Z    1
@@ -205,13 +203,6 @@ struct PostFxDarkSoulsLookSceneArgs {
   float skyUnexpose;
   float skyBrightness;
   float eyeSkyMatch;
-
-  // 1: POST_FX_DS_LOOK_SCENE_LOW_RES_COLOR is the frame before upscaling, so the additive layers come back as a share of the upscaled
-  // colour; 0 (no upscaler, the same image): as they are.
-  uint lowResShare;
-  uint lowResPad0;
-  uint lowResPad1;
-  uint lowResPad2;
 };
 
 struct PostFxDarkSoulsLookEyeArgs {

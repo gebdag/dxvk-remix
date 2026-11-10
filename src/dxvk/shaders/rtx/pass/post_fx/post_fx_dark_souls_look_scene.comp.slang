@@ -67,9 +67,6 @@ Sampler2D<float2> EyeLevel;
 layout(binding = POST_FX_DS_LOOK_SCENE_SKY_MATTE)
 Sampler2D<float4> SkyMatte;
 
-layout(binding = POST_FX_DS_LOOK_SCENE_LOW_RES_COLOR)
-Sampler2D<float4> LowResColor;
-
 // The haze constants of a pixel: those of its surface's own set (the game hazes each draw with
 // its region's DrawParams), or the frame's single set for untagged surfaces.
 struct HazeTerms
@@ -329,19 +326,7 @@ void main(uint2 pixel : SV_DispatchThreadID)
   // The game draws its additive particles after the fog, unfogged (their vertex shader gets c159.xy = (1, 0) for
   // them), and adds them in gamma: the haze above dimmed their share of the colour by the haze gain, so it
   // goes back. And it takes its subtractive ones off in gamma, absolutely, whatever is behind them.
-  // The layers' buffer is at render resolution: added as it is, a sharp unhazed layer (Seath's wings) showed its blocks. It gives only
-  // their share of the colour, a smooth fraction; the upscaled colour gives the detail.
-  // The share is taken against the frame before upscaling, sampled the same way, so it is a smooth fraction.
-  if (cb.lowResShare != 0u)
-  {
-    const vec3 lowResTotal = pow(max(LowResColor.SampleLevel(viewZUV, 0.0f).rgb, vec3(0.0f)), vec3(1.0f / 2.2f)) * cb.exposure;
-    const vec3 additiveShare = saturate(additive / max(lowResTotal, vec3(1e-4f)));
-    g += additiveShare * unlifted * max(1.0f - resolvedA.rgb, vec3(0.0f));
-  }
-  else
-  {
-    g += additive * max(1.0f - resolvedA.rgb, vec3(0.0f));
-  }
+  g += additive * max(1.0f - resolvedA.rgb, vec3(0.0f));
   g = max(g - subtract, vec3(0.0f));
 
   // The far DoF rate in its own texture: the game keeps it in its scene's alpha, but here other
