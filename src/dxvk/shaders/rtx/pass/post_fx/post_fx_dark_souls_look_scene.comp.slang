@@ -162,6 +162,13 @@ HazeMap hazeMapFor(uint set, float z, float dist, CameraDirections directions)
   const vec3 scatterGain = lerp(vec3(1.0f), ext * t.surfaceTint, t.scatterBlend);
 
   m.a = (1.0f - fog) * scatterGain;
+  // A set whose tint takes nearly all of the surface's colour (Ash Lake's dragon end: c105 = 1/255): the game lights that region
+  // that much more strongly, by its own ambient scale and lightmaps, which one set of lights cannot follow. An area can hold its
+  // surfaces at this share of what simple extinction leaves (rtx.ds1Haze.minSurfaceShare); other sets are left alone.
+  if (haze.minSurfaceShare > 0.0f && t.scatterBlend > 0.0f && all(t.surfaceTint < 0.1f))
+  {
+    m.a = max(m.a, ext * haze.minSurfaceShare);
+  }
   m.b = t.fog.rgb * haze.displayScale * fog * scatterGain + inscatter * haze.displayScale * t.scatterBlend;
   return m;
 }

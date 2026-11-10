@@ -75,7 +75,8 @@ struct PostFxDarkSoulsHazeArgs {
   float displayScale;   // the game's exposure c135.x / c135.y, times rtx.ds1Haze.displayGain and the user brightness
 
   vec3 surfaceTint;     // c105.rgb
-  float pad0;
+  // rtx.ds1Haze.minSurfaceShare: the least share of a surface's own colour the scattering leaves, whatever the set's constants say.
+  float minSurfaceShare;
 
   vec3 sunColor;        // c110.rgb
   float pad1;

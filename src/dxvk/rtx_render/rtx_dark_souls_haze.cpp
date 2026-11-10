@@ -1,4 +1,5 @@
 #include "rtx_dark_souls_haze.h"
+#include <algorithm>
 #include "rtx_dark_souls_exposure.h"
 #include "rtx_options.h"
 #include "rtx_imgui.h"
@@ -94,6 +95,7 @@ namespace dxvk {
     args.inverseExtinction = toVec3(inverseExtinction());
     args.inscatterScale = inscatterScale();
     args.surfaceTint = toVec3(surfaceTint());
+    args.minSurfaceShare = std::clamp(minSurfaceShare(), 0.0f, 1.0f);
     args.sunColor = toVec3(sunColor());
     args.scatterBlend = scatterBlend();
     // The user brightness (rtx.userBrightness, an EV on linear radiance) is 2^(EV / 2.2) on display values, as the scene it

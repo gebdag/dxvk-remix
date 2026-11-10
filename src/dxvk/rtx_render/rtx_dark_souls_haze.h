@@ -29,6 +29,10 @@ namespace dxvk {
   private:
     RTX_OPTION("rtx.ds1Haze", float, displayGain, 1.0f,
                "Scale on the colours the haze adds (fog colour and in-scatter), on top of the game's exposure.");
+    RTX_OPTION("rtx.ds1Haze", float, minSurfaceShare, 0.0f,
+               "For a haze set whose tint takes nearly all of a surface's colour (c105 under 0.1): the least share of the surface's light kept, 0 to 1, of what extinction alone leaves. "
+               "0: the game's constants as they are. For an area override: at Ash Lake's dragon end fog and scattering keep 16% of a surface's light at arm's length (c105 = 1/255, blend 0.75), "
+               "so lights that suit the sand beside it leave this sand black.");
     RTX_OPTION("rtx.ds1Haze", float, skyDistance, 0.0f,
                "Primary misses (the sky) are hazed like a surface at this distance in world units. 0 = not hazed.");
 
