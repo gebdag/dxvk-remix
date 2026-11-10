@@ -114,6 +114,12 @@ namespace dxvk {
                "Side of the square around the player in which characters' bodies push the water, in metres.");
     RTX_OPTION("rtx.ds1Ripple", float, normalScale, 0.5f, "Scale on the ripple slope added to the water normal (1 = the real slope).");
     RTX_OPTION("rtx.ds1Ripple", float, borderFade, 0.75f, "Metres over which ripples fade towards the window's border.");
+    RTX_OPTION("rtx.ds1Ripple", float, parallaxScale, 1.0f,
+               "Parallax of the ripples on DS1 water and liquid mud: the camera's ray is walked to where it meets the rippled surface, so a crest hides the trough behind it, "
+               "and the surface is shaded as it is there. Scale on the heights walked against (they follow rtx.ds1Ripple.normalScale too); 0 = none, the ripples only tilt the normal.");
+    RTX_OPTION("rtx.ds1Ripple", float, parallaxBound, 0.05f, "The parallax walk covers ripples up to this high and this deep, in metres. Higher ones are cut off flat there.");
+    RTX_OPTION("rtx.ds1Ripple", int, parallaxSteps, 8, "Steps of the parallax walk at the least (looking straight down).");
+    RTX_OPTION("rtx.ds1Ripple", int, parallaxMaxSteps, 32, "Steps of the parallax walk at the most (looking along the surface, where a step would otherwise skip a crest).");
     RTX_OPTION_FLAG("rtx.ds1Ripple", Vector3, testBody, Vector3(0.0f), RtxOptionFlags::NoSave,
                     "Test on a replay, where nothing moves: x > 0 is a body of that radius, walking a circle of radius y around the player at z m/s.");
   };

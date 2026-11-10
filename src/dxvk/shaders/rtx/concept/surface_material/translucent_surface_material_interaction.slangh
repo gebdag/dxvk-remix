@@ -41,6 +41,8 @@ f16vec3 translucentSurfaceMaterialInteractionResolveTransmittanceColor(f16vec3 t
   return gammaToLinear(transmittanceColor);
 }
 
+#include "rtx/concept/surface_material/ds1_ripple_parallax.slangh"
+
 // Fork (DS1): the normal with the ripple field around the wading player added (fork_ds1_ripples.h). For
 // small slopes the normal of a sum of heights follows the sum of their gradients, so the field's slope adds
 // to the game's wave layers as a gradient along the surface. Only water at its cell's water height takes it
@@ -87,13 +89,20 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
   // Fork (DS1): the third wave layer's sample and strength (0: none).
   vec4 thirdNormalSample = vec4(0.0f);
   float thirdNormalStrength = 0.0f;
+  // Fork (DS1): from the flat hit to where the view ray meets the rippled surface (ds1_ripple_parallax.slangh). The wave layers and
+  // the ripples' slope are read there.
+  vec3 ds1RippleDisplacement = vec3(0.0f);
+  if (surface.isDs1Water && cb.ds1Ripple.enable != 0)
+  {
+    ds1RippleDisplacement = ds1RippleParallax(surfaceInteraction.position, vec3(surfaceInteraction.geometryNormal), vec3(minimalRayInteraction.viewDirection));
+  }
   if (cb.translucentMaterialArgs.animatedWaterEnable && surface.isAnimatedWater && surface.isDs1Water)
   {
     // Fork (DS1): the game's three wave layers of this water body, placed and scaled per surface. They
     // share a scale and scroll apart; summed, one layer's ridges fill the flat gaps between the others'.
     primaryNormalLodBias = cb.translucentMaterialArgs.animatedWaterPrimaryNormalLodBias;
     waterNormalStrength = surface.ds1WaterStrength;
-    const vec2 layer1UV = surfaceInteraction.textureCoordinates;
+    const vec2 layer1UV = surfaceInteraction.textureCoordinates + ds1RippleTextureShift(surfaceInteraction, ds1RippleDisplacement);
     const vec3 layer2 = surface.ds1WaterLayer2;
     surfaceInteraction.textureCoordinates = frac(layer1UV * layer2.x + layer2.yz);
     secondNormalLoaded = surfaceMaterialInteractionTextureReadHelper(translucentSurfaceMaterial.normalTextureIndex, translucentSurfaceMaterial.samplerIndex, surfaceInteraction, secondNormalSample, cb.translucentMaterialArgs.animatedWaterSecondaryNormalLodBias);
@@ -171,7 +180,8 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
 
   if (surface.isDs1Water && cb.ds1Ripple.enable != 0)
   {
-    normal = ds1RippleNormal(normal, surfaceInteraction.position, vec3(surfaceInteraction.geometryNormal));
+    normal = ds1RippleNormal(normal, surfaceInteraction.position + vec3(ds1RippleDisplacement.x, 0.0f, ds1RippleDisplacement.z),
+                             vec3(surfaceInteraction.geometryNormal));
   }
 
   // Note: Diffuse layer override encapsulated in if the diffuse layer flag is set or not as this override is able to be done on the CPU.

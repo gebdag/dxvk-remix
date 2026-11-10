@@ -418,7 +418,8 @@ void genTangSpace(vec2 uvs[3],
                   out vec3 tangent,
                   out vec3 bitangent,
                   out vec3 rawTangentOut,
-                  out vec3 rawBitangentOut)
+                  out vec3 rawBitangentOut,
+                  out float rawScaleOut)
 {
   // Compute triangle partial derivatives
 
@@ -453,6 +454,8 @@ void genTangSpace(vec2 uvs[3],
   
   rawTangentOut = rawTangent / largerRawLength;
   rawBitangentOut = rawBitangent / largerRawLength;
+  // The length that was divided out, in world units per texture coordinate unit. 0 when the UVs are degenerate.
+  rawScaleOut = degenerateUV ? 0.0f : largerRawLength;
 
   const vec3 newNormal = cross(rawTangent, rawBitangent);
   const bool degenerateBasis = all(newNormal == vec3(0.0f));

@@ -22,6 +22,7 @@
 #pragma once
 
 #include "opaque_surface_material_blending.slangh"
+#include "rtx/concept/surface_material/ds1_ripple_parallax.slangh"
 
 // Opaque Surface Material Interaction Constants
 
@@ -1148,13 +1149,22 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
   vec3 ds1SwampReflectivity = vec3(0.0f);
   if (ds1Swamp)
   {
-    const vec3 position = surfaceInteraction.position;
+    const vec3 axisU = sanitize(normalize(surfaceInteraction.rawTangent), vec3(surfaceInteraction.geometryTangent));
+    const vec3 axisV = sanitize(normalize(surfaceInteraction.rawBitangent), vec3(surfaceInteraction.geometryBitangent));
+    // Liquid mud a body has moved has relief: the view ray is walked to where it meets the mud's surface as the ripple field has
+    // it (ds1_ripple_parallax.slangh), and the mud is shaded as it is there, its own height field, rings and colour included.
+    vec3 position = surfaceInteraction.position;
+    SurfaceInteraction swampInteraction = surfaceInteraction;
+    if (cb.ds1Swamp.wade != 0)
+    {
+      const vec3 displacement = ds1RippleParallax(position, vec3(surfaceInteraction.geometryNormal), vec3(minimalRayInteraction.viewDirection));
+      position += vec3(displacement.x, 0.0f, displacement.z);
+      swampInteraction.textureCoordinates += vec2(dot(displacement, axisU), dot(displacement, axisV)) * cb.ds1Swamp.uvPerMetre;
+    }
     const float viewDepth = length(position - cameraGetWorldPosition(cb.camera));
     const float fade = saturate(1.0f - viewDepth * cb.ds1Swamp.invFadeDistance);
     // The slope is the height difference to a point a span away along each texture axis.
     const float span = max(viewDepth * cb.ds1Swamp.spanPerDepth, 1e-3f);
-    const vec3 axisU = sanitize(normalize(surfaceInteraction.rawTangent), vec3(surfaceInteraction.geometryTangent));
-    const vec3 axisV = sanitize(normalize(surfaceInteraction.rawBitangent), vec3(surfaceInteraction.geometryBitangent));
     const float uvStep = span * cb.ds1Swamp.uvPerMetre;
     const uint16_t textureIndex = opaqueSurfaceMaterial.albedoOpacityTextureIndex;
     const uint16_t samplerIndex = opaqueSurfaceMaterial.samplerIndex;
@@ -1163,9 +1173,9 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     const vec3 disturbed = ds1SwampRipple(position);
     const vec2 waveSlope = disturbed.xy * cb.ds1Ripple.normalScale;
     const float churned = saturate(abs(disturbed.z) / 0.015f);
-    const float h = ds1SwampHeight(textureIndex, samplerIndex, surfaceInteraction, vec2(0.0f), position, fade);
-    const float hu = ds1SwampHeight(textureIndex, samplerIndex, surfaceInteraction, vec2(uvStep, 0.0f), position + axisU * span, fade);
-    const float hv = ds1SwampHeight(textureIndex, samplerIndex, surfaceInteraction, vec2(0.0f, uvStep), position + axisV * span, fade);
+    const float h = ds1SwampHeight(textureIndex, samplerIndex, swampInteraction, vec2(0.0f), position, fade);
+    const float hu = ds1SwampHeight(textureIndex, samplerIndex, swampInteraction, vec2(uvStep, 0.0f), position + axisU * span, fade);
+    const float hv = ds1SwampHeight(textureIndex, samplerIndex, swampInteraction, vec2(0.0f, uvStep), position + axisV * span, fade);
     // The surface takes the height times its vertex alpha, 0 along the mesh's border (Gaping Dragon's slime
     // pools melt into the floor there; Blighttown's swamp is 1 throughout), and its slope times c169.x too.
     const float edge = saturate(float(surfaceInteraction.vertexColor.a));
@@ -1178,7 +1188,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     normalDetail = 0.0f;
     if (opaqueSurfaceMaterial.normalTextureIndex != BINDING_INDEX_INVALID)
     {
-      const vec4 detailSample = ds1SwampRead(opaqueSurfaceMaterial.normalTextureIndex, samplerIndex, surfaceInteraction,
+      const vec4 detailSample = ds1SwampRead(opaqueSurfaceMaterial.normalTextureIndex, samplerIndex, swampInteraction,
                                              vec2(0.0f), cb.ds1Swamp.detailUvScale, materialLodBias);
       const vec3 detail = unsignedOctahedralToHemisphereDirection(vec2(detailSample.xy), 1.0f);
       const vec2 offset = detail.xy / max(detail.z, 1e-3f) * cb.ds1Swamp.detailStrength;
@@ -1188,7 +1198,7 @@ OpaqueSurfaceMaterialInteraction opaqueSurfaceMaterialInteractionCreateImpl<let 
     normal = swampNormal;
 
     // Colour: the textured crust where the field is low, the deep colour where it is high.
-    const vec3 crust = ds1SwampRead(textureIndex, samplerIndex, surfaceInteraction, vec2(0.0f), cb.ds1Swamp.colourUvScale, materialLodBias).rgb;
+    const vec3 crust = ds1SwampRead(textureIndex, samplerIndex, swampInteraction, vec2(0.0f), cb.ds1Swamp.colourUvScale, materialLodBias).rgb;
     const float deep = max(saturate((h * edge - cb.ds1Swamp.deepOffset) * cb.ds1Swamp.deepScale), churned * 0.8f);
     // Divided by the scene's c100, which Remix leaves out of every other map material (fork_ds1_swamp.h).
     const vec3 stored = saturate(lerp(crust * cb.ds1Swamp.crustColour, cb.ds1Swamp.deepColour, deep) * cb.ds1Swamp.invSceneDiffuseScale);

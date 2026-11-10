@@ -336,6 +336,11 @@ namespace dxvk {
     args.invWindowSize = 1.0f / windowSize;
     args.borderFade = std::max(borderFade(), 0.01f);
     args.normalScale = normalScale();
+    args.parallaxScale = std::max(parallaxScale(), 0.0f);
+    args.parallaxBound = std::clamp(parallaxBound(), 0.001f, 1.0f);
+    args.cellSize = s_field.cellSize;
+    args.parallaxSteps = uint32_t(std::clamp(parallaxSteps(), 1, 128));
+    args.parallaxMaxSteps = uint32_t(std::clamp(parallaxMaxSteps(), 1, 128));
     args.referenceHeight = s_frame.player.y;
     args.heightTolerance = kHeightTolerance;
     args.textureIndex = s_frame.textureIndex;

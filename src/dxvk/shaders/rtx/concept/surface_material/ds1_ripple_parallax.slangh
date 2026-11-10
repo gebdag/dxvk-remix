@@ -1,0 +1,146 @@
+/*
+* Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
+*
+* Permission is hereby granted, free of charge, to any person obtaining a
+* copy of this software and associated documentation files (the "Software"),
+* to deal in the Software without restriction, including without limitation
+* the rights to use, copy, modify, merge, publish, distribute, sublicense,
+* and/or sell copies of the Software, and to permit persons to whom the
+* Software is furnished to do so, subject to the following conditions:
+*
+* The above copyright notice and this permission notice shall be included in
+* all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+* THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+* DEALINGS IN THE SOFTWARE.
+*/
+#pragma once
+
+// Fork (DS1): parallax for the ripple field (fork_ds1_ripples.h) on DS1 water and liquid mud. The field is a height field, and
+// read at the flat surface's hit it only tilts the normal: a crest does not hide the trough behind it. Here the view ray is
+// walked through the slab of heights the ripples can have, down to where it meets the rippled surface, and the surface is
+// shaded as it is there: the ripples' slope, the water's wave layers and the mud's own surface.
+//
+// The walk is the one of the water plane simulation in NVIDIA's dxvk-remix (waterSimEvaluate, water_sim_surface.slangh,
+// commit 878b12bc): steps of about 3/4 of a cell through the slab, a bisection of the crossing, then a linear fit. Only the
+// camera's rays do it (RAY_TRACING_PRIMARY_RAY: the G-buffer passes); reflections and bounces read the field flat, as before.
+
+// The ripple field's height in metres at a world x, z of the liquid whose surface lies at planeHeight, as the parallax and the
+// normal take it (scaled by rtx.ds1Ripple.normalScale like the slope): 0 outside the window, towards its border, and where the
+// cell's water is another body's, above or below.
+float ds1RippleHeight(vec2 xz, float planeHeight)
+{
+  const vec2 local = xz - cb.ds1Ripple.windowMin;
+  const float edge = min(min(local.x, local.y), min(cb.ds1Ripple.windowSize - local.x, cb.ds1Ripple.windowSize - local.y));
+  if (!(edge > 0.0f))
+  {
+    return 0.0f;
+  }
+  const vec4 field = textures[cb.ds1Ripple.textureIndex].SampleLevel(
+    samplers[cb.ds1Ripple.samplerIndex], xz * cb.ds1Ripple.invWindowSize, 0.0f);
+  if (!(abs(planeHeight - (cb.ds1Ripple.referenceHeight + field.z)) < cb.ds1Ripple.heightTolerance))
+  {
+    return 0.0f;
+  }
+  return field.w * (saturate(edge / cb.ds1Ripple.borderFade) * cb.ds1Ripple.normalScale * cb.ds1Ripple.parallaxScale);
+}
+
+// From the flat surface's hit to where the view ray meets the rippled surface, along the ray. 0 where there is nothing to walk:
+// the parallax off, another pass than the camera's, a surface that is not level, a ray almost along it.
+vec3 ds1RippleParallax(vec3 position, vec3 geometryNormal, vec3 viewDirection)
+{
+#ifdef RAY_TRACING_PRIMARY_RAY
+  if (cb.ds1Ripple.enable == 0 || !(cb.ds1Ripple.parallaxScale > 0.0f) || abs(geometryNormal.y) < 0.8f)
+  {
+    return vec3(0.0f);
+  }
+  const vec2 local = position.xz - cb.ds1Ripple.windowMin;
+  if (any(local <= 0.0f) || any(local >= cb.ds1Ripple.windowSize))
+  {
+    return vec3(0.0f);
+  }
+  const vec3 rayDirection = -viewDirection;
+  const float cosUp = rayDirection.y;
+  const float absCosUp = abs(cosUp);
+  if (!(absCosUp > 0.02f))
+  {
+    return vec3(0.0f);
+  }
+
+  // Heights s are measured from the flat surface. The ray is at height s at position + rayDirection * (s / cosUp).
+  // side: 1 for a view from above. depth = side * (s - height) is positive while the ray is on the viewer's side of the surface.
+  const float side = cosUp < 0.0f ? 1.0f : -1.0f;
+  const float bound = cb.ds1Ripple.parallaxBound;
+  const float cellsTravelled = 2.0f * bound * sqrt(max(1.0f - cosUp * cosUp, 0.0f)) / (absCosUp * cb.ds1Ripple.cellSize);
+  const uint stepCount = clamp(uint(ceil(cellsTravelled / 0.75f)), cb.ds1Ripple.parallaxSteps,
+                               max(cb.ds1Ripple.parallaxMaxSteps, cb.ds1Ripple.parallaxSteps));
+
+  float aboveS = side * bound;
+  float aboveDepth = side * (aboveS - ds1RippleHeight(position.xz + rayDirection.xz * (aboveS / cosUp), position.y));
+  // Without a crossing the ray leaves the slab under the surface.
+  float hitS = -side * bound;
+  if (aboveDepth <= 0.0f)
+  {
+    // The walk starts inside a wave higher than the slab: the surface is taken where the slab begins.
+    hitS = aboveS;
+  }
+  else
+  {
+    for (uint i = 1; i <= stepCount; ++i)
+    {
+      float belowS = side * bound * (1.0f - 2.0f * float(i) / float(stepCount));
+      float belowDepth = side * (belowS - ds1RippleHeight(position.xz + rayDirection.xz * (belowS / cosUp), position.y));
+      if (belowDepth <= 0.0f)
+      {
+        // Bisect the crossing, then fit a line.
+        for (uint k = 0; k < 2; ++k)
+        {
+          const float middleS = 0.5f * (aboveS + belowS);
+          const float middleDepth = side * (middleS - ds1RippleHeight(position.xz + rayDirection.xz * (middleS / cosUp), position.y));
+          if (middleDepth > 0.0f)
+          {
+            aboveS = middleS;
+            aboveDepth = middleDepth;
+          }
+          else
+          {
+            belowS = middleS;
+            belowDepth = middleDepth;
+          }
+        }
+        hitS = lerp(aboveS, belowS, aboveDepth / max(aboveDepth - belowDepth, 1e-9f));
+        break;
+      }
+      aboveS = belowS;
+      aboveDepth = belowDepth;
+    }
+  }
+
+  // The ripples flatten out for rays almost along the surface, where a step is many cells long.
+  return rayDirection * (hitS * smoothstep(0.02f, 0.08f, absCosUp) / cosUp);
+#else
+  return vec3(0.0f);
+#endif
+}
+
+// The shift of the mesh's texture coordinates for a displacement of the hit along the surface, so what the surface's textures
+// show moves with the ripples' parallax. No shift where the texture coordinates are degenerate.
+vec2 ds1RippleTextureShift(SurfaceInteraction surfaceInteraction, vec3 displacement)
+{
+  const vec3 normal = surfaceInteraction.geometryNormal;
+  const vec3 tangent = surfaceInteraction.rawTangent;
+  const vec3 bitangent = surfaceInteraction.rawBitangent;
+  const float determinant = dot(normal, cross(tangent, bitangent));
+  if (abs(determinant) < 1e-6f || !(surfaceInteraction.rawTangentScale > 0.0f))
+  {
+    return vec2(0.0f);
+  }
+  const vec2 shift = vec2(dot(displacement, cross(bitangent, normal)), dot(displacement, cross(normal, tangent))) /
+    (determinant * surfaceInteraction.rawTangentScale);
+  return sanitize(shift, vec2(0.0f));
+}

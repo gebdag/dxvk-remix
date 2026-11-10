@@ -851,6 +851,8 @@ struct SurfaceInteraction : MinimalSurfaceInteraction
   vec2 textureGradientY = 0..xx;
   vec3 rawTangent = 0.f;
   vec3 rawBitangent = 0.f;
+  // World units per texture coordinate unit along the longer of the raw tangent and bitangent (both are divided by it). 0 when unknown.
+  float rawTangentScale = 0.f;
   vec4 vertexColor = 0.0f;
   float triangleArea = 0.f;
 };

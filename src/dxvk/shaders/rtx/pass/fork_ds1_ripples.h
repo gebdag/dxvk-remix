@@ -331,5 +331,15 @@ struct Ds1RippleArgs {
   float smearFullDepth;
   // How far under DS1 water, in metres, a view continues from at the shore at the least (geometryResolverDs1ShoreOrigin).
   float shoreMinDepth;
-  float pad2;
+  // The ripples' parallax (ds1_ripple_parallax.slangh): scale on the heights the view ray is walked against, 0 = none (the
+  // field only tilts the normal).
+  float parallaxScale;
+
+  // The walk goes through the heights from +parallaxBound to -parallaxBound metres around the flat surface.
+  float parallaxBound;
+  // Size of a cell of the field in metres.
+  float cellSize;
+  // Steps of the walk: at the least, and at the most (a ray near the surface crosses many cells).
+  uint parallaxSteps;
+  uint parallaxMaxSteps;
 };
