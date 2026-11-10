@@ -1,6 +1,7 @@
 #include "rtx_dark_souls_ambient.h"
 #include "rtx_imgui.h"
 #include "../imgui/imgui.h"
+#include "rtx_ds1_menu_frame.h"
 
 namespace dxvk {
 
@@ -13,7 +14,8 @@ namespace dxvk {
     // Foliage passes whether or not the ambient is the sky.
     args.foliageTransmission = std::clamp(transmission(), 0.0f, 1.0f);
     args.bounceScale = bounceScale();
-    if (!enable() || !active() || skyInShot()) {
+    // The menu's character views have no map: the last map's ambient cube must not light them (as on a fresh boot).
+    if (!enable() || !active() || skyInShot() || g_ds1MenuFrame) {
       return;
     }
     const Vector3 faces[6] = { posX(), negX(), posY(), negY(), posZ(), negZ() };
