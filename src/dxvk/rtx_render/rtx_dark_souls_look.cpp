@@ -32,6 +32,7 @@
 #include <rtx_shaders/post_fx_dark_souls_look_meter.h>
 #include <rtx_shaders/post_fx_dark_souls_look_ambient_meter.h>
 #include <rtx_shaders/post_fx_dark_souls_look_shafts.h>
+#include "rtx_ds1_menu_frame.h"
 
 namespace dxvk {
 
@@ -471,7 +472,7 @@ namespace dxvk {
     const float skyExposure = DxvkDarkSoulsExposure::drawnExposure();
     args.skyGamma = RtxOptions::skyForceHDR() ? 1u : 2u;
     args.skyUnexpose = skyExposure > 0.0f ? 1.0f / skyExposure : 1.0f;
-    args.skyBrightness = RtxOptions::skyBrightness();
+    args.skyBrightness = ds1SkyBrightness();
     args.eyeSkyMatch = skyMatte.isValid() ? std::max(eyeSkyMatch(), 0.0f) : 0.0f;
     args.hazeEnable = hazeEnable() && hazeValid ? 1u : 0u;
     const bool dof = dofEnable() && gameActive();
@@ -1094,7 +1095,7 @@ namespace dxvk {
     args.threshold = std::min(shaftThreshold(), 0.999f);
     // The sky raster's decode, as the composite decodes primary misses (CompositePass::dispatch).
     const float drawn = DxvkDarkSoulsExposure::drawnExposure();
-    args.skyBrightness = RtxOptions::skyBrightness();
+    args.skyBrightness = ds1SkyBrightness();
     args.exposure = sceneExposure();
     args.skyUnexpose = drawn > 0.0f ? 1.0f / drawn : 1.0f;
     args.skyGamma = RtxOptions::skyForceHDR() ? 1u : 2u;

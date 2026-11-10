@@ -19,6 +19,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstring>
+#include "../dxvk/rtx_render/rtx_ds1_menu_frame.h"
 
 namespace dxvk {
   static const bool s_isDxvkResolutionEnvVarSet = (env::getEnvVar("DXVK_RESOLUTION_WIDTH") != "") || (env::getEnvVar("DXVK_RESOLUTION_HEIGHT") != "");
@@ -631,7 +632,10 @@ namespace dxvk {
         d3d9State().renderTargets[kRenderTargetIndex]->GetCommonTexture()->GetImage() != m_ds1MenuSceneTarget) {
       m_parent->Flush();
       m_parent->EmitCs([cReflexFrameId = GetReflexFrameId(), cTarget = m_ds1MenuSceneTarget](DxvkContext* ctx) {
+        // The menu's view has no sky (rtx_ds1_menu_frame.h).
+        g_ds1MenuFrame = true;
         static_cast<RtxContext*>(ctx)->injectRTX(cReflexFrameId, cTarget);
+        g_ds1MenuFrame = false;
       });
       m_rtxInjectTriggered = true;
     }

@@ -89,6 +89,7 @@
 
 // Destructor requires the struct definitions
 #include "rtx_sky.h"
+#include "rtx_ds1_menu_frame.h"
 
 namespace dxvk {
 
@@ -1590,7 +1591,7 @@ namespace dxvk {
     constants.resolveOpaquenessThreshold = RtxOptions::resolveOpaquenessThreshold();
     constants.resolveStochasticAlphaBlendThreshold = m_common->metaComposite().stochasticAlphaBlendOpacityThreshold();
 
-    constants.skyBrightness = RtxOptions::skyBrightness();
+    constants.skyBrightness = ds1SkyBrightness();
     constants.isLastCompositeOutputValid = restirGI.isActive() && restirGI.getLastCompositeOutput().matchesWriteFrameIdx(frameIdx - 1);
     constants.isZUp = RtxOptions::zUp();
     constants.enableCullingSecondaryRays = RtxOptions::enableCullingInSecondaryRays();

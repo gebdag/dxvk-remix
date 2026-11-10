@@ -41,6 +41,7 @@
 #include <rtx_shaders/composite.h>
 #include <rtx_shaders/composite_alpha_blend.h>
 #include "rtx_texture_manager.h"
+#include "rtx_ds1_menu_frame.h"
 
 namespace dxvk {
 
@@ -508,7 +509,7 @@ namespace dxvk {
     memcpy(&compositeArgs.rayPortalHitInfos[maxRayPortalCount], &portalData.previousRayPortalHitInfos, sizeof(portalData.previousRayPortalHitInfos));
 
     compositeArgs.domeLightArgs = domeLightArgs;
-    compositeArgs.skyBrightness = RtxOptions::skyBrightness();
+    compositeArgs.skyBrightness = ds1SkyBrightness();
     compositeArgs.skyUseProbeForPrimaryRays = skyUseProbeForPrimaryRays();
     // DS1 look: the sky raster comes from the game's own sky shader, exposure included; same mapping
     // as RaytraceArgs::ds1Ambient (RtxContext::updateRaytraceArgs) for the sky composited here.
