@@ -972,7 +972,24 @@ namespace dxvk {
       return;
     }
 
-    if (!async || RtxOptions::TextureManager::neverDowngradeTextures()) {
+    // DS1: textures named in rtx.texturemanager.fullResNameParts (fur) never stream down.
+    bool fullRes = false;
+    if (tex->m_assetData != nullptr && tex->m_assetData->info().filename != nullptr) {
+      std::string file = tex->m_assetData->info().filename;
+      std::transform(file.begin(), file.end(), file.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+      const std::string& parts = RtxOptions::TextureManager::fullResNameParts();
+      size_t start = 0;
+      while (!fullRes && start <= parts.size()) {
+        const size_t end = std::min(parts.find(',', start), parts.size());
+        std::string part = parts.substr(start, end - start);
+        part.erase(0, part.find_first_not_of(' '));
+        part.erase(part.find_last_not_of(' ') + 1);
+        std::transform(part.begin(), part.end(), part.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+        fullRes = !part.empty() && file.find(part) != std::string::npos;
+        start = end + 1;
+      }
+    }
+    if (!async || RtxOptions::TextureManager::neverDowngradeTextures() || fullRes) {
       tex->m_canDemote = false;
       tex->requestMips(MAX_MIPS);
       scheduleTextureLoad(tex, false);

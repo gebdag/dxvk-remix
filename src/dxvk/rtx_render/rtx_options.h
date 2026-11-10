@@ -1163,6 +1163,9 @@ namespace dxvk {
       RTX_OPTION_ENV("rtx.texturemanager", bool, samplerFeedbackEnable, true, "DXVK_TEXTURES_SAMPLER_FEEDBACK_ENABLE",
                  "Enable texture sampler feedback. If true, a texture prioritization logic considers the amount of mip-levels that was sampled by a GPU while rendering a scene."
                  "(For example, if a texture is in the distance, it will have a lower priority compared to a texture rendered just in front of the camera).");
+      RTX_OPTION("rtx.texturemanager", std::string, fullResNameParts, "_fur",
+                 "DS1: replacement textures whose file name contains one of these comma-separated parts always load every mip. Streamed by distance, "
+                 "a fur texture kept low mips whose averaged alpha fell under the transparency threshold, and the fur popped in as it came closer.");
       RTX_OPTION_FLAG_ENV("rtx.texturemanager", bool, neverDowngradeTextures, false, RtxOptionFlags::NoSave, "DXVK_TEXTURES_NEVER_DOWNGRADE", 
                  "Debug option to forcibly prevent uploading lower resolution data, if the texture already has been promoted to a high resolution.");
       RTX_OPTION("rtx.texturemanager", int, stagingBufferSizeMiB, 96,
