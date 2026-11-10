@@ -195,7 +195,8 @@ struct Ds1RippleStepArgs {
   float fallStrength;
   float fallTime;
   float fallRate;
-  uint pad1;
+  // The size of a patch of pushes, in cells: the length of the waves that leave the fall.
+  float fallPatchCells;
 };
 
 struct Ds1RippleSlopeArgs {

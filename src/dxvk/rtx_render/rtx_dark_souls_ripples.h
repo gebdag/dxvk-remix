@@ -101,8 +101,9 @@ namespace dxvk {
     RTX_OPTION("rtx.ds1Ripple", int, maxStepsPerFrame, 3, "At most this many steps per frame; time beyond is dropped, never caught up.");
     RTX_OPTION("rtx.ds1Ripple", float, gravityScale, 0.8f,
                "Scale on gravity: 1 gives real water's wave speeds (about 0.5 m/s at 18 cm wavelength).");
-    RTX_OPTION("rtx.ds1Ripple", float, damping, 2.4f, "Damping on every wavelength, per second (the paper's alpha).");
-    RTX_OPTION("rtx.ds1Ripple", float, viscosity, 1.4e-3f,
+    RTX_OPTION("rtx.ds1Ripple", float, damping, 0.6f, "Damping on every wavelength, per second (the paper's alpha). Real water has almost none: its ripples fade by spreading out and by viscosity, which takes the short ones first. "
+               "At 2.4 a ring was gone within half a metre of its source; at 0.6 rings run out several metres, smaller and smaller.");
+    RTX_OPTION("rtx.ds1Ripple", float, viscosity, 2.0e-4f,
                "Viscous damping 2 nu k^2 in m^2/s: short ripples die fast, long ones travel. Clean water is 1e-6; "
                "this stands in for the surface film and the spreading the grid cannot resolve. The step holds it at "
                "its stability limit, 0.1 cellSize^2 * stepRate (0.00135 at 1.5 cm and 60 steps).");
@@ -136,7 +137,9 @@ namespace dxvk {
                "Where a waterfall's sheet meets water, it stirs the water, and ripples run out from there.");
     RTX_OPTION("rtx.ds1Ripple", float, fallStrength, 0.002f,
                "Falling water pushes a cell it lands in up or down by this much per step at the most, in metres. 0: none.");
-    RTX_OPTION("rtx.ds1Ripple", float, fallRate, 12.0f, "How many times a second the pattern of falling water's pushes changes.");
+    RTX_OPTION("rtx.ds1Ripple", float, fallRate, 6.0f, "How many times a second the pattern of falling water's pushes changes.");
+    RTX_OPTION("rtx.ds1Ripple", float, fallPatch, 0.12f,
+               "Size of a patch of falling water's pushes, in metres. The waves that leave the fall are about twice as long: small patches stir the foot of the fall, large ones send waves out.");
     RTX_OPTION("rtx.ds1Ripple", float, fallReach, 0.15f, "Falling water lands in the cells within this of its sheet, in metres.");
     RTX_OPTION("rtx.ds1Ripple", float, fallHeight, 0.15f,
                "The sheet is looked for this far above the waterline, in metres: some sheets end short of the water, and the flat pool at a fall's foot is not it.");

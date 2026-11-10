@@ -54,7 +54,8 @@ groupshared float tile[kTile][kTile];
 
 int2 wrapTexel(int2 cell, int n)
 {
-  return ((cell % n) + n) % n;
+  // Floored, in floats: the remainder of a negative cell came out as an unsigned one's, which only a power of two window forgives.
+  return cell - n * int2(floor(vec2(cell) / float(n)));
 }
 
 bool isOpen(int2 texel)
@@ -118,7 +119,7 @@ float latticeValue(int3 p)
 // second, so the water is thrown about in splashes of a hand's size instead of cell by cell.
 float fallPush(int2 cell)
 {
-  const vec3 p = vec3(float(cell.x) * 0.25f, float(cell.y) * 0.25f, cb.fallTime * cb.fallRate);
+  const vec3 p = vec3(float(cell.x) / cb.fallPatchCells, float(cell.y) / cb.fallPatchCells, cb.fallTime * cb.fallRate);
   const int3 base = int3(floor(p));
   vec3 f = p - floor(p);
   f = f * f * (3.0f - 2.0f * f);

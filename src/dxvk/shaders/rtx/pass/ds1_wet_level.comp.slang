@@ -133,7 +133,7 @@ void main()
   for (uint i = 0; i < 5; ++i)
   {
     const int2 cell = centre + offsets[i];
-    const float height = water[((cell % n) + n) % n];
+    const float height = water[cell - n * int2(floor(vec2(cell) / float(n)))];
     if (height <= DS1_RIPPLE_NO_WATER || height - cb.feet > cb.maxDepth || height <= best)
     {
       continue;

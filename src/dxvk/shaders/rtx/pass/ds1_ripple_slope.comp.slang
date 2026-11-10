@@ -47,7 +47,8 @@ ConstantBuffer<Ds1RippleSlopeArgs> cb;
 
 int2 wrapTexel(int2 cell, int n)
 {
-  return ((cell % n) + n) % n;
+  // Floored, in floats: the remainder of a negative cell came out as an unsigned one's, which only a power of two window forgives.
+  return cell - n * int2(floor(vec2(cell) / float(n)));
 }
 
 float heightAt(int2 windowCell)

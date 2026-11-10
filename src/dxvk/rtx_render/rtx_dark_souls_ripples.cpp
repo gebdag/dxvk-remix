@@ -746,6 +746,7 @@ namespace dxvk {
       args.displacement = displacement() / float(s_frame.steps);
       args.fallStrength = waterfalls() ? std::clamp(fallStrength(), 0.0f, 0.02f) : 0.0f;
       args.fallRate = std::clamp(fallRate(), 0.1f, 60.0f);
+      args.fallPatchCells = std::clamp(fallPatch(), 0.03f, 2.0f) / s_field.cellSize;
       // Wrapped every 4096 s, where the pattern jumps once.
       args.fallTime = float(double(s_stepCount++ % uint32_t(4096.0 / stepTime)) * stepTime);
       const uint32_t previous = (s_field.newest + 2) % 3;

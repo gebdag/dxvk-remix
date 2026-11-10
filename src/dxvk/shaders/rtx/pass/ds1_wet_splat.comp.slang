@@ -63,7 +63,7 @@ float waterAt(vec3 world)
   {
     return DS1_RIPPLE_NO_WATER;
   }
-  const float here = water[((cell % n) + n) % n];
+  const float here = water[cell - n * int2(floor(vec2(cell) / float(n)))];
   // Not above the water the player stands in: an arm over the rim of a higher pool stays dry.
   return here <= DS1_RIPPLE_NO_WATER ? here : min(here, atPlayer + 0.05f);
 }
