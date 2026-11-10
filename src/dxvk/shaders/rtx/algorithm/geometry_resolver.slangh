@@ -1691,6 +1691,16 @@ void geometryResolverVertexOutputDebugView(
     storeInDebugView(pixelCoordinate, isSss ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0));
 
     break;
+  case DEBUG_VIEW_DS1_RIPPLE_PARALLAX:
+#ifdef RAY_TRACING_PRIMARY_RAY
+    // Fork (DS1): what the ripples' parallax did on this pixel's ray (ds1_ripple_parallax.slangh), whichever of its surfaces took it.
+    if (g_ds1RippleParallaxWalked)
+    {
+      const float shift = g_ds1RippleParallaxShift / max(cb.ds1Ripple.parallaxBound, 1e-4f);
+      storeInDebugView(pixelCoordinate, vec3(saturate(-shift), 0.12f, saturate(shift)));
+    }
+#endif
+    break;
   case DEBUG_VIEW_POM_ITERATIONS:
 #ifdef OPAQUE_MATERIAL_USE_POM
     if (materialType == surfaceMaterialTypeOpaque && cb.pomMode != DisplacementMode::Off)

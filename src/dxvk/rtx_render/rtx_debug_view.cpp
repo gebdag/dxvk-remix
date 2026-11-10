@@ -241,6 +241,11 @@ namespace dxvk {
         {DEBUG_VIEW_PRIMARY_DECAL_ALBEDO,                  "Primary Decal Albedo" },
         {DEBUG_VIEW_DS1_PRIMARY_DECAL_SHADING_NORMAL,      "Primary Decal Shading Normal (DS1)" },
         {DEBUG_VIEW_DS1_PRIMARY_DECAL_OPACITY,             "Primary Decal Opacity (DS1)" },
+        {DEBUG_VIEW_DS1_RIPPLE_PARALLAX,                   "Ripple Parallax Shift (DS1)",
+                                                            "How far the ripples' parallax moved the shading point along the water or mud,"
+                                                            "\nover rtx.ds1Ripple.parallaxBound. Red: towards the viewer (a crest)."
+                                                            "\nBlue: away (a trough). Dark green: the walk ran and found the surface flat."
+                                                            "\nBlack: no walk (no ripple window there, parallax off, or not water or mud)."},
 
         {DEBUG_VIEW_PRIMARY_SPECULAR_ALBEDO,               "Primary Specular Albedo"},
         {DEBUG_VIEW_SECONDARY_SPECULAR_ALBEDO,               "Secondary Specular Albedo"},

@@ -53,6 +53,13 @@ float ds1RippleHeight(vec2 xz, float planeHeight)
   return field.w * (saturate(edge / cb.ds1Ripple.borderFade) * cb.ds1Ripple.normalScale * cb.ds1Ripple.parallaxScale);
 }
 
+#ifdef RAY_TRACING_PRIMARY_RAY
+// For the debug view (DEBUG_VIEW_DS1_RIPPLE_PARALLAX): the largest shift along the surface a walk of this ray found, signed
+// (negative towards the viewer), and whether any walk ran. Per thread.
+static float g_ds1RippleParallaxShift = 0.0f;
+static bool g_ds1RippleParallaxWalked = false;
+#endif
+
 // From the flat surface's hit to where the view ray meets the rippled surface, along the ray. 0 where there is nothing to walk:
 // the parallax off, another pass than the camera's, a surface that is not level, a ray almost along it.
 vec3 ds1RippleParallax(vec3 position, vec3 geometryNormal, vec3 viewDirection)
@@ -128,7 +135,14 @@ vec3 ds1RippleParallax(vec3 position, vec3 geometryNormal, vec3 viewDirection)
   }
 
   // The ripples flatten out for rays almost along the surface, where a step is many cells long.
-  return rayDirection * (hitS * smoothstep(0.02f, 0.08f, absCosUp) / cosUp);
+  const float rayOffset = hitS * smoothstep(0.02f, 0.08f, absCosUp) / cosUp;
+  const float shift = rayOffset * sqrt(max(1.0f - cosUp * cosUp, 0.0f));
+  if (!g_ds1RippleParallaxWalked || abs(shift) > abs(g_ds1RippleParallaxShift))
+  {
+    g_ds1RippleParallaxShift = shift;
+  }
+  g_ds1RippleParallaxWalked = true;
+  return rayDirection * rayOffset;
 #else
   return vec3(0.0f);
 #endif
