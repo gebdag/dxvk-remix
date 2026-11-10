@@ -44,7 +44,7 @@ namespace dxvk {
     RTX_OPTION("rtx.ds1EffectParticles", float, moteBrightness, 1.0f, "Scale on the motes' colour (the game's own). Above 1 clips the green's channels and turns it pale.");
 
     RTX_OPTION("rtx.ds1EffectParticles", bool, sparks, true, "Replace the streaks of a weapon striking stone with Remix particles, spawned from the game's hits.");
-    RTX_OPTION("rtx.ds1EffectParticles", float, sparkCount, 0.7f, "Sparks per streak of the game's effect (a stone hit has 60).");
+    RTX_OPTION("rtx.ds1EffectParticles", float, sparkCount, 2.0f, "Sparks per streak of the game's effect (a stone hit has 60).");
     RTX_OPTION("rtx.ds1EffectParticles", float, sparkSpeed, 1.0f, "Scale on the speed the game's effects give their sparks (each spark varies by -30 to +30%).");
     RTX_OPTION("rtx.ds1EffectParticles", float, sparkSize, 1.35f, "Spark width, cm.");
     RTX_OPTION("rtx.ds1EffectParticles", float, sparkLife, 0.3f, "Mean spark life, seconds.");
