@@ -640,6 +640,18 @@ namespace dxvk {
       m_rtxInjectTriggered = true;
     }
 
+    // DS1: Show Game UI off drops every draw the proxy marks as UI (stage-0 D3DTSS_CONSTANT) and, below, every draw after the
+    // path traced frame. The marked draw that starts the UI still triggers the injection, so the frame is presented.
+    if (!RtxOptions::showGameUi() && RtxOptions::uiMarkerEnabled() &&
+        d3d9State().textureStages[0][DXVK_TSS_CONSTANT] == 0xD15D0011) {
+      if (!m_rtxInjectTriggered) {
+        m_parent->PrepareDraw(drawContext.PrimitiveType);
+        triggerInjectRTX();
+        m_rtxInjectTriggered = true;
+      }
+      return PrepareDrawFlag::Ignore;
+    }
+
     // RTX was injected => treat everything else as rasterized,
     // unless this draw targets a raytraced render target (e.g. render-to-texture
     // in games that draw UI before 3D content).
@@ -652,7 +664,8 @@ namespace dxvk {
         }
       }
       if (!isRaytracedRenderTarget) {
-        return RtxOptions::skipDrawCallsPostRTXInjection()
+        // DS1: Show Game UI off drops everything drawn after the path traced frame too (bars, icons, text, menus).
+        return RtxOptions::skipDrawCallsPostRTXInjection() || !RtxOptions::showGameUi()
                ? PrepareDrawFlag::Ignore
                : PrepareDrawFlag::PreserveDrawCallAndItsState;
       }

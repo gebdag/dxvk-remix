@@ -1295,6 +1295,9 @@ namespace dxvk {
                "Classify draws carrying the marker value 0xD15D05C1 in texture stage 0's D3DTSS_CONSTANT as sky, without requiring their texture hashes in rtx.skyBoxTextures.\n"
                "Works for draws using programmable shaders: a compatibility proxy that recognises a game's sky layers can send them with the game's own shaders and this tag, and the sky rasterization then reproduces the game's shading of them exactly.\n"
                "The marker is applied after the sky heuristics, so they cannot clear it. Inert unless a proxy sets the value.");
+    RTX_OPTION("rtx", bool, showGameUi, true,
+               "DS1: false hides the game's HUD and menus: the draws carrying the UI marker (rtx.uiMarkerEnabled) and every draw after the path traced frame are dropped. "
+               "A marked draw that would trigger the injection still triggers it. Only while raytracing is on; the vanilla view (raytracing off) is unchanged.");
     RTX_OPTION("rtx", bool, uiMarkerEnabled, false,
                "Classify draws carrying the marker value 0xD15D0011 in texture stage 0's D3DTSS_CONSTANT as UI, without requiring their texture hashes in rtx.uiTextures.\n"
                "Unlike the built-in orthographic heuristic this works for draws using programmable shaders, so compatibility proxies that can identify a game's UI draws structurally (e.g. by their draw-call signature) can tag them explicitly. Tagged draws are rasterized on top of the path-traced scene.");

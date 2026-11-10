@@ -131,7 +131,8 @@ namespace dxvk {
       RemixGui::Checkbox("Decals (blended layers)", &RtxOptions::fixedFunctionDecalMarkerEnabledObject());
       RemixGui::Checkbox("Unlit (sprites)", &RtxOptions::fixedFunctionUnlitMarkerEnabledObject());
       RemixGui::Checkbox("Sky", &RtxOptions::skyMarkerEnabledObject());
-      RemixGui::Checkbox("UI", &RtxOptions::uiMarkerEnabledObject());
+      RemixGui::Checkbox("UI (classify only)", &RtxOptions::uiMarkerEnabledObject());
+      RemixGui::Checkbox("Show Game UI (HUD and menus)", &RtxOptions::showGameUiObject());
       ImGui::Unindent();
     }
   }
