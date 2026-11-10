@@ -30,6 +30,26 @@
 #include "dxvk_state_cache.h"
 
 namespace dxvk {
+  // Fork (DS1): a pipeline compile over 100 ms is logged with its name and the thread that waited for it (dxvk-cs or the render
+  // thread: a stall the player sees; a prewarm or compiler worker: background), to find what a fresh build compiles too late.
+  inline void ds1LogSlowPipeline(const char* kind, const char* name, double ms) {
+    if (ms < 100.0) {
+      return;
+    }
+    std::string thread = "?";
+    PWSTR desc = nullptr;
+    if (SUCCEEDED(GetThreadDescription(GetCurrentThread(), &desc)) && desc) {
+      thread.clear();
+      for (const wchar_t* c = desc; *c; ++c) {
+        thread.push_back(static_cast<char>(*c));
+      }
+      LocalFree(desc);
+    }
+    Logger::info(str::format("[DS1 pipeline] ", kind, " ", name ? name : "<unnamed>", " compiled in ", ms, " ms on thread '", thread, "'"));
+  }
+}
+
+namespace dxvk {
   
   DxvkComputePipeline::DxvkComputePipeline(
           DxvkPipelineManager*        pipeMgr,
@@ -176,8 +196,7 @@ namespace dxvk {
     // Time pipeline compilation for debugging purposes
     dxvk::high_resolution_clock::time_point t0, t1;
 
-    if (Logger::logLevel() <= LogLevel::Debug)
-      t0 = dxvk::high_resolution_clock::now();
+    t0 = dxvk::high_resolution_clock::now();
     
     VkPipeline pipeline = VK_NULL_HANDLE;
     if (m_vkd->vkCreateComputePipelines(m_vkd->device(),
@@ -187,8 +206,9 @@ namespace dxvk {
       return VK_NULL_HANDLE;
     }
     
+    t1 = dxvk::high_resolution_clock::now();
+    ds1LogSlowPipeline("compute", m_shaders.cs->debugName().c_str(), std::chrono::duration<double, std::milli>(t1 - t0).count());
     if (Logger::logLevel() <= LogLevel::Debug) {
-      t1 = dxvk::high_resolution_clock::now();
       auto td = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0);
       Logger::debug(str::format("DxvkComputePipeline: Finished in ", td.count(), " ms"));
     }

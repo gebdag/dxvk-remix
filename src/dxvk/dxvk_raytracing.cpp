@@ -3,6 +3,26 @@
 #include <future>
 
 #include "dxvk_device.h"
+
+namespace dxvk {
+  // Fork (DS1): a pipeline compile over 100 ms is logged with its name and the thread that waited for it (dxvk-cs or the render
+  // thread: a stall the player sees; a prewarm or compiler worker: background), to find what a fresh build compiles too late.
+  inline void ds1LogSlowRtPipeline(const char* kind, const char* name, double ms) {
+    if (ms < 100.0) {
+      return;
+    }
+    std::string thread = "?";
+    PWSTR desc = nullptr;
+    if (SUCCEEDED(GetThreadDescription(GetCurrentThread(), &desc)) && desc) {
+      thread.clear();
+      for (const wchar_t* c = desc; *c; ++c) {
+        thread.push_back(static_cast<char>(*c));
+      }
+      LocalFree(desc);
+    }
+    Logger::info(str::format("[DS1 pipeline] ", kind, " ", name ? name : "<unnamed>", " compiled in ", ms, " ms on thread '", thread, "'"));
+  }
+}
 #include "dxvk_pipemanager.h"
 #include "rtx_render/rtx.h"
 #include "rtx_render/rtx_options.h"
@@ -174,7 +194,10 @@ namespace dxvk {
         WAR4000939::syncWithOMMPipeline(m_shaders);
       }
 
+      const auto compileStart = dxvk::high_resolution_clock::now();
       createPipeline();
+      ds1LogSlowRtPipeline("raytracing", m_shaders.debugName,
+        std::chrono::duration<double, std::milli>(dxvk::high_resolution_clock::now() - compileStart).count());
       createShaderBindingTable();
       releaseTmpResources();
 
