@@ -808,7 +808,7 @@ namespace dxvk {
           m_common->metaPostFx().darkSoulsLook().dispatchSceneBeforeUpscale(this,
             rtOutput.m_compositeOutput.resource(Resources::AccessType::ReadWrite), rtOutput.m_primaryLinearViewZ,
             rtOutput.m_primarySurfaceFlags, rtOutput.m_primaryScreenSpaceMotionVector,
-            rtOutput.m_primaryAlbedo, rtOutput.m_primaryWorldShadingNormal, rtOutput.m_ds1AdditiveRadiance,
+            rtOutput.m_primaryAlbedo, rtOutput.m_primaryWorldShadingNormal, rtOutput.m_ds1AdditiveRadiance, rtOutput.m_ds1HazedLayers, rtOutput.m_ds1HazedLayerDepth,
             m_common->metaPostFx().darkSoulsHaze(), getSceneManager().getCamera().getShaderConstants(),
             preDirect.missLinearViewZ, m_resetHistory || getSceneManager().getCamera().isCameraCut());
           this->spillRenderPass(false);
@@ -892,7 +892,7 @@ namespace dxvk {
           m_common->metaPostFx().darkSoulsLook().dispatchScene(this,
             rtOutput.m_finalOutput.resource(Resources::AccessType::ReadWrite), rtOutput.m_primaryLinearViewZ,
             rtOutput.m_primarySurfaceFlags, rtOutput.m_primaryScreenSpaceMotionVector,
-            rtOutput.m_primaryAlbedo, rtOutput.m_primaryWorldShadingNormal, rtOutput.m_ds1AdditiveRadiance,
+            rtOutput.m_primaryAlbedo, rtOutput.m_primaryWorldShadingNormal, rtOutput.m_ds1AdditiveRadiance, rtOutput.m_ds1HazedLayers, rtOutput.m_ds1HazedLayerDepth,
             m_common->metaPostFx().darkSoulsHaze(), getSceneManager().getCamera().getShaderConstants(),
             ds1Jitter, ds1MissLinearViewZ, m_resetHistory || getSceneManager().getCamera().isCameraCut());
         } else {
@@ -1612,6 +1612,10 @@ namespace dxvk {
     constants.resolveOpaquenessThreshold = RtxOptions::resolveOpaquenessThreshold();
     constants.resolveStochasticAlphaBlendThreshold = m_common->metaComposite().stochasticAlphaBlendOpacityThreshold();
     constants.resolveStochasticAlphaBlendThresholdFur = m_common->metaComposite().stochasticAlphaBlendOpacityThresholdFur();
+    // The look's scene pass of this frame is told the same: in mode 2 those layers are only in its inputs.
+    const uint32_t ds1LayerHazeMode = DxvkDarkSoulsLook::layerHazeMode(m_common->metaDebugView().debugViewIdx() == DEBUG_VIEW_DISABLED);
+    m_common->metaPostFx().darkSoulsLook().setLayerHazeMode(ds1LayerHazeMode);
+    constants.ds1LayersOverHaze = ds1LayerHazeMode;
 
     constants.skyBrightness = ds1SkyBrightness();
     constants.isLastCompositeOutputValid = restirGI.isActive() && restirGI.getLastCompositeOutput().matchesWriteFrameIdx(frameIdx - 1);

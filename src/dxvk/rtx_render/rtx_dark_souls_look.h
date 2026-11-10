@@ -41,6 +41,17 @@ namespace dxvk {
     // rtx.ds1Look.intensity clamped to 0..1.
     static float intensityClamped() { return std::clamp(intensity(), 0.0f, 1.0f); }
 
+    // How the camera ray's hazed unlit alpha layers meet the haze (RaytraceArgs::ds1LayersOverHaze, PostFxDarkSoulsLookSceneArgs::layersOverHaze).
+    // 2, the layers left out of the radiance, only where the scene pass runs before the upscaler (see dispatchSceneBeforeUpscale's call) and
+    // so puts them back into the frame at render resolution.
+    static uint32_t layerHazeMode(bool noDebugView) {
+      if (!isActive() || !layersOverHaze()) {
+        return 0u;
+      }
+      return layerExactComposite() && hazeBeforeUpscale() && intensityClamped() >= 1.0f && noDebugView ? 2u : 1u;
+    }
+    void setLayerHazeMode(uint32_t mode) { m_layerHazeMode = mode; }
+
     // Scratch frames for intensity below 1 (RtxContext): 0 holds the radiance while Remix's own bloom and
     // tonemapper run on the frame, 1 keeps their result for the composite to blend with.
     const Resources::Resource& blendImage(Rc<DxvkContext> ctx, const Resources::Resource& like, uint32_t index);
@@ -54,6 +65,8 @@ namespace dxvk {
       const Resources::Resource& albedo,
       const Resources::Resource& shadingNormal,
       const Resources::Resource& additiveRadiance,
+      const Resources::Resource& hazedLayers,
+      const Resources::Resource& hazedLayerDepth,
       const DxvkDarkSoulsHaze& haze,
       const Camera& camera,
       const float jitterOffset[2],
@@ -71,6 +84,8 @@ namespace dxvk {
       const Resources::Resource& albedo,
       const Resources::Resource& shadingNormal,
       const Resources::Resource& additiveRadiance,
+      const Resources::Resource& hazedLayers,
+      const Resources::Resource& hazedLayerDepth,
       const DxvkDarkSoulsHaze& haze,
       const Camera& camera,
       float missLinearViewZ,
@@ -140,6 +155,10 @@ namespace dxvk {
                "Adapt as an eye does where the game's exposure stops: below the meter's floor (its luminance clamp) the view comes up, up to what the game's "
                "own light gives on the same surfaces, so dark interiors can be seen without lights being added and places dark in the game stay dark. "
                "What is bright stays. The game's meter does not see the lift.");
+    RTX_OPTION("rtx.ds1Look", bool, layersOverHaze, true, "Hazed unlit alpha layers (smoke, dust: sprites the game fogs by their own depth) take the haze of their own depth, as far as they cover the pixel; the surface behind them takes its own for the rest. Off: the whole pixel took the haze of the surface behind, so smoke in front of a far tower went dark with it and showed the tower's outline.");
+    RTX_OPTION("rtx.ds1Look", bool, layerExactComposite, false, "With layersOverHaze: the hazed layers are left out of the path traced radiance and laid over the hazed frame as the game's blend does (colour x alpha over what is behind, in display values). Off: they stay in the radiance as composited there, and only the haze is told apart by how much of the pixel they cover.");
+    RTX_OPTION("rtx.ds1Look", float, layerFogThrough, 1.0f, "How far unlit alpha layers (smoke, dust, a fog wall's ribbons) hide the fog colour of the surface behind them: 1 = by all they cover, as the game's blend does; 0 = the fog colour shows through them whole (as before layersOverHaze).");
+    RTX_OPTION("rtx.ds1Look", float, layerOwnHaze, 1.0f, "With layersOverHaze: how much of the haze of their own depth the hazed layers take. 1 = the game's fog on a sprite; 0 = none.");
     RTX_OPTION("rtx.ds1Look", bool, hazeBeforeUpscale, true, "Eye lift, haze and particle layers before the upscaler, at render resolution, where each pixel has its own depth. After the upscaler (false), they read render-resolution depth at output pixels: along silhouettes against the sky, edge pixels taken for sky kept the unhazed colour of the object, a light rim.");
     RTX_OPTION("rtx.ds1Look", float, eyeSkyMatch, 0.25f, "At a silhouette against the sky, how near (relative) an upscaled pixel must be to the sky's own colour to be left out of the eye's lift. The depth taps that tell sky from surface are at render resolution and blurred over a few texels, so without this the sky next to a dark object was lifted with it: a light outline. 0 = the taps alone.");
     RTX_OPTION("rtx.ds1Look", float, eyeMaxGain, 3.0f, "The most a dark part of the view is lifted, on gamma values. How far an eye adapts in the dark.");
@@ -332,6 +351,8 @@ namespace dxvk {
     uint32_t m_preFrame = kInvalidFrameIndex;
     // The mode of the scene pass being recorded (PostFxDarkSoulsLookSceneArgs::mode).
     uint32_t m_sceneMode = 0;
+    // What this frame's resolve was told about the hazed layers (layerHazeMode).
+    uint32_t m_layerHazeMode = 0;
     VkExtent3D m_dofExtent = { 0, 0, 0 };
     bool m_dofIsFullRes = false;
     // The scene pass's depth-derived terms over time (ping-pong, [A, B] each, see dispatchScene).

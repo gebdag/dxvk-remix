@@ -117,6 +117,9 @@
 #define GBUFFER_BINDING_PRIMARY_COVERAGE_OUTPUT                                 128
 // Fork (DS1): the primary unlit additive sprites' radiance on its own (Ds1AdditiveRadiance).
 #define GBUFFER_BINDING_DS1_ADDITIVE_RADIANCE_OUTPUT                            129
+// Fork (DS1): the camera ray's hazed unlit alpha layers, for the DS1 look to lay over its haze (Ds1HazedLayers, Ds1HazedLayerDepth).
+#define GBUFFER_BINDING_DS1_HAZED_LAYERS_OUTPUT                                 157
+#define GBUFFER_BINDING_DS1_HAZED_LAYER_DEPTH_OUTPUT                            158
 
 #define GBUFFER_BINDING_NRC_QUERY_PATH_INFO_OUTPUT                              130
 #define GBUFFER_BINDING_NRC_TRAINING_PATH_INFO_OUTPUT                           131

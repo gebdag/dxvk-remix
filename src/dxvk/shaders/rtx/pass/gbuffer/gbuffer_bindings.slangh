@@ -295,6 +295,16 @@ RWTexture2D<float> PrimaryCoverage;
 layout(rgba16f, binding = GBUFFER_BINDING_DS1_ADDITIVE_RADIANCE_OUTPUT)
 RWTexture2D<float4> Ds1AdditiveRadiance;
 
+// Fork (DS1): the camera ray's hazed unlit alpha layers (smoke, dust: sprites the game fogs by their own depth), over its segments.
+// rgb: with rtx.ds1Look.layerExactComposite, what they would add to the primary radiance, which is then without them; else 0 (they
+// are in the radiance). a: how much of what is behind them all the unlit alpha layers let through, hazed or not, as a share of its
+// display (gamma) value.
+layout(rgba16f, binding = GBUFFER_BINDING_DS1_HAZED_LAYERS_OUTPUT)
+RWTexture2D<float4> Ds1HazedLayers;
+// r: how much of the pixel the hazed layers cover. g: that coverage times their distance from the camera.
+layout(rg16f, binding = GBUFFER_BINDING_DS1_HAZED_LAYER_DEPTH_OUTPUT)
+RWTexture2D<float2> Ds1HazedLayerDepth;
+
 layout(binding = GBUFFER_BINDING_NRC_QUERY_PATH_INFO_OUTPUT)
 RWStructuredBuffer<NrcPackedQueryPathInfo> QueryPathInfo;
 

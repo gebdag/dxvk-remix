@@ -66,6 +66,8 @@ namespace dxvk {
         SAMPLER2D(POST_FX_DS_LOOK_SCENE_ADDITIVE)
         SAMPLER2D(POST_FX_DS_LOOK_SCENE_EYE)
         SAMPLER2D(POST_FX_DS_LOOK_SCENE_SKY_MATTE)
+        SAMPLER2D(POST_FX_DS_LOOK_SCENE_HAZED_LAYERS)
+        SAMPLER2D(POST_FX_DS_LOOK_SCENE_HAZED_LAYER_DEPTH)
       END_PARAMETER()
     };
     PREWARM_SHADER_PIPELINE(PostFxDarkSoulsLookSceneShader);
@@ -437,6 +439,8 @@ namespace dxvk {
     const Resources::Resource& albedo,
     const Resources::Resource& shadingNormal,
     const Resources::Resource& additiveRadiance,
+    const Resources::Resource& hazedLayers,
+    const Resources::Resource& hazedLayerDepth,
     const DxvkDarkSoulsHaze& haze,
     const Camera& camera,
     float missLinearViewZ,
@@ -449,8 +453,8 @@ namespace dxvk {
     }
     const float noJitter[2] = { 0.0f, 0.0f };
     m_sceneMode = 1;
-    dispatchScene(ctx, compositeOutput, linearViewZ, surfaceFlags, motionVector, albedo, shadingNormal, additiveRadiance, haze, camera,
-                  noJitter, missLinearViewZ, resetHistory);
+    dispatchScene(ctx, compositeOutput, linearViewZ, surfaceFlags, motionVector, albedo, shadingNormal, additiveRadiance, hazedLayers, hazedLayerDepth,
+                  haze, camera, noJitter, missLinearViewZ, resetHistory);
     m_sceneMode = 0;
     m_preFrame = ctx->getDevice()->getCurrentFrameId();
     return true;
@@ -465,6 +469,8 @@ namespace dxvk {
     const Resources::Resource& albedo,
     const Resources::Resource& shadingNormal,
     const Resources::Resource& additiveRadiance,
+    const Resources::Resource& hazedLayers,
+    const Resources::Resource& hazedLayerDepth,
     const DxvkDarkSoulsHaze& haze,
     const Camera& camera,
     const float jitterOffset[2],
@@ -496,6 +502,11 @@ namespace dxvk {
     PostFxDarkSoulsLookSceneArgs args = {};
     args.mode = mode;
     args.exposure = sceneExposure();
+    const bool layerTargets = hazedLayers.isValid() && hazedLayerDepth.isValid();
+    // What this frame's resolve was told (setLayerHazeMode): in mode 2 the layers are only in these targets.
+    args.layersOverHaze = layerTargets ? m_layerHazeMode : 0u;
+    args.layerFogThrough = layerTargets ? std::clamp(layerFogThrough(), 0.0f, 1.0f) : 0.0f;
+    args.layerOwnHaze = std::clamp(layerOwnHaze(), 0.0f, 1.0f);
     // With no meter (a menu's character view, or metering off) there is nothing to go by: the eye returns to no lift, not to stay where it was.
     if (mode != 2 && !DxvkDarkSoulsExposure::wantsMeter()) {
       updateEye(0.0f, 1.0f, false);
@@ -610,6 +621,10 @@ namespace dxvk {
     // What the lift before the upscaler added (mode 2); otherwise unread, any view stands in.
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_PRE_LIFTED, m_preLifted.isValid() ? m_preLifted.view : additiveRadiance.view, nullptr);
     ctx->bindResourceSampler(POST_FX_DS_LOOK_SCENE_PRE_LIFTED, m_linearSampler);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HAZED_LAYERS, hazedLayers.isValid() ? hazedLayers.view : additiveRadiance.view, nullptr);
+    ctx->bindResourceSampler(POST_FX_DS_LOOK_SCENE_HAZED_LAYERS, m_linearSampler);
+    ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HAZED_LAYER_DEPTH, hazedLayerDepth.isValid() ? hazedLayerDepth.view : additiveRadiance.view, nullptr);
+    ctx->bindResourceSampler(POST_FX_DS_LOOK_SCENE_HAZED_LAYER_DEPTH, m_linearSampler);
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_HAZE_REGION, m_hazeRegion.view, nullptr);
     ctx->bindResourceView(POST_FX_DS_LOOK_SCENE_ADDITIVE, additiveRadiance.view, nullptr);
     ctx->bindResourceSampler(POST_FX_DS_LOOK_SCENE_ADDITIVE, m_linearSampler);

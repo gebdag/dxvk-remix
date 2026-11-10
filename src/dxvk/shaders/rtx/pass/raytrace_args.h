@@ -474,7 +474,11 @@ struct RaytraceArgs {
 
   // Fork (DS1): resolveStochasticAlphaBlendThreshold for fur shells (Surface::isDs1Fur).
   float resolveStochasticAlphaBlendThresholdFur;
-  uint ds1FurPad0;
+  // Fork (DS1): the camera ray's hazed unlit alpha layers (smoke, dust) and the DS1 look's haze (rtx.ds1Look.layersOverHaze).
+  // 0: they are in the radiance and take the haze of the surface behind them. 1: they are in the radiance, and where they are goes to
+  // Ds1HazedLayerDepth for the look to haze the pixel by their depth as far as they cover it. 2: they go to Ds1HazedLayers instead of
+  // the radiance, for the look to lay over its haze (rtx.ds1Look.layerExactComposite).
+  uint ds1LayersOverHaze;
   uint ds1FurPad1;
   uint ds1FurPad2;
 

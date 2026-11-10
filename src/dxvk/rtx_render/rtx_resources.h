@@ -350,6 +350,10 @@ namespace dxvk
 
       // Fork (DS1): the primary radiance's unlit additive sprite part, for the DS1 look's haze to leave out.
       Resource m_ds1AdditiveRadiance;
+      // Fork (DS1): the hazed unlit alpha layers of the camera ray (smoke, dust), for the DS1 look to lay over its haze: their radiance (rgb)
+      // and how much of what is behind all unlit alpha layers they let through (a); their coverage and coverage-weighted distance.
+      Resource m_ds1HazedLayers;
+      Resource m_ds1HazedLayerDepth;
 
       Resource m_secondaryAttenuation;
       Resource m_secondaryWorldShadingNormal;

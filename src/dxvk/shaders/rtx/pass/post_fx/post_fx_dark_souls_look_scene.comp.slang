@@ -70,6 +70,15 @@ Sampler2D<float4> SkyMatte;
 layout(binding = POST_FX_DS_LOOK_SCENE_PRE_LIFTED)
 Sampler2D<float2> PreLifted;
 
+// The camera ray's hazed unlit alpha layers (smoke, dust). rgb: in mode 2 (cb.layersOverHaze), what they would add to the radiance,
+// which is without them. a: what all unlit alpha layers let through of the display value behind them.
+layout(binding = POST_FX_DS_LOOK_SCENE_HAZED_LAYERS)
+Sampler2D<float4> HazedLayers;
+
+// x: how much of the pixel the hazed layers cover. y: that coverage times their distance from the camera.
+layout(binding = POST_FX_DS_LOOK_SCENE_HAZED_LAYER_DEPTH)
+Sampler2D<float2> HazedLayerDepth;
+
 // The haze constants of a pixel: those of its surface's own set (the game hazes each draw with
 // its region's DrawParams), or the frame's single set for untagged surfaces.
 struct HazeTerms
@@ -173,6 +182,32 @@ HazeMap hazeAt(uint2 viewZTexel, CameraDirections directions)
 
   const float z = abs(viewZ);
   const float dist = length(cameraReconstructViewPosition(haze.camera, directions.viewDirection, z));
+  const uint region = HazeRegion[viewZTexel];
+  m = hazeMapFor(region & 0xF, z, dist, directions);
+  const float secondShare = float(region >> 16) / 65535.0f;
+  if (secondShare > 0.0f)
+  {
+    const HazeMap second = hazeMapFor((region >> 4) & 0xF, z, dist, directions);
+    m.a = lerp(m.a, second.a, secondShare);
+    m.b = lerp(m.b, second.b, secondShare);
+  }
+  return m;
+}
+
+// The haze of a layer in front of a view Z texel's surface, dist away along the view direction: the haze of its own depth, as the
+// game fogs a sprite, by the sets of the surface there (a sprite carries no set of its own; over the sky that is the frame's set).
+HazeMap hazeInFrontOf(uint2 viewZTexel, float dist, CameraDirections directions)
+{
+  HazeMap m;
+  m.a = vec3(1.0f);
+  m.b = vec3(0.0f);
+  if (cb.hazeEnable == 0 || !(dist > 0.0f))
+  {
+    return m;
+  }
+
+  // hazeAt's distance is that of the point z deep along the normalized view direction: back to its depth.
+  const float z = dist * abs(directions.viewDirection.z);
   const uint region = HazeRegion[viewZTexel];
   m = hazeMapFor(region & 0xF, z, dist, directions);
   const float secondShare = float(region >> 16) / 65535.0f;
@@ -298,6 +333,31 @@ void main(uint2 pixel : SV_DispatchThreadID)
   const vec3 additive = pow(max(particles, vec3(0.0f)), vec3(1.0f / 2.2f)) * cb.exposure;
   const vec3 subtract = min(pow(max(-particles, vec3(0.0f)), vec3(1.0f / 2.2f)) * cb.exposure, vec3(0.98f));
 
+  // The hazed unlit alpha layers (smoke, dust): the game blends such a sprite, fogged by its own depth, over its fogged scene. Here
+  // the whole pixel took the haze of the surface behind it: smoke in front of a far tower went dark with the tower and showed its
+  // outline. So the layers take the haze of their own depth. Mode 1: on the radiance as it is, by how much of the pixel they cover.
+  // Mode 2: the resolve left them out of the radiance, and they go over the hazed frame below.
+  const vec4 hazedLayers = HazedLayers.SampleLevel(viewZUV, 0.0f);
+  const vec2 hazedLayerDepth = HazedLayerDepth.SampleLevel(viewZUV, 0.0f);
+  const vec3 layerRadiance = cb.layersOverHaze == 2 ? max(hazedLayers.rgb, vec3(0.0f)) : vec3(0.0f);
+  const float layerCoverage = cb.layersOverHaze != 0 ? saturate(hazedLayerDepth.x) : 0.0f;
+  const vec3 layerGamma = pow(layerRadiance, vec3(1.0f / 2.2f)) * cb.exposure;
+  // And the fog colour of the surface behind unlit alpha layers (those, and a fog wall's ribbons) shows only as far as they let it
+  // through: added whole, a fog wall was lighter where a surface is behind it than where the sky is.
+  const float layerThrough = lerp(1.0f, saturate(hazedLayers.a), cb.layerFogThrough);
+  vec3 layerHazeA = vec3(1.0f);
+  vec3 layerHazeB = vec3(0.0f);
+  if (layerCoverage > 0.0f)
+  {
+    const uint2 layerTexel = min(uint2(clamp(viewZUV, 0.0f, 1.0f) * vec2(viewZSize)), viewZSize - 1);
+    const HazeMap own = hazeInFrontOf(layerTexel, hazedLayerDepth.y / hazedLayerDepth.x, directions);
+    layerHazeA = lerp(vec3(1.0f), own.a, cb.layerOwnHaze);
+    layerHazeB = own.b * cb.layerOwnHaze;
+  }
+  // Mode 1: the layers are in the pixel's colour. What they cover of it takes their haze, the rest the surface's.
+  const float layerShare = cb.layersOverHaze == 1 ? layerCoverage : 0.0f;
+  const vec3 hazeA = lerp(resolvedA.rgb, layerHazeA, layerShare);
+
   // What hazed subtractive layers (lit map decals such as blood) take off, in alpha: they come off here, before the eye's lift
   // and the haze, as the game's fog takes them with the surface they lie on.
   const float hazedSubtract = min(pow(max(particleLayers.a, 0.0f), 1.0f / 2.2f) * cb.exposure, 0.98f);
@@ -309,6 +369,8 @@ void main(uint2 pixel : SV_DispatchThreadID)
   // its bright ones. The curve leaves a value of 1 at 1, so nothing clips (a torch in a dark room stays what it was), and it keeps hue. No light
   // is added: the path traced image only gets looked at differently. The sky through a window keeps its value.
   const vec3 unlifted = g;
+  // The lift is of what the eye sees: the layers over the surface rise with it.
+  float layerLift = 1.0f;
   if (cb.eyeViewGain > 1.0f)
   {
     const vec2 level = EyeLevel.SampleLevel(screenUV, 0.0f);
@@ -326,8 +388,10 @@ void main(uint2 pixel : SV_DispatchThreadID)
       skyGamma = pow(sky, vec3(1.0f / 2.2f)) * cb.exposure;
     }
     const float gain = lerp(min(pow(cb.eyeViewGain, share), cb.eyeMaxGain), 1.0f, skyShare);
-    const float peak = max(g.r, max(g.g, g.b));
-    g *= gain / (1.0f + min(peak, 1.0f) * (gain - 1.0f));
+    const vec3 seen = g + layerGamma;
+    const float peak = max(seen.r, max(seen.g, seen.b));
+    layerLift = gain / (1.0f + min(peak, 1.0f) * (gain - 1.0f));
+    g *= layerLift;
     // A pixel on the silhouette itself is part sky, part object: lifted whole, its sky part came out brighter than the sky beside it.
     // There it rises no higher than the sky (or than it already was).
     // Weighted by how much of the pixel the taps call sky, so an object in front of a dimmer sky keeps its lift.
@@ -337,13 +401,20 @@ void main(uint2 pixel : SV_DispatchThreadID)
     }
   }
   // Whatever the eye makes of it, the frame's light is the same: the meter reads the frame without the lift.
-  const float liftedLuminance = dot(saturate((g - unlifted) * resolvedA.rgb), vec3(0.2125f, 0.7154f, 0.0721f));
-  g = g * resolvedA.rgb + resolvedB;
+  const float liftedLuminance = dot(saturate((g - unlifted) * hazeA + layerGamma * (layerLift - 1.0f) * layerHazeA),
+                                    vec3(0.2125f, 0.7154f, 0.0721f));
+  g = g * hazeA + resolvedB * layerThrough + layerHazeB * layerShare;
   // The game draws its additive particles after the fog, unfogged (their vertex shader gets c159.xy = (1, 0) for
   // them), and adds them in gamma: the haze above dimmed their share of the colour by the haze gain, so it
   // goes back. And it takes its subtractive ones off in gamma, absolutely, whatever is behind them.
-  g += additive * max(1.0f - resolvedA.rgb, vec3(0.0f));
+  g += additive * max(1.0f - hazeA, vec3(0.0f));
   g = max(g - subtract, vec3(0.0f));
+  // Mode 2: the hazed layers over it all, as the game's blend puts them: their colour (the resolve composited them in gamma, each under
+  // the ones in front of it) with the haze of their own depth, and that depth's fog colour as far as they cover the pixel.
+  if (cb.layersOverHaze == 2)
+  {
+    g += layerGamma * layerLift * layerHazeA + layerHazeB * layerCoverage;
+  }
 
   // Before the upscaler: back to radiance for the upscaler, unclipped (mode 2 clips), and the lift's luminance for the meter.
   if (cb.mode == 1)

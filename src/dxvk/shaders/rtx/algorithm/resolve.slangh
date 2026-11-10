@@ -999,6 +999,14 @@ struct Ds1UnlitLayers
   float3 farGammaSum;
   float farWeightSum;
   float farTransProd;
+  float farHazedWeight;
+
+  // A hazed layer (a sprite the game fogs by its own depth) is marked in its order: draw indices are whole numbers.
+  static const float kHazedMark = 0.25f;
+  static bool isHazed(float d)
+  {
+    return abs(d - round(d)) > 0.1f;
+  }
 
   static Ds1UnlitLayers create()
   {
@@ -1013,10 +1021,11 @@ struct Ds1UnlitLayers
     l.farGammaSum = float3(0.0f);
     l.farWeightSum = 0.0f;
     l.farTransProd = 1.0f;
+    l.farHazedWeight = 0.0f;
     return l;
   }
 
-  [mutating] void addFar(float4 l)
+  [mutating] void addFar(float d, float4 l)
   {
     if (l.a < 0.0f)
     {
@@ -1026,6 +1035,7 @@ struct Ds1UnlitLayers
     farGammaSum += l.rgb * l.a;
     farWeightSum += l.a;
     farTransProd *= 1.0f - l.a;
+    farHazedWeight += isHazed(d) ? l.a : 0.0f;
   }
 
   [mutating] void add(float d, float3 gamma, float alpha)
@@ -1036,6 +1046,12 @@ struct Ds1UnlitLayers
       return;
     }
     insert(d, float4(gamma, alpha));
+  }
+
+  // As add, for a layer the DS1 look lays over its haze with the haze of its own depth (compositeSplit).
+  [mutating] void addHazed(float d, float3 gamma, float alpha)
+  {
+    add(d + kHazedMark, gamma, alpha);
   }
 
   // An additive layer adds its colour (alpha already in it) and covers nothing. Like the alpha layers, it is covered by
@@ -1055,11 +1071,11 @@ struct Ds1UnlitLayers
     {
       if (d >= dist[DS1_UNLIT_LAYERS - 1])
       {
-        addFar(l);
+        addFar(d, l);
         return;
       }
       // The farthest kept layer moves behind the others.
-      addFar(layer[DS1_UNLIT_LAYERS - 1]);
+      addFar(dist[DS1_UNLIT_LAYERS - 1], layer[DS1_UNLIT_LAYERS - 1]);
     }
     uint i = min(count, DS1_UNLIT_LAYERS - 1u);
     while (i > 0 && dist[i - 1] > d)
@@ -1077,8 +1093,18 @@ struct Ds1UnlitLayers
   // part comes apart, for the look's haze.
   float3 composite(out float transmittance, out float3 additive)
   {
+    float3 hazedColour;
+    float hazedCoverage;
+    return compositeSplit(transmittance, additive, hazedColour, hazedCoverage);
+  }
+
+  // As composite, with the hazed layers' part of the colour and how much of the pixel they cover (each under the layers in front of it).
+  float3 compositeSplit(out float transmittance, out float3 additive, out float3 hazedColour, out float hazedCoverage)
+  {
     float3 colour = float3(0.0f);
     additive = float3(0.0f);
+    hazedColour = float3(0.0f);
+    hazedCoverage = 0.0f;
     float t = 1.0f;
     for (uint i = 0; i < count; ++i)
     {
@@ -1087,14 +1113,25 @@ struct Ds1UnlitLayers
         additive += t * layer[i].rgb;
         continue;
       }
-      colour += t * layer[i].a * layer[i].rgb;
+      const float cover = t * layer[i].a;
+      colour += cover * layer[i].rgb;
+      if (isHazed(dist[i]))
+      {
+        hazedColour += cover * layer[i].rgb;
+        hazedCoverage += cover;
+      }
       t *= 1.0f - layer[i].a;
     }
     // The rest are in no order among themselves: on average, half of those alpha layers lie over them.
     additive += t * sqrt(farTransProd) * farAdditive;
     if (farWeightSum > 0.0f)
     {
-      colour += t * farGammaSum / farWeightSum * (1.0f - farTransProd);
+      const float cover = t * (1.0f - farTransProd);
+      const float3 farColour = cover * farGammaSum / farWeightSum;
+      const float hazedShare = farHazedWeight / farWeightSum;
+      colour += farColour;
+      hazedColour += farColour * hazedShare;
+      hazedCoverage += cover * hazedShare;
       t *= farTransProd;
     }
     transmittance = t;
@@ -1118,11 +1155,17 @@ float resolveVertexUnorderedParticles<
   out uint numInteractions,
   out int surfaceIndex,
   inout bool decalCandidateSeen,
-  out vec3 ds1AdditiveRadiance, out float ds1HazedSubtract)
+  out vec3 ds1AdditiveRadiance, out float ds1HazedSubtract,
+  // Fork (DS1): the hazed unlit alpha layers, which with rtx.ds1Look.layersOverHaze are left out of emissiveRadiance: what they would
+  // have added to it on their own (rgb), and what all unlit alpha layers let through of the display value behind them (a); the hazed
+  // layers' coverage and coverage times distance from the camera (Ds1HazedLayers, Ds1HazedLayerDepth).
+  out vec4 ds1HazedLayers, out vec2 ds1HazedLayerDepth)
 {
   surfaceIndex = -1;
   ds1AdditiveRadiance = vec3(0.0f);
   ds1HazedSubtract = 0.0f;
+  ds1HazedLayers = vec4(0.0f, 0.0f, 0.0f, 1.0f);
+  ds1HazedLayerDepth = vec2(0.0f);
 
   float opacityTransmittance = 1.0f;
 
@@ -1168,6 +1211,9 @@ float resolveVertexUnorderedParticles<
   // Fork: the unlit alpha-blended layers, composited in gamma space in depth order (Ds1UnlitLayers).
   Ds1UnlitLayers unlitLayers = Ds1UnlitLayers.create();
   bool ds1UnhazedLayers = false;
+  // Fork (DS1): the hazed alpha layers' distance along the ray, by their alpha (Ds1HazedLayerDepth).
+  float ds1HazedDistanceSum = 0.0f;
+  float ds1HazedAlphaSum = 0.0f;
 #else
   mat4 binnedRadiancesAndAttenuation = mat4(
     vec4(0.0f, 0.0f, 0.0f, 1.0f),
@@ -1435,7 +1481,19 @@ float resolveVertexUnorderedParticles<
       // (a 5% smoke layer read as 25%), and the WBOIT energy-loss compensation (x4) thickened it again.
       // They are display-referred (scaled by 1 / exposure), so undo that first, as for additive layers.
       const float alphaVal = saturate(1.f - currentRadianceAttenuation);
-      unlitLayers.add(ds1LayerOrder(surface), linearToGamma(ds1UnfadedEmissive * float3(radianceAttenuation) * volumeAttenuation / cb.opaqueMaterialArgs.unlitExposureCompensation), alphaVal);
+      const float3 layerGamma = linearToGamma(ds1UnfadedEmissive * float3(radianceAttenuation) * volumeAttenuation / cb.opaqueMaterialArgs.unlitExposureCompensation);
+      // Fork (DS1): a layer the game fogs by its own depth (smoke, dust) is kept apart for the look to lay over its haze
+      // (rtx.ds1Look.layersOverHaze): in the radiance it took the haze of whatever surface is behind it.
+      if (cb.ds1LayersOverHaze != 0 && !surface.isDs1Unhazed)
+      {
+        unlitLayers.addHazed(ds1LayerOrder(surface), layerGamma, alphaVal);
+        ds1HazedDistanceSum += alphaVal * rayHitInfo.hitDistance;
+        ds1HazedAlphaSum += alphaVal;
+      }
+      else
+      {
+        unlitLayers.add(ds1LayerOrder(surface), layerGamma, alphaVal);
+      }
       ds1UnhazedLayers = ds1UnhazedLayers || surface.isDs1Unhazed;
     }
     else
@@ -1506,8 +1564,17 @@ float resolveVertexUnorderedParticles<
   // 2.2 power of it in linear.
   float unlitBlendTransmittance;
   float3 unlitAdditiveGammaSum;
-  const float3 unlitBlendGamma = unlitLayers.composite(unlitBlendTransmittance, unlitAdditiveGammaSum);
+  float3 ds1HazedGamma;
+  float ds1HazedCoverage;
+  const float3 unlitBlendGamma = unlitLayers.compositeSplit(unlitBlendTransmittance, unlitAdditiveGammaSum, ds1HazedGamma, ds1HazedCoverage);
   radianceAttenuation *= pow(unlitBlendTransmittance, kSRGBGamma);
+  ds1HazedLayers.a = unlitBlendTransmittance;
+  // Fork (DS1): only with rtx.ds1Look.layerExactComposite (2) are the hazed layers left out of the radiance for the look to lay over
+  // its haze. Otherwise they stay in it, and only how much of the pixel they cover and where they are goes out.
+  if (cb.ds1LayersOverHaze != 2)
+  {
+    ds1HazedGamma = float3(0.0f);
+  }
   if (any(unlitSubtractGammaSum > 0.0f))
   {
     // Fork: the game takes a reverse-subtract layer off its gamma-encoded target, so off everything
@@ -1515,7 +1582,11 @@ float resolveVertexUnorderedParticles<
     // scene-referred. What a subtraction leaves over darkens what is behind by that much of its
     // display value.
     const float3 unlitGamma = unlitAdditiveGammaSum + unlitBlendGamma;
-    emissiveRadiance += pow(max(unlitGamma - unlitSubtractGammaSum, 0.0f), kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation;
+    // Fork (DS1): the hazed alpha layers' share of what the subtraction leaves (it comes off all of them alike) is left out, for
+    // the look to lay over its haze.
+    const float3 unlitLeft = max(unlitGamma - unlitSubtractGammaSum, 0.0f);
+    ds1HazedGamma *= unlitLeft / max(unlitGamma, 1e-6f);
+    emissiveRadiance += pow(max(unlitLeft - ds1HazedGamma, 0.0f), kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation;
     const float3 subtractLeft = max(unlitSubtractGammaSum - unlitGamma, 0.0f);
     // What is left over after the unlit layers is split into the unhazed layers' part and the hazed layers' (lit map decals).
     // The unhazed part is an attenuation of what is behind that the look's scene pass undoes before taking it off absolutely,
@@ -1545,7 +1616,7 @@ float resolveVertexUnorderedParticles<
     // frame_20261106_114311), with the quad's alpha-tested edge.
     if (ds1UnhazedLayers)
     {
-      ds1AdditiveRadiance = (pow(max(unlitGamma - unhazedSubtractGammaSum, 0.0f), kSRGBGamma) - pow(unhazedSubtractLeft, kSRGBGamma)) *
+      ds1AdditiveRadiance = (pow(max(max(unlitGamma - unhazedSubtractGammaSum, 0.0f) - ds1HazedGamma, 0.0f), kSRGBGamma) - pow(unhazedSubtractLeft, kSRGBGamma)) *
         cb.opaqueMaterialArgs.unlitExposureCompensation / pathSelectionProbability;
     }
   }
@@ -1553,13 +1624,23 @@ float resolveVertexUnorderedParticles<
   {
     // Fork: the unlit additive layers' gamma-space sum and the alpha-blended composite, each back to
     // linear and scene-referred.
-    emissiveRadiance += (pow(unlitAdditiveGammaSum, kSRGBGamma) + pow(unlitBlendGamma, kSRGBGamma)) * cb.opaqueMaterialArgs.unlitExposureCompensation;
+    // Fork (DS1): without the hazed alpha layers' part of the composite (ds1HazedGamma, none unless rtx.ds1Look.layersOverHaze):
+    // the look lays that over its haze. What is behind them is still kept by all the layers' transmittance, above.
+    emissiveRadiance += (pow(unlitAdditiveGammaSum, kSRGBGamma) + pow(max(unlitBlendGamma - ds1HazedGamma, 0.0f), kSRGBGamma)) * cb.opaqueMaterialArgs.unlitExposureCompensation;
     // Fork (DS1): and the additive part on its own, which the DS1 look's haze leaves out (Ds1AdditiveRadiance).
     ds1AdditiveRadiance = pow(unlitAdditiveGammaSum, kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation / pathSelectionProbability;
     if (ds1UnhazedLayers)
     {
-      ds1AdditiveRadiance += pow(unlitBlendGamma, kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation / pathSelectionProbability;
+      ds1AdditiveRadiance += pow(max(unlitBlendGamma - ds1HazedGamma, 0.0f), kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation / pathSelectionProbability;
     }
+  }
+  // Fork (DS1): the hazed alpha layers: how much of the pixel they cover and where they are, for the look to give them the haze of
+  // their own depth; and, where they were left out of the radiance above, their display colour as the radiance it would be on its own.
+  if (ds1HazedCoverage > 0.0f)
+  {
+    ds1HazedLayers.rgb = pow(ds1HazedGamma, kSRGBGamma) * cb.opaqueMaterialArgs.unlitExposureCompensation / pathSelectionProbability;
+    ds1HazedLayerDepth = vec2(ds1HazedCoverage,
+      ds1HazedCoverage * (accumulatedHitDistance + ds1HazedDistanceSum / max(ds1HazedAlphaSum, 1e-6f)));
   }
 
   radianceAttenuation *= alphaTransProd;

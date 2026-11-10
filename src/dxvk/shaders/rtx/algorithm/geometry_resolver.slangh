@@ -2261,6 +2261,8 @@ void geometryResolverVertex(
 
   vec3 ds1AdditiveRadiance = vec3(0.0f);
   float ds1HazedSubtract = 0.0f;
+  vec4 ds1HazedLayers = vec4(0.0f, 0.0f, 0.0f, 1.0f);
+  vec2 ds1HazedLayerDepth = vec2(0.0f);
   float opacityTransmittance = 1.0f;
   if (geometryResolverState.ds1UnorderedHitsAhead > 0)
   {
@@ -2286,8 +2288,11 @@ void geometryResolverVertex(
       geometryResolverState.pixelCoordinate,
       geometryResolverState.accumulatedRotation, geometryResolverState.accumulatedHitDistance, 1.0f,
       radianceAttenuation, emissiveRadiance,
-      numUnorderedInteractions, surfaceIndex, decalCandidateSeen, ds1AdditiveRadiance, ds1HazedSubtract);
-    geometryResolverState.ds1UnorderedSpanEmissive = geometryResolverState.ds1UnorderedHitsAhead > 0 && any(emissiveRadiance > 0.0f);
+      numUnorderedInteractions, surfaceIndex, decalCandidateSeen, ds1AdditiveRadiance, ds1HazedSubtract,
+      ds1HazedLayers, ds1HazedLayerDepth);
+    // (The hazed layers kept out of the radiance for the look count as emissive too: ds1HazedLayers.)
+    geometryResolverState.ds1UnorderedSpanEmissive = geometryResolverState.ds1UnorderedHitsAhead > 0 &&
+      (any(emissiveRadiance > 0.0f) || any(ds1HazedLayers.rgb > 0.0f));
   }
 
   // Fork (DS1): the unlit additive sprites of the camera ray's segments, attenuated as in the radiance, and in alpha what
@@ -2297,6 +2302,15 @@ void geometryResolverVertex(
   Ds1AdditiveRadiance[geometryResolverState.pixelCoordinate] = ds1AdditiveBefore +
     vec4(ds1AdditiveRadiance * geometryResolverState.attenuation,
          ds1HazedSubtract * dot(geometryResolverState.attenuation, vec3(1.0f / 3.0f)));
+  // Fork (DS1): and the hazed unlit alpha layers (smoke, dust) of those segments, which the radiance is without, for the look to lay
+  // over its haze: their colour, what all unlit alpha layers let through of what is behind them, and where the hazed ones are.
+  const bool ds1LaterSegment = geometryResolverState.accumulatedHitDistance > 0.0f;
+  const vec4 ds1HazedBefore = ds1LaterSegment ? Ds1HazedLayers[geometryResolverState.pixelCoordinate] : vec4(0.0f, 0.0f, 0.0f, 1.0f);
+  const vec2 ds1HazedDepthBefore = ds1LaterSegment ? Ds1HazedLayerDepth[geometryResolverState.pixelCoordinate] : vec2(0.0f);
+  Ds1HazedLayers[geometryResolverState.pixelCoordinate] = vec4(
+    ds1HazedBefore.rgb + ds1HazedLayers.rgb * geometryResolverState.attenuation, ds1HazedBefore.a * ds1HazedLayers.a);
+  Ds1HazedLayerDepth[geometryResolverState.pixelCoordinate] = ds1HazedDepthBefore +
+    ds1HazedLayerDepth * dot(geometryResolverState.attenuation, vec3(1.0f / 3.0f));
 
   geometryResolverState.decalCandidateSeen = decalCandidateSeen;
 
@@ -2373,7 +2387,7 @@ void geometryResolverVertex(
 
   }
 
-  bool isUnorderedEmissive = any(emissiveRadiance > 0.0f) || geometryResolverState.ds1UnorderedSpanEmissive;
+  bool isUnorderedEmissive = any(emissiveRadiance > 0.0f) || any(ds1HazedLayers.rgb > 0.0f) || geometryResolverState.ds1UnorderedSpanEmissive;
 
   // Accumulate Segment Hit Distance
   // Note: Only accumulate hit distance if the current ray interaction was not a miss.
