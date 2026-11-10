@@ -638,10 +638,11 @@ namespace dxvk {
         g_ds1MenuFrame = false;
       });
       m_rtxInjectTriggered = true;
+      m_ds1FrameTarget = m_ds1MenuSceneTarget;
     }
 
     // DS1: Show Game UI off drops every draw the proxy marks as UI (stage-0 D3DTSS_CONSTANT) and, below, every draw after the
-    // path traced frame. The marked draw that starts the UI still triggers the injection, so the frame is presented.
+    // path traced frame but the one that carries it on. The marked draw that starts the UI still triggers the injection.
     if (!RtxOptions::showGameUi() && RtxOptions::uiMarkerEnabled() &&
         d3d9State().textureStages[0][DXVK_TSS_CONSTANT] == 0xD15D0011) {
       if (!m_rtxInjectTriggered) {
@@ -664,8 +665,10 @@ namespace dxvk {
         }
       }
       if (!isRaytracedRenderTarget) {
-        // DS1: Show Game UI off drops everything drawn after the path traced frame too (bars, icons, text, menus).
-        return RtxOptions::skipDrawCallsPostRTXInjection() || !RtxOptions::showGameUi()
+        // DS1: Show Game UI off drops everything drawn after the path traced frame too (bars, icons, text, menus), but not the
+        // draw that carries the frame on. In the game the frame goes into the scene target, and the game's final pass draws that
+        // to the back buffer: dropped with the rest, nothing reached the screen and the picture stood still.
+        return RtxOptions::skipDrawCallsPostRTXInjection() || (!RtxOptions::showGameUi() && !ds1DrawCarriesFrame())
                ? PrepareDrawFlag::Ignore
                : PrepareDrawFlag::PreserveDrawCallAndItsState;
       }
@@ -849,7 +852,21 @@ namespace dxvk {
       (preserveOriginalDraw ? PrepareDrawFlag::PreserveDrawCallAndItsState : 0);
   }
 
+  // DS1: whether the draw samples the image the path traced frame was put into, into another target.
+  bool D3D9Rtx::ds1DrawCarriesFrame() const {
+    if (m_ds1FrameTarget == nullptr || d3d9State().textures[0] == nullptr || d3d9State().renderTargets[kRenderTargetIndex] == nullptr) {
+      return false;
+    }
+    const D3D9CommonTexture* source = GetCommonTexture(d3d9State().textures[0]);
+    return source != nullptr && source->GetImage() == m_ds1FrameTarget &&
+           d3d9State().renderTargets[kRenderTargetIndex]->GetCommonTexture()->GetImage() != m_ds1FrameTarget;
+  }
+
   void D3D9Rtx::triggerInjectRTX() {
+    // DS1: where the frame goes (ds1DrawCarriesFrame).
+    m_ds1FrameTarget = d3d9State().renderTargets[kRenderTargetIndex] != nullptr
+      ? d3d9State().renderTargets[kRenderTargetIndex]->GetCommonTexture()->GetImage() : nullptr;
+
     // Flush any pending game and RTX work
     m_parent->Flush();
 
@@ -1583,6 +1600,7 @@ namespace dxvk {
     // Reset for the next frame
     m_rtxInjectTriggered = false;
     m_ds1MenuSceneTarget = nullptr;
+    m_ds1FrameTarget = nullptr;
     m_drawCallID = 0;
     m_seenCameraPositionsPrev = std::move(m_seenCameraPositions);
 

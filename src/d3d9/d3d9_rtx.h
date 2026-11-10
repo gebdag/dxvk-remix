@@ -224,6 +224,10 @@ namespace dxvk {
     const bool m_enableDrawCallConversion;
     bool m_rtxInjectTriggered = false;
     Rc<DxvkImage> m_ds1MenuSceneTarget;
+    // DS1: the image this frame's path traced frame was put into (the render target bound when the injection was triggered). A later
+    // draw that samples it into another target carries the frame on, e.g. the game's final pass from its scene target to the back
+    // buffer: Show Game UI off keeps that one (ds1DrawCarriesFrame).
+    Rc<DxvkImage> m_ds1FrameTarget;
     bool m_forceGeometryCopy = false;
     DWORD m_texcoordIndex = 0;
 
@@ -278,6 +282,7 @@ namespace dxvk {
     PrepareDrawFlags internalPrepareDraw(const IndexContext& indexContext, const VertexContext vertexContext[caps::MaxStreams], const DrawContext& drawContext);
 
     void triggerInjectRTX();
+    bool ds1DrawCarriesFrame() const;
 
 
     struct DrawCallType {
