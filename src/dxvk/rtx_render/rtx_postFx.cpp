@@ -304,7 +304,9 @@ namespace dxvk {
     const bool ds1 = DxvkDarkSoulsMotionBlur::enable();
     postFxArgs.exposureFraction = ds1 ? DxvkDarkSoulsMotionBlur::exposureFraction() : exposureFraction();
     postFxArgs.blurDiameterFraction = ds1 ? DxvkDarkSoulsMotionBlur::blurDiameterFraction() : blurDiameterFraction();
-    postFxArgs.motionBlurMinimumVelocityThresholdInPixel = ds1 ? DxvkDarkSoulsMotionBlur::minimumVelocityPx() : motionBlurMinimumVelocityThresholdInPixel();
+    // Above 0: the shader divides by it (a 0 from rtx.conf would make the weights 1/0).
+    postFxArgs.motionBlurMinimumVelocityThresholdInPixel = ds1 ? std::max(DxvkDarkSoulsMotionBlur::minimumVelocityPx(), 0.01f)
+                                                               : motionBlurMinimumVelocityThresholdInPixel();
     postFxArgs.motionBlurDynamicDeduction = ds1 ? 1.0f : motionBlurDynamicDeduction();
     postFxArgs.jitterStrength = motionBlurJitterStrength();
     postFxArgs.motionBlurDlfgDeduction = !ds1 && ctx->isDLFGEnabled() ?
