@@ -327,6 +327,19 @@ namespace dxvk {
 
       shader->setDebugName(info.m_name);
       shader->generateShaderKey();
+
+      // Fork (DS1): see m_shadersByKey.
+      {
+        std::lock_guard<dxvk::mutex> lock(m_shadersByKeyLock);
+        auto& same = m_shadersByKey[shader->getShaderKey()];
+        for (const SharedShader& existing : same) {
+          if (existing.matches(info)) {
+            return existing.shader;
+          }
+        }
+        same.push_back({ shader, info.m_slots, info.m_pushBufferSize, info.m_interfaceInputs, info.m_interfaceOutputs, info.m_requiresExtraLayout });
+      }
+
       m_device->registerShader(shader, true);
 
       return shader;
@@ -380,6 +393,38 @@ namespace dxvk {
 
     std::unordered_map<std::string, ShaderInfo> m_shaderMap;
     dxvk::mutex m_shaderMapLock;
+
+    // Fork (DS1): one shader object per identical shader (same stage and SPIR-V, same resource layout). Several variant
+    // names compile to the same code: in the G-buffer ray query PSR pass the no_psr, psr_inline and psr_prepare features
+    // are identical. The state cache prewarms a key once, for whichever object registered it first, but pipelines are
+    // looked up by shader object: the game's first path-traced frame bound psr_inline's object and compiled its pipeline
+    // again on the draw thread, 5.7 s, after every fresh runtime build or install (cold boots 2026-11-11).
+    struct SharedShader {
+      Rc<DxvkShader> shader;
+      std::vector<dxvk::DxvkResourceSlot> slots;
+      uint32_t pushBufferSize;
+      uint32_t interfaceInputs;
+      uint32_t interfaceOutputs;
+      bool requiresExtraLayout;
+
+      bool matches(const ShaderInfo& info) const {
+        if (pushBufferSize != info.m_pushBufferSize || interfaceInputs != info.m_interfaceInputs ||
+            interfaceOutputs != info.m_interfaceOutputs || requiresExtraLayout != info.m_requiresExtraLayout ||
+            slots.size() != info.m_slots.size()) {
+          return false;
+        }
+        for (size_t i = 0; i < slots.size(); i++) {
+          const auto& a = slots[i];
+          const auto& b = info.m_slots[i];
+          if (a.slot != b.slot || a.type != b.type || a.view != b.view || a.access != b.access || a.count != b.count || a.flags != b.flags) {
+            return false;
+          }
+        }
+        return true;
+      }
+    };
+    std::unordered_map<DxvkShaderKey, std::vector<SharedShader>, DxvkHash, DxvkEq> m_shadersByKey;
+    dxvk::mutex m_shadersByKeyLock;
 
     // Runtime Shader Recompilation State
 
