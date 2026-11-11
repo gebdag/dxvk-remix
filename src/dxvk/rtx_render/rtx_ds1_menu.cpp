@@ -23,6 +23,7 @@
 #include "rtx_dark_souls_swamp.h"
 #include "rtx_dark_souls_ripples.h"
 #include "rtx_dark_souls_specular.h"
+#include "rtx_dark_souls_motion_blur.h"
 #include "rtx_dark_souls_skin.h"
 #include "rtx_dark_souls_effect_particles.h"
 #include "rtx_ds1_emissive.h"
@@ -209,6 +210,7 @@ namespace dxvk {
 
     // HDR10 output (rtx_hdr_output.h): the swap chain, back buffer and the frame's headroom.
     DxvkHdrOutput::showImguiSettings();
+    DxvkDarkSoulsMotionBlur::showImguiSettings();
 
     showWater();
     showBody();

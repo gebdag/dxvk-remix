@@ -21,6 +21,7 @@
 */
 #include "rtx_context.h"
 #include "rtx_postFx.h"
+#include "rtx_dark_souls_motion_blur.h"
 #include "dxvk_device.h"
 #include "dxvk_scoped_annotation.h"
 #include "rtx_render/rtx_shader_manager.h"
@@ -271,6 +272,8 @@ namespace dxvk {
     const Resources::RaytracingOutput& rtOutput,
     const bool cameraCutDetected)
   {
+    // Every frame, so the frame time is current when the blur turns on.
+    DxvkDarkSoulsMotionBlur::update(GlobalTime::get().realDeltaTimeMs());
     if (!enable()) {
       return;
     }
@@ -296,12 +299,15 @@ namespace dxvk {
     postFxArgs.enableMotionBlurNoiseSample = enableMotionBlurNoiseSample();
     postFxArgs.enableMotionBlurEmissive = enableMotionBlurEmissive();
     postFxArgs.motionBlurSampleCount = motionBlurSampleCount();
-    postFxArgs.exposureFraction = exposureFraction();
-    postFxArgs.blurDiameterFraction = blurDiameterFraction();
+    // Dark Souls' blur is a shutter time: the exposure fraction follows the frame rate, objects blur as fully as the
+    // camera, and frame generation needs no further deduction because the span is set in time, not per frame.
+    const bool ds1 = DxvkDarkSoulsMotionBlur::enable();
+    postFxArgs.exposureFraction = ds1 ? DxvkDarkSoulsMotionBlur::exposureFraction() : exposureFraction();
+    postFxArgs.blurDiameterFraction = ds1 ? DxvkDarkSoulsMotionBlur::blurDiameterFraction() : blurDiameterFraction();
     postFxArgs.motionBlurMinimumVelocityThresholdInPixel = motionBlurMinimumVelocityThresholdInPixel();
-    postFxArgs.motionBlurDynamicDeduction = motionBlurDynamicDeduction();
+    postFxArgs.motionBlurDynamicDeduction = ds1 ? 1.0f : motionBlurDynamicDeduction();
     postFxArgs.jitterStrength = motionBlurJitterStrength();
-    postFxArgs.motionBlurDlfgDeduction = ctx->isDLFGEnabled() ?
+    postFxArgs.motionBlurDlfgDeduction = !ds1 && ctx->isDLFGEnabled() ?
       1.0f / static_cast<float>(ctx->dlfgInterpolatedFrameCount() + 1) : 1.0f;
 
     ctx->setPushConstantBank(DxvkPushConstantBank::RTX);
