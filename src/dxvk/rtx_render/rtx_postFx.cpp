@@ -304,7 +304,7 @@ namespace dxvk {
     const bool ds1 = DxvkDarkSoulsMotionBlur::enable();
     postFxArgs.exposureFraction = ds1 ? DxvkDarkSoulsMotionBlur::exposureFraction() : exposureFraction();
     postFxArgs.blurDiameterFraction = ds1 ? DxvkDarkSoulsMotionBlur::blurDiameterFraction() : blurDiameterFraction();
-    postFxArgs.motionBlurMinimumVelocityThresholdInPixel = motionBlurMinimumVelocityThresholdInPixel();
+    postFxArgs.motionBlurMinimumVelocityThresholdInPixel = ds1 ? DxvkDarkSoulsMotionBlur::minimumVelocityPx() : motionBlurMinimumVelocityThresholdInPixel();
     postFxArgs.motionBlurDynamicDeduction = ds1 ? 1.0f : motionBlurDynamicDeduction();
     postFxArgs.jitterStrength = motionBlurJitterStrength();
     postFxArgs.motionBlurDlfgDeduction = !ds1 && ctx->isDLFGEnabled() ?

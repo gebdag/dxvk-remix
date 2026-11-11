@@ -31,7 +31,8 @@ namespace dxvk {
     RemixGui::Checkbox("Motion Blur", &DxvkPostFx::enableMotionBlurObject());
     RemixGui::Checkbox("Dark Souls Motion Blur (same at any frame rate)", &enableObject());
     if (enable()) {
-      RemixGui::DragFloat("Shutter (ms, 11.4 = game at 30 fps)", &shutterMsObject(), 0.1f, 0.0f, 50.0f, "%.1f", ImGuiSliderFlags_AlwaysClamp);
+      RemixGui::DragFloat("Shutter (ms, 19 = game's spread at 30 fps)", &shutterMsObject(), 0.1f, 0.0f, 50.0f, "%.1f", ImGuiSliderFlags_AlwaysClamp);
+      RemixGui::DragFloat("Least Motion Blurred (pixels per side)", &minimumVelocityPxObject(), 0.01f, 0.01f, 3.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
       RemixGui::DragFloat("Longest Blur (screen fraction per side)", &blurDiameterFractionObject(), 0.005f, 0.001f, 0.5f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
       ImGui::Text("Now: %.0f fps, exposure fraction %.2f", 1000.0f / s_frameMs, exposureFraction());
     } else {
