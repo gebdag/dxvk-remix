@@ -6,7 +6,35 @@
 #include "dxvk_spec_const.h"
 #include "dxvk_state_cache.h"
 
+#include <atomic>
+#include <windows.h>
+
 namespace dxvk {
+
+  // Fork (DS1): raster pipelines (the game's own D3D9 draws, UI, Remix's raster passes) are not prewarmed and have no
+  // compile popup: one the state cache did not have is compiled on the thread that draws (dxvk-cs), and the frame waits.
+  // Each such compile of 5 ms or more is logged with its shaders, the first colour format and the running count, so a
+  // hitch in the proxy's [Hitch] log can be matched to it. Compiles on the state cache's workers (dxvk-shader, in the
+  // background) are only counted, and logged from 100 ms.
+  static void ds1LogGraphicsPipeline(const DxvkGraphicsPipelineShaders& shaders, const DxvkRenderPassFormat& pass, double ms) {
+    static std::atomic<uint32_t> s_drawThread { 0 }, s_worker { 0 }, s_logged { 0 };
+    std::string thread = "?";
+    PWSTR desc = nullptr;
+    if (SUCCEEDED(GetThreadDescription(GetCurrentThread(), &desc)) && desc) {
+      thread.clear();
+      for (const wchar_t* c = desc; *c; ++c)
+        thread.push_back(static_cast<char>(*c));
+      LocalFree(desc);
+    }
+    const bool worker = thread == "dxvk-shader";
+    const uint32_t n = (worker ? s_worker : s_drawThread).fetch_add(1) + 1;
+    if (ms < (worker ? 100.0 : 5.0) || s_logged.fetch_add(1) >= 4000)
+      return;
+    auto name = [] (const Rc<DxvkShader>& s) { return s != nullptr ? s->debugName() : std::string("-"); };
+    Logger::info(str::format("[DS1 pipeline] graphics vs ", name(shaders.vs), " fs ", name(shaders.fs),
+      " color0 ", uint32_t(pass.color[0].format), " compiled in ", ms, " ms on thread '", thread, "' (",
+      worker ? "background #" : "draw thread #", n, ")"));
+  }
 
   DxvkGraphicsPipeline::DxvkGraphicsPipeline(
           DxvkPipelineManager*        pipeMgr,
@@ -411,9 +439,9 @@ namespace dxvk {
     // Time pipeline compilation for debugging purposes
     dxvk::high_resolution_clock::time_point t0, t1;
 
-    if (Logger::logLevel() <= LogLevel::Debug)
-      t0 = dxvk::high_resolution_clock::now();
-    
+    // Fork (DS1): always timed, see ds1LogGraphicsPipeline.
+    t0 = dxvk::high_resolution_clock::now();
+
     VkPipeline pipeline = VK_NULL_HANDLE;
     if (m_vkd->vkCreateGraphicsPipelines(m_vkd->device(),
           m_pipeMgr->m_cache->handle(), 1, &info, nullptr, &pipeline) != VK_SUCCESS) {
@@ -421,7 +449,10 @@ namespace dxvk {
       this->logPipelineState(LogLevel::Error, state);
       return VK_NULL_HANDLE;
     }
-    
+
+    ds1LogGraphicsPipeline(m_shaders, passFormat,
+      std::chrono::duration<double, std::milli>(dxvk::high_resolution_clock::now() - t0).count());
+
     if (Logger::logLevel() <= LogLevel::Debug) {
       t1 = dxvk::high_resolution_clock::now();
       auto td = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0);

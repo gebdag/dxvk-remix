@@ -5,10 +5,10 @@
 #include "dxvk_device.h"
 
 namespace dxvk {
-  // Fork (DS1): a pipeline compile over 100 ms is logged with its name and the thread that waited for it (dxvk-cs or the render
+  // Fork (DS1): a pipeline compile over 100 ms (5 ms on dxvk-cs, where the frame waits) is logged with its name and the thread that waited for it (dxvk-cs or the render
   // thread: a stall the player sees; a prewarm or compiler worker: background), to find what a fresh build compiles too late.
   inline void ds1LogSlowRtPipeline(const char* kind, const char* name, double ms) {
-    if (ms < 100.0) {
+    if (ms < 5.0) {
       return;
     }
     std::string thread = "?";
@@ -19,6 +19,9 @@ namespace dxvk {
         thread.push_back(static_cast<char>(*c));
       }
       LocalFree(desc);
+    }
+    if (thread != "dxvk-cs" && ms < 100.0) {
+      return;
     }
     Logger::info(str::format("[DS1 pipeline] ", kind, " ", name ? name : "<unnamed>", " compiled in ", ms, " ms on thread '", thread, "'"));
   }

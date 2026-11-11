@@ -1,5 +1,6 @@
 #include "dxvk_pipecache.h"
 
+#include <chrono>
 #include <cstdio>
 #include <fstream>
 #include <vector>
@@ -70,6 +71,8 @@ namespace dxvk {
   void DxvkPipelineCache::save() {
     std::lock_guard<dxvk::mutex> lock(m_saveMutex);
 
+    const auto t0 = std::chrono::steady_clock::now();
+
     size_t size = 0;
     if (m_vkd->vkGetPipelineCacheData(m_vkd->device(), m_handle, &size, nullptr) != VK_SUCCESS || size == 0)
       return;
@@ -94,7 +97,8 @@ namespace dxvk {
       return;
     }
     m_savedSize = size;
-    Logger::info(str::format("DXVK: Pipeline cache ", m_path, ": saved ", size >> 20, " MB"));
+    Logger::info(str::format("DXVK: Pipeline cache ", m_path, ": saved ", size >> 20, " MB in ",
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count(), " ms"));
   }
 
 }
