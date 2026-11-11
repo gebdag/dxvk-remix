@@ -1304,10 +1304,16 @@ namespace {
       }
     }
 
-    // Fork: an empty value takes the option's value off this layer again (rtx_comp\\area_overrides.ini on leaving an area).
+    // Fork: values set here go to a layer of their own, above the user's and never saved (kRtxOptionLayerApiKey): the menu's
+    // save list shows only what the user changed. An empty value takes the option's value off that layer again, so the config
+    // files' value applies (rtx_comp\\area_overrides.ini on leaving an area).
+    const dxvk::RtxOptionLayer* apiLayer = dxvk::RtxOptionLayer::getApiLayer();
+    if (!apiLayer) {
+      return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+    }
     if (value[0] == '\0') {
       std::lock_guard<std::mutex> optionLock(dxvk::RtxOptionImpl::getUpdateMutex());
-      option->disableLayerValue(dxvk::RtxOptionLayer::getUserLayer());
+      option->disableLayerValue(apiLayer);
       return REMIXAPI_ERROR_CODE_SUCCESS;
     }
 
@@ -1317,7 +1323,7 @@ namespace {
       // readOption() writes the option's layer values and the global dirty-option map, which the CS thread
       // reads and clears under this mutex in RtxOptionManager::applyPendingValues(). Lock order: s_mutex first.
       std::lock_guard<std::mutex> optionLock(dxvk::RtxOptionImpl::getUpdateMutex());
-      option->readOption(newSetting, dxvk::RtxOptionLayer::getUserLayer());
+      option->readOption(newSetting, apiLayer);
     }
 
     return REMIXAPI_ERROR_CODE_SUCCESS;

@@ -736,6 +736,9 @@ namespace dxvk {
     if (s_userLayer) {
       s_userLayer->setCategoryFlags(RtxOptionFlags::UserSetting);
     }
+
+    // Fork: values set through the Remix API, above the user's and never saved (kRtxOptionLayerApiKey).
+    s_apiLayer = RtxOptionManager::acquireLayer("", kRtxOptionLayerApiKey, 1.0f, 0.1f, true, nullptr);
     
     // Load environment variable overrides into the environment layer
     RtxOptionManager::loadAllEnvironmentVariables();

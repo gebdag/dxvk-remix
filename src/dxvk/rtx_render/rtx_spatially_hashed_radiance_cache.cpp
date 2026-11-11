@@ -81,12 +81,17 @@ namespace dxvk {
     const bool isCustomInitialization = pDevice == nullptr && RtxOptions::graphicsPreset() == GraphicsPreset::Custom;
     RtxOptionLayerTarget layerTarget(RtxOptionEditTarget::Derived);
 
+    // Fork: at a Custom preset's initialization the preset's values go to the Derived layer, under the user's: the Derived edit target
+    // sends UserSetting options to user.conf's layer while the preset is Custom, and every start of the game then listed these two as
+    // unsaved changes. A value the user saved still wins; a later change of the SHaRC preset in the menu goes where it went before.
+    const RtxOptionLayer* initLayer = isCustomInitialization ? RtxOptionLayer::getDerivedLayer() : nullptr;
+
     // Preserve explicitly configured Custom settings during initialization.
     if (!isCustomInitialization || !targetNumUpdateRecordsObject().getBlockingLayer(RtxOptionLayer::getDefaultLayer())) {
-      targetNumUpdateRecords.setImmediately(target);
+      targetNumUpdateRecords.setImmediately(target, initLayer);
     }
     if (!isCustomInitialization || !combineUpdateAndQueryObject().getBlockingLayer(RtxOptionLayer::getDefaultLayer())) {
-      combineUpdateAndQuery.setImmediately(preset == QualityPreset::Medium);
+      combineUpdateAndQuery.setImmediately(preset == QualityPreset::Medium, initLayer);
     }
   }
 

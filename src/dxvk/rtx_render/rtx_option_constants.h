@@ -190,7 +190,10 @@ namespace dxvk {
   static constexpr RtxOptionLayerKey kRtxOptionLayerBaseGameModKey = { 4,          "baseGameMod Remix Config" };
   static constexpr RtxOptionLayerKey kRtxOptionLayerEnvironmentKey = { 5,          "Environment Variable Overrides" };  // Env vars set initial value, can be overridden by code
   static constexpr RtxOptionLayerKey kRtxOptionLayerDerivedKey     = { 6,          "Derived Settings" };  // OnChange callbacks when no menu is open
-  static constexpr RtxOptionLayerKey kRtxOptionLayerUserKey        = { 0xFFFFFFFE, "User Settings" };
+  static constexpr RtxOptionLayerKey kRtxOptionLayerUserKey        = { 0xFFFFFFFD, "User Settings" };
+  // Fork: values a program sets at runtime through the Remix API (remixapi_SetConfigVariable): a game proxy's per-frame state and
+  // per-area overrides. Above the user's settings, never saved: opening the menu and saving writes only what the user changed.
+  static constexpr RtxOptionLayerKey kRtxOptionLayerApiKey         = { 0xFFFFFFFE, "Remix API (game values)" };
   static constexpr RtxOptionLayerKey kRtxOptionLayerQualityKey     = { 0xFFFFFFFF, "Quality Presets" };  // Highest priority when preset is not Custom
 
 }  // namespace dxvk

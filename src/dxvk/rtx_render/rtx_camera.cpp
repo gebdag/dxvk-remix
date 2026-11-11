@@ -540,7 +540,9 @@ namespace dxvk
         currentPosition = Vector3(0.f);
         currentYaw = 0.0f;
         currentPitch = 0.0f;
-      } else {
+      } else if (enableFreeCamera()) {
+        // Fork: only while the free camera is on. Its keys are the game's movement keys, and every walk in the game wrote a new position
+        // into rtx.conf's unsaved changes.
         RtxOptionLayerTarget layerTarget(RtxOptionEditTarget::User);
         if (hasMovementInput) {
           freeCameraPosition.setDeferred(currentPosition);

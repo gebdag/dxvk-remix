@@ -9,6 +9,8 @@
 // switches) stay in the proxy's F4 menu.
 
 #include "rtx_ds1_menu.h"
+#include <cstdio>
+#include "rtx_option_layer.h"
 
 #include "rtx_imgui.h"
 #include "rtx_options.h"
@@ -29,6 +31,32 @@
 #include "../imgui/imgui.h"
 
 namespace dxvk {
+
+  void DxvkDs1SettingsCheck::update() {
+    static int seen = 0;
+    const int value = logUnsavedSettings();
+    if (value == seen) {
+      return;
+    }
+    seen = value;
+    const std::pair<const char*, RtxOptionLayer*> layers[] = {
+      { "user", const_cast<RtxOptionLayer*>(RtxOptionLayer::getUserLayer()) },
+      { "rtx", RtxOptionLayer::getRtxConfLayer() },
+    };
+    for (const auto& [name, layer] : layers) {
+      if (!layer) {
+        continue;
+      }
+      const std::string path = std::string("rtx_comp/unsaved_") + name + ".conf";
+      std::remove(path.c_str());
+      if (layer->hasUnsavedChanges()) {
+        layer->exportUnsavedChanges(path);
+        Logger::info(str::format("[DS1 settings] ", layer->getName(), ": unsaved changes written to ", path));
+      } else {
+        Logger::info(str::format("[DS1 settings] ", layer->getName(), ": no unsaved changes"));
+      }
+    }
+  }
 
   namespace {
     // Sections start closed: the menu is a place to look something up, not a page of everything.

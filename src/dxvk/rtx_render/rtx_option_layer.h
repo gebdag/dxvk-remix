@@ -311,6 +311,8 @@ namespace dxvk {
     static const RtxOptionLayer* getEnvironmentLayer() { return s_environmentLayer; }
     static const RtxOptionLayer* getQualityLayer() { return s_qualityLayer; }
     static const RtxOptionLayer* getDerivedLayer() { return s_derivedLayer; }
+    // Fork: values set through the Remix API (kRtxOptionLayerApiKey); no file.
+    static const RtxOptionLayer* getApiLayer() { return s_apiLayer; }
 
   private:
     // Set the category flags for this layer.
@@ -332,6 +334,7 @@ namespace dxvk {
     inline static const RtxOptionLayer* s_environmentLayer = nullptr;
     inline static const RtxOptionLayer* s_qualityLayer = nullptr;
     inline static const RtxOptionLayer* s_derivedLayer = nullptr;
+    inline static const RtxOptionLayer* s_apiLayer = nullptr;
     inline static RtxOptionLayer* s_userLayer = nullptr;
 
     // Merged config from all config-file-based layers
