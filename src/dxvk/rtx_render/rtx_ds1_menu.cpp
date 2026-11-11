@@ -23,6 +23,7 @@
 #include "rtx_dark_souls_specular.h"
 #include "rtx_dark_souls_skin.h"
 #include "rtx_dark_souls_effect_particles.h"
+#include "rtx_ds1_emissive.h"
 #include "rtx_hdr_output.h"
 #include "../dxvk_context.h"
 #include "../imgui/imgui.h"
@@ -156,6 +157,8 @@ namespace dxvk {
     postFx.darkSoulsHaze().showImguiSettings();
 
     showParticles();
+    // How strongly single textures glow (rtx_ds1_emissive.h).
+    DxvkDs1Emissive::showImguiSettings(ctx);
     DxvkDarkSoulsSkin::showImguiSettings();
     DxvkDarkSoulsEffectParticles::showImguiSettings();
     DxvkDarkSoulsSwamp::showImguiSettings();

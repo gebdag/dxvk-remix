@@ -30,6 +30,7 @@
 #include "rtx_instance_manager.h"
 #include "rtx_dark_souls_look.h"
 #include "rtx_dark_souls_skin.h"
+#include "rtx_ds1_emissive.h"
 #include "rtx_camera_manager.h"
 #include "rtx_options.h"
 #include "rtx_materials.h"
@@ -1228,6 +1229,37 @@ namespace dxvk {
               currentInstance.surface.ds1SelfLit[2] > 0.0f;
             patchedMaterialData->getOpaqueMaterialData().setEmissiveIntensity(ds1Lit ? 0.0f : RtxOptions::emissiveBlendOverrideEmissiveIntensity());
             patchedMaterialData->getOpaqueMaterialData().setEmissiveColorTexture(patchedMaterialData->getOpaqueMaterialData().getAlbedoOpacityTexture());
+          }
+
+          // Fork (DS1): the emission scale set for this draw's texture (rtx_ds1_emissive.h), on whatever makes it emit: the material's
+          // emission (a mod's, or the additive and unlit overrides above) and the self-lit colour. Lava's self-lit value is two ends
+          // packed into one number (Surface::ds1SelfLitAt) and is left alone.
+          if (!drawCall.isUsingRaytracedRenderTarget) {
+            float* lit = currentInstance.surface.ds1SelfLit;
+            const bool selfLit = lit[0] >= 0.0f && lit[1] >= 0.0f && lit[2] >= 0.0f && lit[0] + lit[1] + lit[2] > 0.0f;
+            const OpaqueMaterialData& emitting = materialData->getOpaqueMaterialData();
+            const bool emits = emitting.getEnableEmission() && emitting.getEmissiveIntensity() > 0.0f;
+            if (emits || selfLit) {
+              const DxvkDs1Emissive::Kind kind = selfLit ? DxvkDs1Emissive::kSelfLit
+                : drawCall.getMaterialData().isUnlit ? DxvkDs1Emissive::kUnlit
+                : currentInstance.surface.alphaState.emissiveBlend ? DxvkDs1Emissive::kAdditive : DxvkDs1Emissive::kMaterial;
+              const float emissionScale = DxvkDs1Emissive::scale(drawCall.getMaterialData().getHash(), kind, m_device->getCurrentFrameId());
+              if (emissionScale != 1.0f) {
+                if (emits) {
+                  if (!patchedMaterialData.has_value()) {
+                    patchedMaterialData.emplace(*materialData);
+                    materialData = &*patchedMaterialData;
+                  }
+                  patchedMaterialData->getOpaqueMaterialData().setEmissiveIntensity(
+                    std::min(patchedMaterialData->getOpaqueMaterialData().getEmissiveIntensity() * emissionScale, 65504.0f));
+                }
+                if (selfLit) {
+                  for (int c = 0; c < 3; ++c) {
+                    lit[c] *= emissionScale;
+                  }
+                }
+              }
+            }
           }
 
           // Fork (DS1): tagged skin scatters too (rtx_dark_souls_skin.h); the sample rays only see the instances of the SSS TLAS, which this flag fills. Without it they all miss.
