@@ -1179,13 +1179,13 @@ namespace dxvk {
           currentInstance.surface.hasDs1SelfLit = false;
           std::fill(std::begin(currentInstance.surface.ds1SelfLit), std::end(currentInstance.surface.ds1SelfLit), 0.0f);
           currentInstance.surface.isVertexColorBakedLighting = false;
-        } else if (ds1RenderAs == DxvkDs1Emissive::kAsSelfLit && !currentInstance.surface.hasDs1SelfLit) {
-          // Its texture as its light, the scale on top (a lava value, packed, stays as it is).
-          currentInstance.surface.hasDs1SelfLit = true;
-          std::fill(std::begin(currentInstance.surface.ds1SelfLit), std::end(currentInstance.surface.ds1SelfLit), 1.0f);
-          if (currentInstance.surface.alphaState.isBlendingDisabled == false) {
-            currentInstance.surface.isVertexColorBakedLighting = false;
-          }
+        }
+        // Self-lit on a draw the proxy did not tag self-lit: it emits through its material instead (below), not the self-lit tag. The tag
+        // is read elsewhere (an opaque one under the player's feet is lava to the wet-body pass) and shares its data slot with the
+        // lightmap level, the environment reflection and the particle feather, and is never written on water or skin-toned characters.
+        const bool ds1EmitsAsSelfLit = ds1RenderAs == DxvkDs1Emissive::kAsSelfLit && !currentInstance.surface.hasDs1SelfLit;
+        if (ds1EmitsAsSelfLit && !currentInstance.surface.alphaState.isBlendingDisabled) {
+          currentInstance.surface.isVertexColorBakedLighting = false;
         }
         currentInstance.surface.isMotionBlurMaskOut = currentInstance.testCategoryFlags(InstanceCategories::IgnoreMotionBlur);
         currentInstance.surface.isDs1Glass = drawCall.getMaterialData().isDs1SingleSided;
@@ -1246,6 +1246,19 @@ namespace dxvk {
             const bool ds1Lit = currentInstance.surface.ds1SelfLit[0] + currentInstance.surface.ds1SelfLit[1] +
               currentInstance.surface.ds1SelfLit[2] > 0.0f;
             patchedMaterialData->getOpaqueMaterialData().setEmissiveIntensity(ds1Lit ? 0.0f : RtxOptions::emissiveBlendOverrideEmissiveIntensity());
+            patchedMaterialData->getOpaqueMaterialData().setEmissiveColorTexture(patchedMaterialData->getOpaqueMaterialData().getAlbedoOpacityTexture());
+          }
+
+          // Fork (DS1): Self-lit (rtx_ds1_emissive.h) on a draw that does not emit: its texture is its emission, at intensity 1 before the
+          // texture's scale. A material with an emission of its own (a mod's) keeps it.
+          if (ds1EmitsAsSelfLit && !drawCall.isUsingRaytracedRenderTarget &&
+              !(materialData->getOpaqueMaterialData().getEnableEmission() && materialData->getOpaqueMaterialData().getEmissiveIntensity() > 0.0f)) {
+            if (!patchedMaterialData.has_value()) {
+              patchedMaterialData.emplace(*materialData);
+              materialData = &*patchedMaterialData;
+            }
+            patchedMaterialData->getOpaqueMaterialData().setEnableEmission(true);
+            patchedMaterialData->getOpaqueMaterialData().setEmissiveIntensity(1.0f);
             patchedMaterialData->getOpaqueMaterialData().setEmissiveColorTexture(patchedMaterialData->getOpaqueMaterialData().getAlbedoOpacityTexture());
           }
 

@@ -202,7 +202,7 @@ namespace dxvk {
           char line[96];
           snprintf(line, sizeof(line), "%016llX %.4f%s%s", static_cast<unsigned long long>(hash), entry.live,
                    entry.liveAs != DxvkDs1Emissive::kAsDrawn ? " " : "", kAsWords[entry.liveAs]);
-          const std::string name = nameOf(hash, entry.note);
+          const std::string name = entry.note.empty() ? nameOf(hash, entry.note) : entry.note;
           out << line << (name.empty() ? "" : "  # ") << name << "\n";
         }
         if (!out.good()) {
@@ -217,7 +217,9 @@ namespace dxvk {
       for (auto it = g_entries.begin(); it != g_entries.end();) {
         it->second.saved = it->second.live;
         it->second.savedAs = it->second.liveAs;
-        it->second.note = nameOf(it->first, it->second.note);
+        if (it->second.note.empty()) {
+          it->second.note = nameOf(it->first, it->second.note);
+        }
         it = it->second.isDefault() ? g_entries.erase(it) : std::next(it);
       }
       recount();
@@ -289,8 +291,11 @@ namespace dxvk {
       tip("How the texture glows.\n"
           "As drawn: as the game and the proxy draw it.\n"
           "Unlit: its texture and vertex colour are its colour on screen, no light falls on it; the scale is not capped.\n"
-          "Self-lit: it emits its colour as light: the exposure, haze and bloom take it like any surface, and it lights what is near.\n"
-          "Self-lit additive and blended layers are capped at full colour per layer, as the game's are.");
+          "Self-lit: it emits its colour as light: the exposure, haze and bloom take it like any surface, and it lights what is near\n"
+          "(the light it throws on other surfaces stops at its texture's own brightness, x1; above that only it looks brighter).\n"
+          "An additive layer stays capped at full colour per layer, as the game's are.\n"
+          "A texture is often shared: every draw of it changes, in every map. Unlit or Self-lit can also change how other\n"
+          "see-through layers in the same pixels are stacked and hazed.");
       ImGui::TableNextColumn();
       ImGui::SetNextItemWidth(-1.0f);
       if (ImGui::DragFloat("##scale", &scale, 0.01f, 0.0f, kMaxScale, "x %.2f", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic)) {
@@ -384,6 +389,15 @@ namespace dxvk {
       return;
     }
     DxvkObjects* common = ctx->getCommonObjects();
+    // The texture names, read here (once) and not under the lock the renderer takes for every glowing draw.
+    textureNames();
+    // A row dragged back to 1 or set back to As drawn leaves the list once it is let go, as Save would drop it.
+    if (!ImGui::IsAnyItemActive()) {
+      std::lock_guard lock(g_mutex);
+      for (auto it = g_entries.begin(); it != g_entries.end();) {
+        it = it->second.isDefault() ? g_entries.erase(it) : std::next(it);
+      }
+    }
     ImGui::PushID("ds1Emissive");
     ImGui::Indent();
     ImGui::TextWrapped("How strongly one game texture glows: an effect, a ghost, a flame. The scale goes on whatever makes it emit "
