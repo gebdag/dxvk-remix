@@ -11,6 +11,7 @@ namespace dxvk {
   // (by its hash, as the Remix menus show it): additive and unlit sprites, self-lit layers, and the emission a mod's material gives it.
   // The values live in rtx_comp/emissive_scales.txt (hash, scale, and the name as a note) and are edited in the Dark Souls menu:
   // pick a texture in the game or take it from the list of what glows on screen, drag its scale, save.
+  // A change reaches a draw when its instance is next updated: every frame with rtx.enablePreservePath off, as DS1's rtx.conf has it.
   class DxvkDs1Emissive {
   public:
     // What kind of emission a draw has, for the menu's list.

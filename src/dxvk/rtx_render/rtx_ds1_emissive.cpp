@@ -53,9 +53,12 @@ namespace dxvk {
     bool g_loaded = false;
     std::atomic<XXH64_hash_t> g_picked { 0 };
     std::atomic<XXH64_hash_t> g_flash { 0 };
-    std::atomic<uint32_t> g_frame { 0 };
+    std::atomic<uint32_t> g_flashFrame { 0 };   // the frame the row was last hovered: the blink ends when the menu goes away under the mouse
+    constexpr uint32_t kFlashFrames = 30;
     bool g_picking = false;
     std::string g_status;
+
+    uint32_t g_uiFrame = 0;   // the device's frame as the menu last saw it (the ImGui thread's)
 
     std::string hexHash(XXH64_hash_t hash) {
       char text[17];
@@ -107,15 +110,14 @@ namespace dxvk {
     void readFile() {
       std::error_code ec;
       g_time = fs::last_write_time(kFile, ec);
-      for (auto it = g_entries.begin(); it != g_entries.end();) {
-        // Unsaved edits stay on top of what the file now says.
-        const bool edited = std::abs(it->second.live - it->second.saved) >= kSame;
-        it->second.saved = 1.0f;
-        if (!edited) {
-          it->second.live = 1.0f;
+      // Unsaved edits stay on top of what the file now says, a Reset to 1 among them.
+      std::unordered_map<XXH64_hash_t, float> edits;
+      for (auto& [hash, entry] : g_entries) {
+        if (std::abs(entry.live - entry.saved) >= kSame) {
+          edits[hash] = entry.live;
         }
-        ++it;
       }
+      g_entries.clear();
       std::ifstream in(kFile);
       std::string line;
       while (std::getline(in, line)) {
@@ -127,15 +129,15 @@ namespace dxvk {
           continue;
         }
         Entry& entry = g_entries[hash];
-        const bool edited = std::abs(entry.live - 1.0f) >= kSame;
         entry.saved = std::min(scale, kMaxScale);
-        if (!edited) {
-          entry.live = entry.saved;
-        }
+        entry.live = entry.saved;
         std::string note = scaleEnd;
         const size_t first = note.find_first_not_of(" \t#");
         const size_t last = note.find_last_not_of(" \t\r\n");
         entry.note = first == std::string::npos ? std::string() : note.substr(first, last - first + 1);
+      }
+      for (const auto& [hash, live] : edits) {
+        g_entries[hash].live = live;
       }
       for (auto it = g_entries.begin(); it != g_entries.end();) {
         it = std::abs(it->second.live - 1.0f) < kSame && std::abs(it->second.saved - 1.0f) < kSame ? g_entries.erase(it) : std::next(it);
@@ -185,11 +187,8 @@ namespace dxvk {
 
     // Needs g_mutex.
     void setLive(XXH64_hash_t hash, float scale) {
-      Entry& entry = g_entries[hash];
-      entry.live = std::clamp(scale, 0.0f, kMaxScale);
-      if (std::abs(entry.live - 1.0f) < kSame && std::abs(entry.saved - 1.0f) < kSame) {
-        g_entries.erase(hash);
-      }
+      // An entry at 1 with nothing saved stays until Save or Revert All: a drag passing through 1 must not lose its row.
+      g_entries[hash].live = std::clamp(scale, 0.0f, kMaxScale);
     }
 
     float liveOf(XXH64_hash_t hash) {
@@ -226,6 +225,7 @@ namespace dxvk {
       ImGui::Selectable((name.empty() ? hexHash(hash) : name + "  " + hexHash(hash)).c_str(), g_picked.load() == hash, ImGuiSelectableFlags_None);
       if (ImGui::IsItemHovered()) {
         g_flash.store(hash);
+        g_flashFrame.store(g_uiFrame);
       }
       if (ImGui::IsItemClicked()) {
         g_picked.store(hash);
@@ -277,13 +277,12 @@ namespace dxvk {
       g_loaded = true;
       readFile();
     }
-    g_frame.store(frame);
     Seen& seen = g_seen[materialHash];
     seen.frame = frame;
     seen.kind = kind;
     float value = liveOf(materialHash);
     // The texture under the mouse in the menu's lists blinks, to tell which one it is. Two values only: each is a material of its own.
-    if (g_flash.load() == materialHash && (frame / 12) % 2 == 0) {
+    if (g_flash.load() == materialHash && static_cast<int32_t>(frame - g_flashFrame.load()) < static_cast<int32_t>(kFlashFrames) && (frame / 12) % 2 == 0) {
       value = std::max(value, 0.25f) * kFlashScale;
     }
     return value;
@@ -306,8 +305,9 @@ namespace dxvk {
   }
 
   void DxvkDs1Emissive::showImguiSettings(const Rc<DxvkContext>& ctx) {
-    // Nothing is hovered once the section is closed or the menu is gone.
+    // Nothing is hovered once the section is closed. (With the whole menu gone this is not called: the blink then ends by its frame.)
     g_flash.store(0);
+    g_uiFrame = ctx->getDevice()->getCurrentFrameId();
     if (!ImGui::CollapsingHeader("Emissive per texture", ImGuiTreeNodeFlags_None)) {
       g_picking = false;
       return;
@@ -341,14 +341,15 @@ namespace dxvk {
       }
     }
 
-    const uint32_t frame = g_frame.load();
+    const uint32_t frame = g_uiFrame;
     std::vector<std::pair<XXH64_hash_t, Kind>> glowing;
     std::vector<XXH64_hash_t> changed;
     int unsaved = 0;
     {
       std::lock_guard lock(g_mutex);
       for (auto it = g_seen.begin(); it != g_seen.end();) {
-        if (frame - it->second.frame > kShownFrames) {
+        // Signed: the render thread may already have stamped a later frame.
+        if (static_cast<int32_t>(frame - it->second.frame) > static_cast<int32_t>(kShownFrames)) {
           it = g_seen.erase(it);
         } else {
           glowing.emplace_back(it->first, it->second.kind);
