@@ -1136,7 +1136,12 @@ namespace dxvk {
         currentInstance.surface.associatedGeometryHash = drawCall.getHash(RtxOptions::geometryAssetHashRule());
         currentInstance.surface.isTextureFactorBlend = drawCall.getMaterialData().isTextureFactorBlend;
         currentInstance.surface.isTextureFactorAlphaBlend = drawCall.getMaterialData().isTextureFactorAlphaBlend;
-        currentInstance.surface.isUnlit = drawCall.getMaterialData().isUnlit;
+        // Fork (DS1): a texture can be drawn as an unlit layer or a self-lit surface instead, set per texture in the menu (rtx_ds1_emissive.h).
+        const DxvkDs1Emissive::RenderAs ds1RenderAs = drawCall.isUsingRaytracedRenderTarget ? DxvkDs1Emissive::kAsDrawn
+          : DxvkDs1Emissive::renderAs(drawCall.getMaterialData().getHash());
+        const bool ds1Unlit = ds1RenderAs == DxvkDs1Emissive::kAsUnlit ? true
+          : ds1RenderAs == DxvkDs1Emissive::kAsSelfLit ? false : drawCall.getMaterialData().isUnlit;
+        currentInstance.surface.isUnlit = ds1Unlit;
         currentInstance.surface.isDs1Swamp = drawCall.getMaterialData().isDs1Swamp;
         currentInstance.surface.isDs1SkirtDecal = drawCall.getMaterialData().isDs1SkirtDecal;
         currentInstance.surface.isDs1ThinWall = drawCall.getMaterialData().isDs1ThinWall;
@@ -1169,6 +1174,19 @@ namespace dxvk {
         std::copy(std::begin(drawCall.getMaterialData().ds1SelfLit), std::end(drawCall.getMaterialData().ds1SelfLit),
                   currentInstance.surface.ds1SelfLit);
         currentInstance.surface.isVertexColorBakedLighting = drawCall.getMaterialData().isVertexColorBakedLighting;
+        if (ds1RenderAs == DxvkDs1Emissive::kAsUnlit) {
+          // Its own colour only: the texture and vertex colour, no self-lit tint on top.
+          currentInstance.surface.hasDs1SelfLit = false;
+          std::fill(std::begin(currentInstance.surface.ds1SelfLit), std::end(currentInstance.surface.ds1SelfLit), 0.0f);
+          currentInstance.surface.isVertexColorBakedLighting = false;
+        } else if (ds1RenderAs == DxvkDs1Emissive::kAsSelfLit && !currentInstance.surface.hasDs1SelfLit) {
+          // Its texture as its light, the scale on top (a lava value, packed, stays as it is).
+          currentInstance.surface.hasDs1SelfLit = true;
+          std::fill(std::begin(currentInstance.surface.ds1SelfLit), std::end(currentInstance.surface.ds1SelfLit), 1.0f);
+          if (currentInstance.surface.alphaState.isBlendingDisabled == false) {
+            currentInstance.surface.isVertexColorBakedLighting = false;
+          }
+        }
         currentInstance.surface.isMotionBlurMaskOut = currentInstance.testCategoryFlags(InstanceCategories::IgnoreMotionBlur);
         currentInstance.surface.isDs1Glass = drawCall.getMaterialData().isDs1SingleSided;
         currentInstance.surface.isDs1TwoSidedDecal = drawCall.getCullMode() == VK_CULL_MODE_NONE;
@@ -1202,7 +1220,7 @@ namespace dxvk {
             patchedMaterialData->getOpaqueMaterialData().setEnableEmission(true);
             patchedMaterialData->getOpaqueMaterialData().setEmissiveIntensity(2.0f);
             patchedMaterialData->getOpaqueMaterialData().setEmissiveColorTexture(patchedMaterialData->getOpaqueMaterialData().getAlbedoOpacityTexture());
-          } else if (!drawCall.isUsingRaytracedRenderTarget && drawCall.getMaterialData().isUnlit && useLegacyAlphaState) {
+          } else if (!drawCall.isUsingRaytracedRenderTarget && ds1Unlit && useLegacyAlphaState) {
             // Fork: unlit marker. Like the emissive blend override below, whatever the blend mode:
             // the surface's texture is its emission; the shader drops its albedo and premultiplies
             // the emission by its alpha for non-emissive blends. Additive surfaces reach their
@@ -1241,7 +1259,7 @@ namespace dxvk {
             const bool emits = emitting.getEnableEmission() && emitting.getEmissiveIntensity() > 0.0f;
             if (emits || selfLit) {
               const DxvkDs1Emissive::Kind kind = selfLit ? DxvkDs1Emissive::kSelfLit
-                : drawCall.getMaterialData().isUnlit ? DxvkDs1Emissive::kUnlit
+                : ds1Unlit ? DxvkDs1Emissive::kUnlit
                 : currentInstance.surface.alphaState.emissiveBlend ? DxvkDs1Emissive::kAdditive : DxvkDs1Emissive::kMaterial;
               const float emissionScale = DxvkDs1Emissive::scale(drawCall.getMaterialData().getHash(), kind, m_device->getCurrentFrameId());
               if (emissionScale != 1.0f) {

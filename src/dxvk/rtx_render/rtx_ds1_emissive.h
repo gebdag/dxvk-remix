@@ -17,6 +17,12 @@ namespace dxvk {
     // What kind of emission a draw has, for the menu's list.
     enum Kind : uint8_t { kMaterial, kAdditive, kUnlit, kSelfLit };
 
+    // How a texture's draws are made to glow, chosen per texture in the menu: as the game and the proxy draw them, or always as an
+    // unlit layer (its texture and vertex colour are its display colour, no light falls on it), or as a self-lit surface (it emits
+    // its colour as real light, which the exposure, haze and bloom take like any other surface's, and which lights the scene).
+    enum RenderAs : uint8_t { kAsDrawn, kAsUnlit, kAsSelfLit };
+    static RenderAs renderAs(XXH64_hash_t materialHash);
+
     // The scale on a material's emission, 1 when it has none. Also notes the material as glowing now, for the menu.
     static float scale(XXH64_hash_t materialHash, Kind kind, uint32_t frame);
 

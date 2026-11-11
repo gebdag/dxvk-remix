@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -30,7 +31,7 @@ namespace dxvk {
     const fs::path kFile = "rtx_comp/emissive_scales.txt";
     // The Texture Lab helper's index of game texture names, when it is there (a development machine): names instead of hashes.
     const fs::path kNames = "rtx_comp/texlab/hash_files.json";
-    constexpr float kMaxScale = 8.0f;
+    constexpr float kMaxScale = 32.0f;
     constexpr float kSame = 0.0005f;        // the file keeps four decimals
     constexpr uint32_t kShownFrames = 90;   // a material stays in the list this long after its last draw
     constexpr float kFlashScale = 6.0f;
@@ -38,8 +39,20 @@ namespace dxvk {
     struct Entry {
       float live = 1.0f;
       float saved = 1.0f;
+      DxvkDs1Emissive::RenderAs liveAs = DxvkDs1Emissive::kAsDrawn;
+      DxvkDs1Emissive::RenderAs savedAs = DxvkDs1Emissive::kAsDrawn;
       std::string note;
+
+      bool edited() const { return std::abs(live - saved) >= kSame || liveAs != savedAs; }
+      bool isDefault() const {
+        return std::abs(live - 1.0f) < kSame && std::abs(saved - 1.0f) < kSame && liveAs == DxvkDs1Emissive::kAsDrawn && savedAs == DxvkDs1Emissive::kAsDrawn;
+      }
+      bool written() const { return std::abs(live - 1.0f) >= kSame || liveAs != DxvkDs1Emissive::kAsDrawn; }
     };
+
+    // The words of the file for each RenderAs, and the menu's names.
+    const char* const kAsWords[] = { "", "unlit", "selflit" };
+    const char* const kAsNames[] = { "As drawn", "Unlit", "Self-lit" };
 
     struct Seen {
       uint32_t frame = 0;
@@ -49,6 +62,8 @@ namespace dxvk {
     std::mutex g_mutex;
     std::unordered_map<XXH64_hash_t, Entry> g_entries;   // only those with a live or saved scale other than 1
     std::unordered_map<XXH64_hash_t, Seen> g_seen;
+    // How many textures are drawn other than as drawn now: none, and renderAs needs no lock (it is asked for every draw).
+    std::atomic<int> g_renderAsCount { 0 };
     fs::file_time_type g_time {};
     bool g_loaded = false;
     std::atomic<XXH64_hash_t> g_picked { 0 };
@@ -107,14 +122,23 @@ namespace dxvk {
     }
 
     // Needs g_mutex.
+    void recount() {
+      int count = 0;
+      for (const auto& [hash, entry] : g_entries) {
+        count += entry.liveAs != DxvkDs1Emissive::kAsDrawn ? 1 : 0;
+      }
+      g_renderAsCount.store(count);
+    }
+
+    // Needs g_mutex.
     void readFile() {
       std::error_code ec;
       g_time = fs::last_write_time(kFile, ec);
       // Unsaved edits stay on top of what the file now says, a Reset to 1 among them.
-      std::unordered_map<XXH64_hash_t, float> edits;
+      std::unordered_map<XXH64_hash_t, std::pair<float, DxvkDs1Emissive::RenderAs>> edits;
       for (auto& [hash, entry] : g_entries) {
-        if (std::abs(entry.live - entry.saved) >= kSame) {
-          edits[hash] = entry.live;
+        if (entry.edited()) {
+          edits[hash] = { entry.live, entry.liveAs };
         }
       }
       g_entries.clear();
@@ -132,16 +156,28 @@ namespace dxvk {
         entry.saved = std::min(scale, kMaxScale);
         entry.live = entry.saved;
         std::string note = scaleEnd;
+        // An optional word before the note: how the texture is drawn.
+        const size_t word = note.find_first_not_of(" \t");
+        for (int as = 1; as <= 2 && word != std::string::npos; ++as) {
+          const size_t length = strlen(kAsWords[as]);
+          if (note.compare(word, length, kAsWords[as]) == 0 && (word + length == note.size() || note[word + length] == ' ' || note[word + length] == '\t' || note[word + length] == '\r')) {
+            entry.savedAs = entry.liveAs = static_cast<DxvkDs1Emissive::RenderAs>(as);
+            note = note.substr(word + length);
+            break;
+          }
+        }
         const size_t first = note.find_first_not_of(" \t#");
         const size_t last = note.find_last_not_of(" \t\r\n");
         entry.note = first == std::string::npos ? std::string() : note.substr(first, last - first + 1);
       }
       for (const auto& [hash, live] : edits) {
-        g_entries[hash].live = live;
+        g_entries[hash].live = live.first;
+        g_entries[hash].liveAs = live.second;
       }
       for (auto it = g_entries.begin(); it != g_entries.end();) {
-        it = std::abs(it->second.live - 1.0f) < kSame && std::abs(it->second.saved - 1.0f) < kSame ? g_entries.erase(it) : std::next(it);
+        it = it->second.isDefault() ? g_entries.erase(it) : std::next(it);
       }
+      recount();
     }
 
     // Needs g_mutex. Writes every live value; they become the saved ones.
@@ -153,10 +189,10 @@ namespace dxvk {
       {
         std::ofstream out(temp, std::ios::trunc);
         out << "# Emission scale per game texture (Alt+X > Developer Settings Menu > Dark Souls > Emissive per texture).\n"
-               "# texture hash, scale (1 = as it was, 0 = no glow), the texture's name as a note\n";
+               "# texture hash, scale (1 = as it was, 0 = no glow), optionally unlit or selflit (how it is drawn), the texture's name as a note\n";
         std::vector<XXH64_hash_t> order;
         for (const auto& [hash, entry] : g_entries) {
-          if (std::abs(entry.live - 1.0f) >= kSame) {
+          if (entry.written()) {
             order.push_back(hash);
           }
         }
@@ -164,7 +200,8 @@ namespace dxvk {
         for (const XXH64_hash_t hash : order) {
           const Entry& entry = g_entries[hash];
           char line[96];
-          snprintf(line, sizeof(line), "%016llX %.4f", static_cast<unsigned long long>(hash), entry.live);
+          snprintf(line, sizeof(line), "%016llX %.4f%s%s", static_cast<unsigned long long>(hash), entry.live,
+                   entry.liveAs != DxvkDs1Emissive::kAsDrawn ? " " : "", kAsWords[entry.liveAs]);
           const std::string name = nameOf(hash, entry.note);
           out << line << (name.empty() ? "" : "  # ") << name << "\n";
         }
@@ -179,9 +216,11 @@ namespace dxvk {
       g_time = fs::last_write_time(kFile, ec);
       for (auto it = g_entries.begin(); it != g_entries.end();) {
         it->second.saved = it->second.live;
+        it->second.savedAs = it->second.liveAs;
         it->second.note = nameOf(it->first, it->second.note);
-        it = std::abs(it->second.live - 1.0f) < kSame ? g_entries.erase(it) : std::next(it);
+        it = it->second.isDefault() ? g_entries.erase(it) : std::next(it);
       }
+      recount();
       return true;
     }
 
@@ -189,6 +228,12 @@ namespace dxvk {
     void setLive(XXH64_hash_t hash, float scale) {
       // An entry at 1 with nothing saved stays until Save or Revert All: a drag passing through 1 must not lose its row.
       g_entries[hash].live = std::clamp(scale, 0.0f, kMaxScale);
+    }
+
+    // Needs g_mutex.
+    void setLiveAs(XXH64_hash_t hash, DxvkDs1Emissive::RenderAs as) {
+      g_entries[hash].liveAs = as;
+      recount();
     }
 
     float liveOf(XXH64_hash_t hash) {
@@ -212,6 +257,7 @@ namespace dxvk {
       ImGui::TableNextColumn();
       std::string note;
       float scale = 1.0f, saved = 1.0f;
+      int as = DxvkDs1Emissive::kAsDrawn, savedAs = DxvkDs1Emissive::kAsDrawn;
       {
         std::lock_guard lock(g_mutex);
         const auto found = g_entries.find(hash);
@@ -219,6 +265,8 @@ namespace dxvk {
           note = found->second.note;
           scale = found->second.live;
           saved = found->second.saved;
+          as = found->second.liveAs;
+          savedAs = found->second.savedAs;
         }
       }
       const std::string name = nameOf(hash, note);
@@ -234,38 +282,61 @@ namespace dxvk {
       ImGui::TextUnformatted(what);
       ImGui::TableNextColumn();
       ImGui::SetNextItemWidth(-1.0f);
-      if (ImGui::DragFloat("##scale", &scale, 0.005f, 0.0f, kMaxScale, "x %.2f", ImGuiSliderFlags_AlwaysClamp)) {
+      if (ImGui::Combo("##as", &as, "As drawn\0Unlit\0Self-lit\0")) {
+        std::lock_guard lock(g_mutex);
+        setLiveAs(hash, static_cast<DxvkDs1Emissive::RenderAs>(as));
+      }
+      tip("How the texture glows.\n"
+          "As drawn: as the game and the proxy draw it.\n"
+          "Unlit: its texture and vertex colour are its colour on screen, no light falls on it; the scale is not capped.\n"
+          "Self-lit: it emits its colour as light: the exposure, haze and bloom take it like any surface, and it lights what is near.\n"
+          "Self-lit additive and blended layers are capped at full colour per layer, as the game's are.");
+      ImGui::TableNextColumn();
+      ImGui::SetNextItemWidth(-1.0f);
+      if (ImGui::DragFloat("##scale", &scale, 0.01f, 0.0f, kMaxScale, "x %.2f", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic)) {
         std::lock_guard lock(g_mutex);
         setLive(hash, scale);
       }
       ImGui::TableNextColumn();
-      if (std::abs(scale - saved) >= kSame) {
+      if (std::abs(scale - saved) >= kSame || as != savedAs) {
         if (ImGui::SmallButton("Revert")) {
           std::lock_guard lock(g_mutex);
           setLive(hash, saved);
+          setLiveAs(hash, static_cast<DxvkDs1Emissive::RenderAs>(savedAs));
         }
-        tip("Back to the saved value.");
-      } else if (std::abs(scale - 1.0f) >= kSame) {
+        tip("Back to the saved scale and way of drawing.");
+      } else if (std::abs(scale - 1.0f) >= kSame || as != DxvkDs1Emissive::kAsDrawn) {
         if (ImGui::SmallButton("Reset")) {
           std::lock_guard lock(g_mutex);
           setLive(hash, 1.0f);
+          setLiveAs(hash, DxvkDs1Emissive::kAsDrawn);
         }
-        tip("Back to 1: as the game and the mods give it. Takes it out of the file on Save.");
+        tip("Back to 1, as drawn: as the game and the mods give it. Takes it out of the file on Save.");
       }
       ImGui::PopID();
     }
 
     bool beginTable(const char* id) {
-      if (!ImGui::BeginTable(id, 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_SizingFixedFit)) {
+      if (!ImGui::BeginTable(id, 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_SizingFixedFit)) {
         return false;
       }
       ImGui::TableSetupColumn("Texture", ImGuiTableColumnFlags_WidthStretch);
       ImGui::TableSetupColumn("Glows as", ImGuiTableColumnFlags_WidthFixed, 130.0f);
+      ImGui::TableSetupColumn("Render as", ImGuiTableColumnFlags_WidthFixed, 100.0f);
       ImGui::TableSetupColumn("Emission", ImGuiTableColumnFlags_WidthFixed, 110.0f);
       ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 60.0f);
       ImGui::TableHeadersRow();
       return true;
     }
+  }
+
+  DxvkDs1Emissive::RenderAs DxvkDs1Emissive::renderAs(XXH64_hash_t materialHash) {
+    if (materialHash == 0 || g_renderAsCount.load() == 0) {
+      return kAsDrawn;
+    }
+    std::lock_guard lock(g_mutex);
+    const auto found = g_entries.find(materialHash);
+    return found == g_entries.end() ? kAsDrawn : found->second.liveAs;
   }
 
   float DxvkDs1Emissive::scale(XXH64_hash_t materialHash, Kind kind, uint32_t frame) {
@@ -317,7 +388,8 @@ namespace dxvk {
     ImGui::Indent();
     ImGui::TextWrapped("How strongly one game texture glows: an effect, a ghost, a flame. The scale goes on whatever makes it emit "
                        "(an additive or unlit sprite, a self-lit layer, a mod material's emission) and on nothing else. "
-                       "Hover a row to make that texture blink in the game.");
+                       "Render as switches a texture between an unlit layer and a self-lit surface, when the way it is drawn caps "
+                       "how bright it can get. Hover a row to make that texture blink in the game.");
 
     if (ImGui::Button(g_picking ? "Click it in the game..." : "Pick Texture")) {
       g_picking = !g_picking;
@@ -358,7 +430,7 @@ namespace dxvk {
       }
       for (const auto& [hash, entry] : g_entries) {
         changed.push_back(hash);
-        unsaved += std::abs(entry.live - entry.saved) >= kSame ? 1 : 0;
+        unsaved += entry.edited() ? 1 : 0;
       }
     }
     std::sort(glowing.begin(), glowing.end());
@@ -396,8 +468,10 @@ namespace dxvk {
       std::lock_guard lock(g_mutex);
       for (auto it = g_entries.begin(); it != g_entries.end();) {
         it->second.live = it->second.saved;
-        it = std::abs(it->second.saved - 1.0f) < kSame ? g_entries.erase(it) : std::next(it);
+        it->second.liveAs = it->second.savedAs;
+        it = it->second.isDefault() ? g_entries.erase(it) : std::next(it);
       }
+      recount();
       g_status.clear();
     }
     ImGui::EndDisabled();
