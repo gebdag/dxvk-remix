@@ -219,7 +219,9 @@ namespace dxvk {
       return;
     }
     ImGui::Indent();
-    RemixGui::Checkbox("Shadow Terminator for Skinned Meshes", &skinnedShadowTerminatorObject());
+    if (DxvkDs1MenuView::advanced()) {
+      RemixGui::Checkbox("Shadow Terminator for Skinned Meshes", &skinnedShadowTerminatorObject());
+    }
     RemixGui::Checkbox("Player Light Wall Clearance", &DxvkDarkSoulsLightFalloff::playerLightClearanceObject());
     RemixGui::DragFloat("Player Light Body Clearance (m)", &DxvkDarkSoulsLightFalloff::playerLightBodyRadiusObject(), 0.01f, 0.0f, 1.0f, "%.2f");
     RemixGui::Checkbox("Skin Scattering (experimental)", &enableObject());

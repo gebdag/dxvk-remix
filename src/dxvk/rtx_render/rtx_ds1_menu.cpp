@@ -204,8 +204,6 @@ namespace dxvk {
 
     // A player's switches, or everything (DxvkDs1MenuView).
     RemixGui::Checkbox("Advanced", &DxvkDs1MenuView::advancedObject());
-    ImGui::SameLine();
-    ImGui::TextDisabled(DxvkDs1MenuView::advanced() ? "every setting, tuning and readouts" : "on: every setting, tuning and readouts");
     ImGui::Separator();
 
     // The DS1 post passes draw their own headers.
@@ -218,8 +216,8 @@ namespace dxvk {
     }
 
     showParticles();
-    // How strongly single textures glow (rtx_ds1_emissive.h): an authoring tool that writes emissive_scales.txt.
-    if (DxvkDs1Dev::enable()) {
+    // How strongly single textures glow (rtx_ds1_emissive.h): an advanced tool that writes emissive_scales.txt.
+    if (DxvkDs1MenuView::advanced()) {
       DxvkDs1Emissive::showImguiSettings(ctx);
     }
     DxvkDarkSoulsSkin::showImguiSettings();
@@ -252,8 +250,8 @@ namespace dxvk {
     showBody();
     showMaterials();
     showMarkers();
-    // Every light Remix renders and where it comes from (rtx_light_manager_gui.cpp): a debug view.
-    if (DxvkDs1Dev::enable()) {
+    // Every light Remix renders and where it comes from (rtx_light_manager_gui.cpp).
+    if (DxvkDs1MenuView::advanced()) {
       ctx->getCommonObjects()->getSceneManager().getLightManager().showDs1LightList();
     }
 

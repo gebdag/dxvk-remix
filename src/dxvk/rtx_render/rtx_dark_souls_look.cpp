@@ -1351,7 +1351,7 @@ namespace dxvk {
                         ImGuiSliderFlags_AlwaysClamp);
     }
     // Image adjustments for players, on top of the game's look (which replaces Remix's tonemapper while it runs).
-    if (ImGui::TreeNodeEx("Image Adjustments", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::TreeNode("Image Adjustments")) {
       ImGui::TextDisabled("On top of the game's look. The defaults change nothing.");
       constexpr ImGuiSliderFlags clamp = ImGuiSliderFlags_AlwaysClamp;
       RemixGui::SliderFloat("Exposure (stops)", &adjustExposureObject(), -2.0f, 2.0f, "%.2f", clamp);
