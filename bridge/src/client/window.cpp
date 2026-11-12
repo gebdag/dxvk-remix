@@ -172,6 +172,9 @@ void windowMsg(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
       }
     } else if (!window->second.closing) {
       struct WindowDisplayData data = window->second;
+      // SetWindowPos and ShowWindowAsync on the window's own thread send messages synchronously (WM_WINDOWPOSCHANGED,
+      // then WM_SIZE), which re-enter this function on this thread: the map lock must not be held across them.
+      lock.unlock();
       D3DPRESENT_PARAMETERS presParams = data.presParam;
       if (msg == WM_ACTIVATEAPP && !presParams.Windowed && !(msg == WM_NCCALCSIZE && wParam == TRUE)) {
         D3DDEVICE_CREATION_PARAMETERS create_parms = data.createParam;
