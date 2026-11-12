@@ -31,7 +31,7 @@ namespace dxvk {
     // The motes' shape and the player's push, into the particle constants (once a frame).
     static void fillParticleArgs(ParticleSystemConstants& constants);
 
-    RTX_OPTION("rtx.ds1EffectParticles", bool, motes, true, "Replace the green dots over a bloodstain with Remix particles.");
+    RTX_OPTION("rtx.ds1EffectParticles", bool, motes, false, "Replace the green dots over a bloodstain with Remix particles. Off by default: not yet checked in play since they stopped colliding with the screen.");
     RTX_OPTION("rtx.ds1EffectParticles", float, moteRate, 24000.0f, "Mote spawn attempts per second per bloodstain (kept by the texture's density and the card's alpha).");
     RTX_OPTION("rtx.ds1EffectParticles", float, moteSize, 1.5f, "Mote diameter, cm.");
     RTX_OPTION("rtx.ds1EffectParticles", float, moteLife, 1.8f, "Mean mote life, seconds.");

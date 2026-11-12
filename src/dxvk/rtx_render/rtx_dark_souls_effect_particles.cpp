@@ -143,8 +143,11 @@ namespace dxvk {
       desc.turbulenceFrequency = 150.0f;
       desc.dragCoefficient = 0.4f;
       desc.gravityForce = 0.0f;
-      desc.collisionThickness = 12.0f;
-      desc.collisionRestitution = 0.5f;
+      // No collision: Remix particles collide with the G-buffer, what the screen shows at their position, not the world. The
+      // motes are pushed by the player's body (fillParticleArgs, in the world); against the screen they were pushed and stopped by
+      // whatever passed in front of them, a corner or the camera's own movement, so they drifted with the camera and a stain seen
+      // round a corner filled in slowly.
+      desc.enableCollisionDetection = 0;
       desc.billboardType = FaceCamera_Spherical;
       // Quickly in, full while rising, out over the last 40%: the game's cards fade as they climb.
       desc.minColor = { vec4(bright, bright, bright, 0.0f), vec4(bright, bright, bright, 1.0f), vec4(bright, bright, bright, 1.0f),
