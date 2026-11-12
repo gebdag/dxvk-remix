@@ -37,6 +37,7 @@ namespace dxvk {
     using Clock = std::chrono::steady_clock;
 
     const fs::path kLabDir = "rtx_comp/texlab";
+    const fs::path kAiModDir = "rtx-remix/mods/ai_generated";
     constexpr float kHeartbeatStaleSeconds = 6.0f;
     constexpr float kHelperStartSeconds = 20.0f;
     constexpr float kPollSeconds = 0.5f;
@@ -325,18 +326,13 @@ namespace dxvk {
       return !ec;
     }
 
-    // `maps` go in place of the maps in use, or with `keep` are added to them.
-    void requestGeneration(XXH64_hash_t hash, const std::vector<GeneratedMap>& maps, bool keep) {
+    // Hands the helper one job for `hash` (texlab.py handle) and starts the helper if it is not running.
+    void sendRequest(XXH64_hash_t hash, const std::string& request) {
       const std::string name = hexHash(hash);
       const fs::path statusFile = kLabDir / "status" / (name + ".txt");
       // The status goes to "queued" first: a "done" left from an earlier run must not read as this request's result.
       writeFileAtomic(statusFile, "queued\nwaiting for the helper\n");
-      std::string mapList;
-      for (const GeneratedMap map : maps) {
-        mapList += (mapList.empty() ? "\"" : ", \"") + std::string(kMapKeys[map]) + "\"";
-      }
-      const bool written = writeFileAtomic(kLabDir / "requests" / (name + ".json"),
-        std::string("{\"resolution\": \"") + kResolutions[g_resolution] + "\", \"maps\": [" + mapList + "], \"keep\": " + (keep ? "true" : "false") + "}");
+      const bool written = writeFileAtomic(kLabDir / "requests" / (name + ".json"), request);
       g_requestedAt = Clock::now();
       g_statusHash = 0;
       if (!written) {
@@ -348,6 +344,29 @@ namespace dxvk {
           startHelper();
         }
       }
+    }
+
+    // `maps` go in place of the maps in use, or with `keep` are added to them.
+    void requestGeneration(XXH64_hash_t hash, const std::vector<GeneratedMap>& maps, bool keep) {
+      std::string mapList;
+      for (const GeneratedMap map : maps) {
+        mapList += (mapList.empty() ? "\"" : ", \"") + std::string(kMapKeys[map]) + "\"";
+      }
+      sendRequest(hash, std::string("{\"resolution\": \"") + kResolutions[g_resolution] + "\", \"maps\": [" + mapList +
+        "], \"keep\": " + (keep ? "true" : "false") + "}");
+    }
+
+    // The ai_generated mod's materials (its generated.json), read again at most every poll interval.
+    bool hasAiMaterial(XXH64_hash_t hash) {
+      static auto lastRead = Clock::time_point {};
+      static std::string text;
+      const auto now = Clock::now();
+      if (std::chrono::duration<float>(now - lastRead).count() >= kPollSeconds) {
+        lastRead = now;
+        std::ifstream in(kAiModDir / "generated.json");
+        text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+      }
+      return text.find("\"" + hexHash(hash) + "\"") != std::string::npos;
     }
 
     void readStatus(XXH64_hash_t hash) {
@@ -499,6 +518,13 @@ namespace dxvk {
       }
       ImGui::EndDisabled();
       tip("Integrates a height map from the normal map this material already has, and changes nothing else. No ComfyUI needed.");
+      ImGui::SameLine();
+      ImGui::BeginDisabled(running || !hasAiMaterial(hash));
+      if (ImGui::Button("Revert to Original")) {
+        sendRequest(hash, "{\"action\": \"remove\"}");
+      }
+      ImGui::EndDisabled();
+      tip("Takes this texture's AI material out: it renders as it did before Generate. The AI maps are kept in rtx_comp/texlab/removed.");
       if (!g_state.empty()) {
         ImGui::TextWrapped("%s: %s", g_state.c_str(), g_message.c_str());
       }
