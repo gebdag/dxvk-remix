@@ -343,11 +343,16 @@ struct RtSurface {
     textureSpritesheetData |= (static_cast<uint32_t>(spriteSheetFPS) << 16);
     // pack decalSortOrder into data13.x's last 8 bits.
     // Fork: bit 31, a DS1 thin wall (Surface::isDs1ThinWall); the sort order keeps the 7 bits below it.
-    // A thin wall's sort order stays below 0x7B: 0xFB-0xFF in the top byte are the fur, painted colour, foliage, fog gate and lamp markers.
-    const uint32_t ds1SortOrder = isDs1ThinWall ? std::min<uint32_t>(decalSortOrder & 0x7F, 0x7A) : (decalSortOrder & 0x7F);
+    // A thin wall's sort order stays below 0x7A: 0xFA-0xFF in the top byte are the skirt backing, fur, painted colour, foliage, fog gate
+    // and lamp markers.
+    const uint32_t ds1SortOrder = isDs1ThinWall ? std::min<uint32_t>(decalSortOrder & 0x7F, 0x79) : (decalSortOrder & 0x7F);
     textureSpritesheetData |= (ds1SortOrder << 24) | (isDs1ThinWall ? (1u << 31) : 0);
     // Fork: all eight, a DS1 lamp lighting rays pass (Surface::isDs1NoShadow).
     textureSpritesheetData |= isDs1NoShadow ? 0xFF000000u : 0u;
+    // Fork: 0xFA, a DS1 skirt backing lighting rays pass from either side (Surface::isDs1NoShadowBothSides).
+    if (isDs1NoShadowBothSides) {
+      textureSpritesheetData = (textureSpritesheetData & 0x00FFFFFFu) | 0xFA000000u;
+    }
     // Fork: 0xFE, a DS1 fog gate's quad the camera's rays pass (Surface::isDs1CameraPasses).
     if (isDs1CameraPasses) {
       textureSpritesheetData = (textureSpritesheetData & 0x00FFFFFFu) | 0xFE000000u;
@@ -512,6 +517,8 @@ struct RtSurface {
   bool isDs1CameraPasses = false;
   // Fork: a DS1 lamp, passed by all lighting rays (Surface::isDs1NoShadow).
   bool isDs1NoShadow = false;
+  // Fork: a DS1 skirt backing, passed by all lighting rays from either side (Surface::isDs1NoShadowBothSides).
+  bool isDs1NoShadowBothSides = false;
   // Fork: DS1 foliage, passed by lighting rays in part (Surface::isDs1Foliage).
   bool isDs1Foliage = false;
   // Fork: DS1 surface whose vertex colour is painted shade, kept as the game shows it (Surface::isDs1PaintedColour).
@@ -2197,6 +2204,8 @@ struct LegacyMaterialData {
   uint8_t ds1EffectParticles = 0;
   // Fork: drawn with the DS1 proxy's lamp marker (Surface::isDs1NoShadow). Per draw, not part of the identity.
   bool isDs1NoShadow = false;
+  // Fork: drawn with the DS1 proxy's skirt backing marker (Surface::isDs1NoShadowBothSides). Per draw, not part of the identity.
+  bool isDs1NoShadowBothSides = false;
   // Fork: drawn with the DS1 proxy's thin wall marker (Surface::isDs1ThinWall). Per draw, not part of the identity.
   bool isDs1ThinWall = false;
   // Fork: drawn with the DS1 proxy's fog gate marker (Surface::isDs1CameraPasses). Per draw, not part of the identity.

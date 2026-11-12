@@ -318,6 +318,10 @@ bool ds1VisibilityPassesThinWall(Ray ray, RayHitInfo rayHitInfo, vec3 originNorm
 {
   const RayInteraction rayInteraction = rayInteractionCreate(ray, rayHitInfo);
   const Surface surface = surfaces[uint(rayInteraction.surfaceIndex)];
+  if (surface.isDs1NoShadowBothSides)
+  {
+    return true;
+  }
   if (surface.isDs1NoShadow)
   {
     return frontFace || hitT > 1.5f;

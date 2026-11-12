@@ -556,7 +556,7 @@ struct Surface
   // from outside meet a back face or a front not turned towards their origin, and stop.
   property bool isDs1ThinWall
   {
-    get { return packedFlagGet(data13.x, 1u << 31) && (data13.x >> 24) < 0xFBu; }
+    get { return packedFlagGet(data13.x, 1u << 31) && (data13.x >> 24) < 0xFAu; }
   }
 
   // Fork: the opaque quad that closes a DS1 fog gate's door, where the gate is a volume now (game/fog_gates in the proxy). The camera's rays pass it, so the door shows the
@@ -571,6 +571,14 @@ struct Surface
   property bool isDs1NoShadow
   {
     get { return (data13.x >> 24) == 0xFFu; }
+  }
+
+  // Fork: a DS1 skirt backing (renderer.cpp draw_skirt_backing in the proxy): the solid copy of a blended skirt's faces, the surface
+  // its decal lands on over a hole. Lighting rays pass it from either side: a lamp's back face close up stops them (its closed
+  // shell), but a backing's back faces lie against the mound it is laid over, which went dark beside it (frame_20261112_142920).
+  property bool isDs1NoShadowBothSides
+  {
+    get { return (data13.x >> 24) == 0xFAu; }
   }
 
   // Fork: DS1 foliage (the proxy's foliage marker, game/texture_names is_foliage): alpha-tested leaf cards the game
