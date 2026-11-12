@@ -33,6 +33,7 @@
 #include <rtx_shaders/post_fx_dark_souls_look_ambient_meter.h>
 #include <rtx_shaders/post_fx_dark_souls_look_shafts.h>
 #include "rtx_ds1_menu_frame.h"
+#include "rtx_ds1_menu.h"
 
 namespace dxvk {
 
@@ -1318,7 +1319,8 @@ namespace dxvk {
   }
 
   void DxvkDarkSoulsLook::showImguiSettings() {
-    if (!ImGui::CollapsingHeader("Dark Souls image pipeline")) {
+    // Open at start (the user's call): the section players come to; it folds like the others.
+    if (!ImGui::CollapsingHeader("Dark Souls image pipeline", ImGuiTreeNodeFlags_DefaultOpen)) {
       return;
     }
     ImGui::Indent();
@@ -1388,7 +1390,7 @@ namespace dxvk {
       ImGui::Text("DoF far %.1f .. %.1f x %.2f  near %.2f .. %.2f x %.2f", dofFarBegin(), dofFarEnd(), dofFarStrength(),
                   dofNearBegin(), dofNearEnd(), dofNearStrength());
     }
-    if (ImGui::TreeNode("Dev")) {
+    if (DxvkDs1Dev::enable() && ImGui::TreeNode("Dev")) {
       if (shaftActive()) {
         const Vector3 d = shaftDirection();
         const Vector3 p1 = shaftPass1(), p2 = shaftPass2();

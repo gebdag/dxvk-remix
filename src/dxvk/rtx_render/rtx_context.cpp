@@ -534,7 +534,7 @@ namespace dxvk {
       const auto now = std::chrono::steady_clock::now();
       if (s_lastFrame.time_since_epoch().count() != 0) {
         const double gapMs = std::chrono::duration<double, std::milli>(now - s_lastFrame).count();
-        if (gapMs > 300.0) {
+        if (gapMs > 300.0 && DxvkDs1Dev::enable()) {
           const VkExtent3D target = targetImage != nullptr ? targetImage->info().extent : VkExtent3D { 0, 0, 0 };
           Logger::info(str::format("[DS1 hitch] ", gapMs, " ms since the last frame (target ",
                                    target.width, "x", target.height, ")"));

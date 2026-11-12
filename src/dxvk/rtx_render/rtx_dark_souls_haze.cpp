@@ -2,6 +2,7 @@
 #include <algorithm>
 #include "rtx_dark_souls_exposure.h"
 #include "rtx_options.h"
+#include "rtx_ds1_menu.h"
 #include "rtx_imgui.h"
 #include "../imgui/imgui.h"
 
@@ -121,7 +122,7 @@ namespace dxvk {
     // The game's values, as the proxy last sent them (read-only: they follow the area).
     if (!active()) {
       ImGui::TextDisabled("No values from the game yet (needs the DS1 proxy and a map draw).");
-    } else if (ImGui::TreeNode("Game values (set by the proxy)")) {
+    } else if (DxvkDs1Dev::enable() && ImGui::TreeNode("Game values (set by the proxy)")) {
       auto row = [](const char* label, const Vector3& v) { ImGui::Text("%-16s %.4g, %.4g, %.4g", label, v.x, v.y, v.z); };
       row("fog colour", fogColor());
       ImGui::Text("%-16s %.4g", "fog strength", fogStrength());

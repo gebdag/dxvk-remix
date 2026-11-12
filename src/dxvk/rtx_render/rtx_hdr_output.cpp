@@ -1,5 +1,6 @@
 #include "rtx_hdr_output.h"
 #include "rtx_imgui.h"
+#include "rtx_ds1_menu.h"
 #include "../imgui/imgui.h"
 #include "../../util/util_string.h"
 
@@ -45,11 +46,13 @@ namespace dxvk {
     RemixGui::Checkbox("Remix Tonemapper: Continue the Curve Past Its Knee", &remixCurveContinueObject());
     RemixGui::SliderFloat("Remix Tonemapper: Curve Knee (SDR output)", &remixCurveKneeObject(), 0.1f, 0.95f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
     ImGui::Separator();
-    if (ImGui::Button("Dump Final Frame (DDS)")) {
-      dumpFrameObject().setDeferred(true);
+    if (DxvkDs1Dev::enable()) {
+      if (ImGui::Button("Dump Final Frame (DDS)")) {
+        dumpFrameObject().setDeferred(true);
+      }
+      ImGui::SameLine();
+      ImGui::TextDisabled("Screenshots\\hdrFinal_*.dds, 16-bit float, gamma-encoded, 1.0 = SDR white");
     }
-    ImGui::SameLine();
-    ImGui::TextDisabled("Screenshots\\hdrFinal_*.dds, 16-bit float, gamma-encoded, 1.0 = SDR white");
     ImGui::EndDisabled();
     ImGui::Text("headroom %.2fx (%.0f / %.0f nits)", headroom(), peakNits(), paperWhiteNits());
     ImGui::Unindent();

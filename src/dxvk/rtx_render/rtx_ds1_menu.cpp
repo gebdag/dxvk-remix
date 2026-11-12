@@ -1,7 +1,8 @@
 // The Dark Souls menu: every DS1-specific runtime option in
 // one place, drawn as the developer menu's Dark Souls tab (Alt+X >
 // Developer Settings Menu > Dark Souls), Nier-style: one collapsing header per
-// feature, all closed by default. The widgets are the standard RemixGui ones bound
+// feature, closed by default but for the image pipeline. Authoring and debug tools show only in dev mode (DxvkDs1Dev).
+// The widgets are the standard RemixGui ones bound
 // to the options themselves, so tooltips come from the option descriptions and
 // values save to rtx.conf like any other setting.
 //
@@ -69,7 +70,10 @@ namespace dxvk {
         return;
       }
       ImGui::Indent();
-      RemixGui::Checkbox("Unlit Sprites (proxy marker)", &RtxOptions::fixedFunctionUnlitMarkerEnabledObject());
+      // The same marker as in Proxy draw markers: a dev switch.
+      if (DxvkDs1Dev::enable()) {
+        RemixGui::Checkbox("Unlit Sprites (proxy marker)", &RtxOptions::fixedFunctionUnlitMarkerEnabledObject());
+      }
       RemixGui::DragFloat("Additive Sprite Intensity", &RtxOptions::emissiveBlendOverrideEmissiveIntensityObject(), 0.01f, 0.0f, 20.0f, "%.2f", kClamp);
       RemixGui::DragFloat("Blended Sprite Intensity", &RtxOptions::unlitBlendedEmissiveIntensityObject(), 0.01f, 0.0f, 20.0f, "%.2f", kClamp);
       RemixGui::SliderFloat("Soft Particle Fade", &RtxOptions::particleSoftnessFactorObject(), 0.0f, 0.5f);
@@ -142,7 +146,9 @@ namespace dxvk {
         RemixGui::SliderFloat("Wet Porous Albedo Scale", &DxvkDarkSoulsWet::porousFactorObject(), 0.1f, 1.0f, "%.2f", kClamp);
         RemixGui::SliderFloat("Drip Rate", &DxvkDarkSoulsWet::dripRateObject(), 0.0f, 1000.0f, "%.0f", kClamp);
         RemixGui::SliderFloat("Drip Size (cm)", &DxvkDarkSoulsWet::dripSizeObject(), 0.1f, 5.0f, "%.2f", kClamp);
-        RemixGui::Checkbox("Soak All Over (test)", &DxvkDarkSoulsWet::soakObject());
+        if (DxvkDs1Dev::enable()) {
+          RemixGui::Checkbox("Soak All Over (test)", &DxvkDarkSoulsWet::soakObject());
+        }
         ImGui::TreePop();
       }
       ImGui::Unindent();
@@ -161,6 +167,15 @@ namespace dxvk {
     }
 
     void showMarkers() {
+      // Players get only the HUD switch; the markers themselves break rendering when off.
+      if (!DxvkDs1Dev::enable()) {
+        if (ImGui::CollapsingHeader("Game UI", kOpen)) {
+          ImGui::Indent();
+          RemixGui::Checkbox("Show Game UI (HUD and menus)", &RtxOptions::showGameUiObject());
+          ImGui::Unindent();
+        }
+        return;
+      }
       if (!ImGui::CollapsingHeader("Proxy draw markers", kOpen)) {
         return;
       }
@@ -186,8 +201,10 @@ namespace dxvk {
     postFx.darkSoulsHaze().showImguiSettings();
 
     showParticles();
-    // How strongly single textures glow (rtx_ds1_emissive.h).
-    DxvkDs1Emissive::showImguiSettings(ctx);
+    // How strongly single textures glow (rtx_ds1_emissive.h): an authoring tool that writes emissive_scales.txt.
+    if (DxvkDs1Dev::enable()) {
+      DxvkDs1Emissive::showImguiSettings(ctx);
+    }
     DxvkDarkSoulsSkin::showImguiSettings();
     DxvkDarkSoulsEffectParticles::showImguiSettings();
     DxvkDarkSoulsSwamp::showImguiSettings();
@@ -216,8 +233,10 @@ namespace dxvk {
     showBody();
     showMaterials();
     showMarkers();
-    // Every light Remix renders and where it comes from (rtx_light_manager_gui.cpp).
-    ctx->getCommonObjects()->getSceneManager().getLightManager().showDs1LightList();
+    // Every light Remix renders and where it comes from (rtx_light_manager_gui.cpp): a debug view.
+    if (DxvkDs1Dev::enable()) {
+      ctx->getCommonObjects()->getSceneManager().getLightManager().showDs1LightList();
+    }
 
     ImGui::PopItemWidth();
   }

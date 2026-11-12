@@ -2699,7 +2699,10 @@ namespace dxvk {
     RemixGui::Separator();
     RemixGui::Checkbox("Highlight Legacy Materials (flash red)", &RtxOptions::useHighlightLegacyModeObject());
 
-    DxvkDs1TexLab::showImguiSettings(ctx);
+    // Fork (DS1): the Texture Lab is a development tool (rtx.ds1Dev.enable).
+    if (DxvkDs1Dev::enable()) {
+      DxvkDs1TexLab::showImguiSettings(ctx);
+    }
 
   }
 
