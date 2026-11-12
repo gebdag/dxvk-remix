@@ -5,6 +5,7 @@
 #include "rtx_shader_manager.h"
 #include "dxvk_scoped_annotation.h"
 #include "rtx/pass/ds1_player_light_clearance.h"
+#include "rtx_dark_souls_ripples.h"
 
 #include <rtx_shaders/ds1_player_light_clearance.h>
 
@@ -125,6 +126,11 @@ namespace dxvk {
     args.ignore = std::max(playerLightClearanceIgnore(), 0.0f);
     // The proxy's offset sliders reach 5 per axis.
     args.maxOffset = 9.0f;
+    // The feet the proxy sends every frame (rtx.ds1Ripple.playerPosition); none yet: no body.
+    const Vector3 feet = DxvkDarkSoulsRipples::playerPosition();
+    args.bodyRadius = feet != Vector3(0.0f) ? std::max(playerLightBodyRadius(), 0.0f) : 0.0f;
+    args.bodyFeet = { feet.x, feet.y, feet.z };
+    args.bodyHeight = 1.8f;
     ctx->pushConstants(0, sizeof(args), &args);
 
     ctx->bindAccelerationStructure(DS1_PLC_BINDING_TLAS, tlas);

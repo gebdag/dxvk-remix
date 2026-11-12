@@ -191,8 +191,42 @@ void main()
   }
   position += push;
 
-  // 3. The push may cross another wall in a corner: the line from the head decides again.
-  if (pushLength > 0.0f)
+  // 3. Out of the player's body: rolling and crouching bring the head, and the light hung from it, down into the body, whose
+  // shadow then darkens everything the light reaches. The body is an upright capsule over the feet; the light moves straight out
+  // from its axis (away from the head's side when it lies on the axis).
+  bool bodyPush = false;
+  if (cb.bodyRadius > 0.0f)
+  {
+    const vec3 up = vec3(0.0f, 1.0f, 0.0f);
+    const vec3 fromFeet = position - cb.bodyFeet;
+    const float along = dot(fromFeet, up);
+    if (along > -radius && along < cb.bodyHeight + radius)
+    {
+      vec3 side = fromFeet - up * along;
+      const float need = cb.bodyRadius + radius;
+      float sideLength = length(side);
+      if (sideLength < need)
+      {
+        if (sideLength < 1e-3f)
+        {
+          side = target - cb.anchor;
+          side -= up * dot(side, up);
+          sideLength = length(side);
+          side = sideLength > 1e-3f ? side / sideLength : vec3(1.0f, 0.0f, 0.0f);
+          sideLength = 0.0f;
+        }
+        else
+        {
+          side /= sideLength;
+        }
+        position += side * (need - sideLength);
+        bodyPush = true;
+      }
+    }
+  }
+
+  // 4. The pushes may cross another wall in a corner: the line from the head decides again.
+  if (pushLength > 0.0f || bodyPush)
   {
     position = ds1AlongLine(position, keep);
   }

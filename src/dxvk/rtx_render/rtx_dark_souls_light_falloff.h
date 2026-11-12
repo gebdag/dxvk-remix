@@ -52,6 +52,10 @@ namespace dxvk {
                "Keep the DS1 player light out of walls: pull it back from its offset towards the head when a surface is in the way.");
     RTX_OPTION("rtx.ds1Lights", float, playerLightClearanceMargin, 0.1f,
                "Gap between the DS1 player light's emitter and the surface it was pulled back from, in world units.");
+    RTX_OPTION("rtx.ds1Lights", float, playerLightBodyRadius, 0.35f,
+               "Keep the DS1 player light out of the player's body: no closer than this (plus its emitter radius) to the upright line over "
+               "the player's feet, up to 1.8 m. Rolling and crouching bring the head, and the light hung from it, down into the body, "
+               "whose shadow then darkened everything the light reached. In world units; 0: off.");
     RTX_OPTION("rtx.ds1Lights", float, playerLightClearanceIgnore, 0.1f,
                "Hits closer than this to the head are ignored, in world units (characters never count).");
   };

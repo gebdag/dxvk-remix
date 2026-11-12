@@ -48,5 +48,8 @@ struct Ds1PlayerLightClearanceArgs {
   // A light farther than this from the anchor is left alone: the anchor is missing (still the
   // option's default) or a frame behind a warp.
   float maxOffset;
-  float pad0;
+  // The player's body: an upright capsule over the feet the light is kept out of (radius 0: none).
+  float bodyRadius;
+  vec3 bodyFeet;
+  float bodyHeight;
 };
