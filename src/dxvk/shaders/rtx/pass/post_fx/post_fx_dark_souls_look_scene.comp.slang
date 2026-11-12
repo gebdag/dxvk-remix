@@ -425,18 +425,24 @@ void main(uint2 pixel : SV_DispatchThreadID)
   // would cap their own colour at what they let through: as far as such layers cover the pixel there is no hold.
   vec3 hazedSurface = g * hazeA + resolvedB * layerThrough;
   const float layerTransmittance = saturate(hazedLayers.a);
+  // How much of hazedSurface is the plain hazed line (its additive share times the haze gain) rather than the hold (its
+  // additive share at a gain of no more than 1).
+  float unheld = 1.0f;
   if (cb.layerClipBehind != 0 && cb.keepHeadroom == 0 && layerTransmittance < 1.0f && layerCoverage < 0.25f)
   {
     const vec3 liftedAdditive = additive * layerLift;
     const vec3 surfaceAlone = max(g - liftedAdditive, vec3(0.0f)) * hazeA + resolvedB * layerThrough;
     const vec3 held = min(surfaceAlone, vec3(layerTransmittance)) + liftedAdditive * min(hazeA, vec3(1.0f));
-    hazedSurface = lerp(held, hazedSurface, saturate(layerCoverage * 4.0f));
+    unheld = saturate(layerCoverage * 4.0f);
+    hazedSurface = lerp(held, hazedSurface, unheld);
   }
   g = hazedSurface + layerHazeB * layerShare;
   // The game draws its additive particles after the fog, unfogged (their vertex shader gets c159.xy = (1, 0) for
-  // them), and adds them in gamma: the haze above dimmed their share of the colour by the haze gain, so it
-  // goes back. And it takes its subtractive ones off in gamma, absolutely, whatever is behind them.
-  g += additive * max(1.0f - hazeA, vec3(0.0f));
+  // them), and adds them in gamma: the haze above scaled their share of the colour by the haze gain, so that comes
+  // off again, whichever way it went. A gain over 1 (the Kiln's white passage, ten) took the Kiln's additive ghost
+  // knights in front of it to white (frame_20261112_114424). The hold already keeps their share at a gain of 1 at most.
+  // And it takes its subtractive ones off in gamma, absolutely, whatever is behind them.
+  g += additive * lerp(max(1.0f - hazeA, vec3(0.0f)), vec3(1.0f) - hazeA, unheld);
   g = max(g - subtract, vec3(0.0f));
   // Mode 2: the hazed layers over it all, as the game's blend puts them: their colour (the resolve composited them in gamma, each under
   // the ones in front of it) with the haze of their own depth, and that depth's fog colour as far as they cover the pixel.
