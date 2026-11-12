@@ -127,10 +127,10 @@ bool ds1WideWall(vec3 origin, vec3 direction, float tMin, float tMax, float spre
   return true;
 }
 
-// Where the light may go along the line from the head towards `target`: short of the first wall across the line, by `keep`.
-vec3 ds1AlongLine(vec3 target, float keep)
+// Where the light may go along the line from `anchor` towards `target`: short of the first wall across the line, by `keep`.
+vec3 ds1AlongLine(vec3 anchor, vec3 target, float keep)
 {
-  const vec3 toTarget = target - cb.anchor;
+  const vec3 toTarget = target - anchor;
   const float distance = length(toTarget);
   if (!(distance > cb.ignore))
   {
@@ -140,11 +140,11 @@ vec3 ds1AlongLine(vec3 target, float keep)
   // Two of the four side rays 15 cm off: a wall the line grazes blocks the rays on its side only; a ladder rung or a rope blocks
   // the centre ray alone (frame_20261109_171134: the light jumped to the head and back as the player swayed against a ladder).
   float wall;
-  if (!ds1WideWall(cb.anchor, direction, cb.ignore, distance + keep, 0.15f, 2u, wall))
+  if (!ds1WideWall(anchor, direction, cb.ignore, distance + keep, 0.15f, 2u, wall))
   {
     return target;
   }
-  return cb.anchor + direction * clamp(wall - keep, 0.0f, distance);
+  return anchor + direction * clamp(wall - keep, 0.0f, distance);
 }
 
 [shader("compute")]
@@ -163,8 +163,19 @@ void main()
     return;
   }
 
+  // The game's own light source the light hangs from (the anchor) goes under the floor in a roll: 0.36 m below it in
+  // frame_20261112_160708, where it sits 0.4-1.0 m above it standing. Lines from there meet the floor from beneath, which no ray
+  // counts, and the light stayed under the ground (the user, Manus's arena, three times). The feet stay on the ground: the lines
+  // start at least 30 cm above them, and the floor is looked for from at least 50 cm above them.
+  const bool feetKnown = any(cb.bodyFeet != vec3(0.0f));
+  vec3 anchor = cb.anchor;
+  if (feetKnown)
+  {
+    anchor.y = max(anchor.y, cb.bodyFeet.y + 0.3f);
+  }
+
   // 1. Out from behind a wall across the line from the head.
-  vec3 position = ds1AlongLine(target, keep);
+  vec3 position = ds1AlongLine(anchor, target, keep);
 
   // 2. Away from walls beside the sphere: every direction that meets a wall closer than `keep` pushes the light back by what
   // is missing. Opposite walls closer together than the sphere cancel out and leave it in the middle.
@@ -228,16 +239,15 @@ void main()
   // 4. The pushes may cross another wall in a corner: the line from the head decides again.
   if (pushLength > 0.0f || bodyPush)
   {
-    position = ds1AlongLine(position, keep);
+    position = ds1AlongLine(anchor, position, keep);
   }
 
-  // 5. Never under the floor. A roll brings the head within the line's ignored first 10 cm of the floor, and the light hung
-  // below it went through (the user, Manus's arena: the light under the ground and the arena black). Straight down from the
-  // head's height over the light: a floor met above the light, or closer under it than the emitter and the margin, lifts the
-  // light onto it. Nothing above the head counts, so a bridge or a ceiling over the player does not.
+  // 5. Never under the floor (the user, Manus's arena: the light under the ground and the arena black). Straight down from
+  // above the anchor, the light and half a metre over the feet: a floor met above the light, or closer under it than the emitter
+  // and the margin, lifts the light onto it. Nothing higher counts, so a bridge or a ceiling over the player does not.
   {
     const vec3 down = vec3(0.0f, -1.0f, 0.0f);
-    const float top = max(cb.anchor.y, position.y) + 0.2f;
+    const float top = max(max(anchor.y, position.y), feetKnown ? cb.bodyFeet.y + 0.5f : position.y) + 0.2f;
     const vec3 origin = vec3(position.x, top, position.z);
     float floorT;
     if (ds1WideWall(origin, down, 0.0f, top - position.y + keep, 0.08f, 3u, floorT))
