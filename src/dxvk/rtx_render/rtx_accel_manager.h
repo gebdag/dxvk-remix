@@ -61,6 +61,7 @@ class AccelManager : public CommonDeviceObject {
     uint32_t reorderedSurfacesOffset = UINT32_MAX;
     bool hasOmmInstances = false;
     bool hasSssInstances = false;
+    bool isVolatile = false;  // Fork (DS1): see BlasBucketKey::isVolatile
 
     // The PooledBlas assigned to this bucket by createBlasBuffersAndInstances.
     // Stored here so the per-bucket cache can capture it after buildBlases.
@@ -81,7 +82,12 @@ class AccelManager : public CommonDeviceObject {
     uint8_t instanceMask = 0;
     bool usesUnorderedApproximations = false;
     bool isSubsurface = false;
-    uint8_t pad = 0;
+    // Fork (DS1): instances whose merged-BLAS input changed recently (a moving or re-uploaded mesh, wind-swayed foliage,
+    // a new instance) go to buckets of their own. A merged bucket is rebuilt whole when one of its instances changes, so
+    // one such instance among still map pieces had the still ones' BLAS rebuilt every frame too: in DS1 nearly every
+    // bucket, every frame (Firelink: 87 % of the cached buckets, 1.5 ms of BLAS builds). This takes the padding byte's
+    // place, so the key stays a plain 16 bytes for the hash.
+    uint8_t isVolatile = 0;
 
     bool operator==(const BlasBucketKey& other) const {
       return instanceMask == other.instanceMask &&
@@ -89,7 +95,8 @@ class AccelManager : public CommonDeviceObject {
              customIndexFlags == other.customIndexFlags &&
              instanceFlags == other.instanceFlags &&
              usesUnorderedApproximations == other.usesUnorderedApproximations &&
-             isSubsurface == other.isSubsurface;
+             isSubsurface == other.isSubsurface &&
+             isVolatile == other.isVolatile;
     }
   };
 
@@ -102,7 +109,7 @@ class AccelManager : public CommonDeviceObject {
           &BlasBucketKey::instanceMask,
           &BlasBucketKey::usesUnorderedApproximations,
           &BlasBucketKey::isSubsurface,
-          &BlasBucketKey::pad>(k));
+          &BlasBucketKey::isVolatile>(k));
     }
   };
 
@@ -267,6 +274,11 @@ private:
     // Which TLAS type(s) this bucket was emitted to
     bool isUnordered = false;
     bool hasSssInstances = false;
+    // Fork (DS1): the bucket's side of BlasBucketKey::isVolatile, and whether one of its instances was destroyed since
+    // it was built (removeInstanceFromBucketCache): its instance pointers may dangle, so it is rebuilt without reading them.
+    bool isVolatile = false;
+    bool invalidated = false;
+    uint32_t triangleCount = 0;
   };
   std::vector<CachedBucketState> m_cachedBuckets;
 

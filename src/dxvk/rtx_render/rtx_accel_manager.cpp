@@ -30,6 +30,7 @@
 #include "rtx_scene_manager.h"
 #include "rtx_accel_manager.h"
 #include "rtx_point_instancer_system.h"
+#include "rtx_ds1_menu.h"
 
 #include "../d3d9/d3d9_state.h"
 #include "../../util/util_global_time.h"
@@ -85,13 +86,34 @@ namespace dxvk {
   }
 
   void AccelManager::removeInstanceFromBucketCache(RtInstance* instance) {
-    if (m_instanceBucketIndex.erase(instance) == 0) {
+    const auto indexed = m_instanceBucketIndex.find(instance);
+    if (indexed == m_instanceBucketIndex.end()) {
       return;
     }
 
-    m_cachedBuckets.clear();
-    m_instanceBucketIndex.clear();
+    // Fork (DS1): only the destroyed instance's bucket goes, not the whole cache. DS1 destroys instances every few frames
+    // (effects, sprites, re-uploaded meshes), which left one frame in three without a cache: every merged BLAS built from
+    // nothing. The bucket's instance pointers may now dangle (and a new instance can take the freed address), so it is
+    // marked and rebuilt without reading them; the other buckets hold no pointer to this instance.
+    if (indexed->second < m_cachedBuckets.size()) {
+      m_cachedBuckets[indexed->second].invalidated = true;
+    } else {
+      m_cachedBuckets.clear();
+      m_instanceBucketIndex.clear();
+      m_lastProcessedGeneration = UINT64_MAX;
+      return;
+    }
+    m_instanceBucketIndex.erase(indexed);
     m_lastProcessedGeneration = UINT64_MAX;
+  }
+
+  // Fork (DS1): whether an instance belongs in a volatile merged-BLAS bucket (BlasBucketKey::isVolatile): its BLAS input
+  // changed within the last few seconds. Both frames are counted in steps of 64, so instances that came to rest at
+  // different times turn still on the same frame and their bucket is rebuilt once for all of them, not once for each.
+  static bool isVolatileForBlas(const RtInstance& instance, uint32_t currentFrame) {
+    constexpr uint32_t kFramesPerStep = 64;
+    constexpr uint32_t kStillAfterSteps = 4;
+    return currentFrame / kFramesPerStep - instance.getFrameLastBlasChange() / kFramesPerStep < kStillAfterSteps;
   }
 
   void AccelManager::garbageCollection() {
@@ -443,6 +465,27 @@ namespace dxvk {
     auto& instances = instanceManager.getInstanceTable();
     const uint32_t currentFrame = m_device->getCurrentFrameId();
 
+    // Fork (DS1), dev diagnostics: how often the cached merged BLAS buckets are rebuilt and why, logged every 600 frames.
+    // A bucket is rebuilt whole when one of its instances changed, and all of them when an opacity micromap was built the
+    // frame before (m_ommBindPending), so one source of new micromaps every frame rebuilds the static scene every frame.
+    struct BucketStats {
+      uint32_t frames = 0, unchanged = 0, noCache = 0, allDirtyForOmm = 0;
+      uint32_t buckets = 0, volatileBuckets = 0, dirtyBuckets = 0, dirtyStill = 0, stillMerges = 0;
+      uint32_t removed = 0, identity = 0, blasDirty = 0, geometryUpdated = 0, keyChanged = 0, sizeMismatch = 0;
+      uint64_t trianglesBuilt = 0, trianglesKept = 0;
+    };
+    static BucketStats s_bucketStats;
+    if (DxvkDs1Dev::enable() && ++s_bucketStats.frames >= 600) {
+      const BucketStats& s = s_bucketStats;
+      Logger::info(str::format("[DS1 BLAS] last ", s.frames, " frames: ", s.unchanged, " with the scene unchanged, ", s.noCache,
+        " without a bucket cache, ", s.allDirtyForOmm, " rebuilt every bucket for new opacity micromaps; otherwise ", s.dirtyBuckets,
+        " of ", s.buckets, " buckets rebuilt (", s.volatileBuckets, " volatile; ", s.dirtyStill, " still ones rebuilt, ", s.stillMerges,
+        " merges of the still buckets; instance removed ", s.removed, ", replaced ", s.identity, ", BLAS dirty ", s.blasDirty,
+        ", geometry updated or resting ", s.geometryUpdated + s.keyChanged, ", size mismatch ", s.sizeMismatch,
+        "). Merged BLAS triangles per frame: ", s.trianglesBuilt / s.frames, " built, ", s.trianglesKept / s.frames, " kept from the cache"));
+      s_bucketStats = {};
+    }
+
     // --- Full-skip fast path ---
     // If no scene changes occurred since the last build, we can reuse all cached
     // BLAS/TLAS data and skip the expensive per-instance iteration, bucket merging,
@@ -455,6 +498,7 @@ namespace dxvk {
       const bool sceneUnchanged = (currentGeneration == m_lastProcessedGeneration);
 
       if (sceneUnchanged && !m_ommBindPending && !m_reorderedSurfaces.empty()) {
+        s_bucketStats.unchanged++;
         m_sceneUnchangedThisFrame = true;
         // Touch pooled (merged) BLAS
         for (auto& blas : m_blasPool) {
@@ -517,17 +561,33 @@ namespace dxvk {
       // When newly built OMMs need binding, force all buckets dirty so that
       // tryBindOpacityMicromap runs on every instance's BLAS rebuild.
       if (m_ommBindPending) {
+        s_bucketStats.allDirtyForOmm++;
         bucketDirty.resize(m_cachedBuckets.size(), true);
         anyBucketDirty = true;
         m_ommBindPending = false;
       } else {
         std::unordered_set<RtInstance*> currentInstanceSet(instances.begin(), instances.end());
         bucketDirty.resize(m_cachedBuckets.size(), false);
+        s_bucketStats.buckets += uint32_t(m_cachedBuckets.size());
 
         for (uint32_t bi = 0; bi < m_cachedBuckets.size(); ++bi) {
           const auto& cachedBucket = m_cachedBuckets[bi];
+          s_bucketStats.volatileBuckets += cachedBucket.isVolatile ? 1 : 0;
+
+          // Fork (DS1): an instance of this bucket was destroyed (removeInstanceFromBucketCache); its pointers are not read.
+          if (cachedBucket.invalidated) {
+            s_bucketStats.dirtyBuckets++;
+            s_bucketStats.removed++;
+            s_bucketStats.dirtyStill += cachedBucket.isVolatile ? 0 : 1;
+            bucketDirty[bi] = true;
+            anyBucketDirty = true;
+            continue;
+          }
 
           if (cachedBucket.instances.size() != cachedBucket.instanceCacheIdentities.size()) {
+            s_bucketStats.dirtyBuckets++;
+            s_bucketStats.sizeMismatch++;
+            s_bucketStats.dirtyStill += cachedBucket.isVolatile ? 0 : 1;
             bucketDirty[bi] = true;
             anyBucketDirty = true;
             continue;
@@ -542,12 +602,18 @@ namespace dxvk {
             // dereferenced. Mark the bucket dirty so it gets rebuilt without
             // touching the stale entry.
             if (currentInstanceSet.find(inst) == currentInstanceSet.end()) {
+              s_bucketStats.dirtyBuckets++;
+              s_bucketStats.removed++;
+              s_bucketStats.dirtyStill += cachedBucket.isVolatile ? 0 : 1;
               bucketDirty[bi] = true;
               anyBucketDirty = true;
               break;
             }
 
             if (inst->getCacheIdentity() != cachedBucket.instanceCacheIdentities[ii]) {
+              s_bucketStats.dirtyBuckets++;
+              s_bucketStats.identity++;
+              s_bucketStats.dirtyStill += cachedBucket.isVolatile ? 0 : 1;
               bucketDirty[bi] = true;
               anyBucketDirty = true;
               break;
@@ -560,21 +626,51 @@ namespace dxvk {
               inst->getVkInstance().flags != cachedBucket.tlasInstance.flags ||
               customIndexFlags != cachedBucket.tlasInstance.instanceCustomIndex ||
               inst->usesUnorderedApproximations() != cachedBucket.isUnordered ||
-              inst->isSubsurface() != cachedBucket.hasSssInstances;
+              inst->isSubsurface() != cachedBucket.hasSssInstances ||
+              // Fork (DS1): an instance of a volatile bucket that has come to rest moves to a still one.
+              isVolatileForBlas(*inst, currentFrame) != cachedBucket.isVolatile;
 
             if (inst->isBlasDirty() ||
                 inst->getBlas()->frameLastUpdated == currentFrame ||
                 bucketKeyChanged) {
+              s_bucketStats.dirtyBuckets++;
+              s_bucketStats.dirtyStill += cachedBucket.isVolatile ? 0 : 1;
+              if (inst->isBlasDirty()) {
+                s_bucketStats.blasDirty++;
+              } else if (inst->getBlas()->frameLastUpdated == currentFrame) {
+                s_bucketStats.geometryUpdated++;
+              } else {
+                s_bucketStats.keyChanged++;
+              }
               bucketDirty[bi] = true;
               anyBucketDirty = true;
               break;
             }
           }
         }
+
+        // Fork (DS1): instances that come to rest form a new still bucket beside the cached ones (a clean bucket is not
+        // reopened), so their number grows over a session. Past this many, all the still buckets are rebuilt once, which
+        // merges them back into one per key.
+        constexpr uint32_t kMaxStillBuckets = 48;
+        uint32_t stillBuckets = 0;
+        for (uint32_t bi = 0; bi < m_cachedBuckets.size(); ++bi) {
+          stillBuckets += !bucketDirty[bi] && !m_cachedBuckets[bi].isVolatile ? 1 : 0;
+        }
+        if (stillBuckets > kMaxStillBuckets) {
+          s_bucketStats.stillMerges++;
+          for (uint32_t bi = 0; bi < m_cachedBuckets.size(); ++bi) {
+            if (!m_cachedBuckets[bi].isVolatile) {
+              bucketDirty[bi] = true;
+            }
+          }
+          anyBucketDirty = true;
+        }
       }
     } else {
       // With no cached buckets, every bucket is built from scratch below, so
       // pending OMM binding invalidation is naturally consumed by the full pass.
+      s_bucketStats.noCache++;
       m_ommBindPending = false;
     }
 
@@ -780,6 +876,12 @@ namespace dxvk {
         bucketKey.instanceFlags = instance->getVkInstance().flags;
         bucketKey.usesUnorderedApproximations = instance->usesUnorderedApproximations();
         bucketKey.isSubsurface = instance->isSubsurface();
+        // Fork (DS1): an instance that changed this frame (or is new: instances start BLAS dirty) is volatile from here on,
+        // until it has rested for a few seconds (isVolatileForBlas).
+        if (instance->isBlasDirty() || blasEntry->frameLastUpdated == currentFrame) {
+          instance->setFrameLastBlasChange(currentFrame);
+        }
+        bucketKey.isVolatile = isVolatileForBlas(*instance, currentFrame) ? 1 : 0;
 
         bool merged = false;
         auto bucketIt = bucketMap.find(bucketKey);
@@ -790,6 +892,7 @@ namespace dxvk {
         // The instance couldn't be merged into any bucket - make a new one
         if (!merged) {
           auto newBucket = std::make_unique<BlasBucket>();
+          newBucket->isVolatile = bucketKey.isVolatile != 0;
           merged = newBucket->tryAddInstance(instance);
           assert(merged);
 
@@ -1068,6 +1171,7 @@ namespace dxvk {
       if (hasValidBucketCache) {
         for (uint32_t bi = 0; bi < m_cachedBuckets.size(); ++bi) {
           if (!bucketDirty[bi]) {
+            s_bucketStats.trianglesKept += m_cachedBuckets[bi].triangleCount;
             const uint32_t newIdx = static_cast<uint32_t>(newCachedBuckets.size());
             // Map instances to the new bucket index
             for (RtInstance* inst : m_cachedBuckets[bi].instances) {
@@ -1094,6 +1198,11 @@ namespace dxvk {
         cached.indexOffsets = bucket->indexOffsets;
         cached.isUnordered = bucket->usesUnorderedApproximations;
         cached.hasSssInstances = bucket->hasSssInstances;
+        cached.isVolatile = bucket->isVolatile;
+        for (const uint32_t primitiveCount : bucket->primitiveCounts) {
+          cached.triangleCount += primitiveCount;
+        }
+        s_bucketStats.trianglesBuilt += cached.triangleCount;
 
         // Capture the assigned BLAS (stored on bucket by createBlasBuffersAndInstances)
         if (bucket->assignedBlas) {

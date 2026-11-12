@@ -198,6 +198,10 @@ uint32_t getFirstBillboardIndex() const { return m_firstBillboard; }
   // (transform, material, or geometry change).  New instances default to dirty.
   bool isBlasDirty() const { return m_blasDirty; }
   void clearBlasDirty() { m_blasDirty = false; }
+  // Fork (DS1): the frame this instance's merged-BLAS input last changed (its transform, key or geometry), kept by the
+  // AccelManager to tell instances that keep changing from still ones (rtx_accel_manager.cpp, volatile buckets).
+  uint32_t getFrameLastBlasChange() const { return m_frameLastBlasChange; }
+  void setFrameLastBlasChange(uint32_t frame) { m_frameLastBlasChange = frame; }
   bool isBillboardGeometryDirty() const { return m_billboardGeometryDirty; }
   void clearBillboardGeometryDirty() { m_billboardGeometryDirty = false; }
 
@@ -263,6 +267,7 @@ private:
   bool m_isCreatedByRenderer = false;
   bool m_isSubsurface = false;
   bool m_blasDirty = true;  // Needs reprocessing in mergeInstancesIntoBlas; starts dirty for new instances
+  uint32_t m_frameLastBlasChange = 0;  // Fork (DS1): see getFrameLastBlasChange
   bool m_billboardGeometryDirty = true;  // Needs initial geometry info generation for billboard-derived layout
   BlasEntry* m_linkedBlas = nullptr;
   XXH64_hash_t m_materialHash = kEmptyHash;

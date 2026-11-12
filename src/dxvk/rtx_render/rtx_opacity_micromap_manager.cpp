@@ -28,6 +28,7 @@
 #include "rtx_options.h"
 #include "rtx_hash_collision_detection.h"
 #include "rtx_texture_manager.h"
+#include "rtx_ds1_menu.h"
 
 #include "rtx_imgui.h"
 
@@ -47,6 +48,9 @@ const VkDeviceSize kBufferAlignment = 16;
 const VkDeviceSize kBufferInBlasUsageAlignment = 256;
 
 namespace dxvk {
+  // Fork (DS1), dev diagnostics ([DS1 OMM] log in onFrameStart).
+  static uint32_t s_ds1OmmFrames = 0, s_ds1BuiltMeshOmms = 0, s_ds1BuiltBillboardOmms = 0;
+
   DxvkOpacityMicromap::DxvkOpacityMicromap(DxvkDevice& device) : m_vkd(device.vkd()) { }
 
   DxvkOpacityMicromap::~DxvkOpacityMicromap() {
@@ -2330,6 +2334,8 @@ namespace dxvk {
       if (result == OmmResult::Success) {
         ommCacheItem.cacheState = OpacityMicromapCacheState::eStep3_Built;
         m_hasNewlyBuiltOmms = true;
+        // Fork (DS1), dev diagnostics (see onFrameStart): billboard micromaps are 2 triangles.
+        (ommCacheItem.numTriangles <= 2 ? s_ds1BuiltBillboardOmms : s_ds1BuiltMeshOmms)++;
         // Move the item from the baked list to the end of the built list
         auto ommSrcHashIterToMove = ommSrcHashIter++;
         m_builtList.splice(m_builtList.end(), m_bakedList, ommSrcHashIterToMove);
@@ -2392,6 +2398,14 @@ namespace dxvk {
   void OpacityMicromapManager::onFrameStart(Rc<DxvkContext> ctx) {
     ScopedCpuProfileZone();
     const uint32_t currentFrameIndex = m_device->getCurrentFrameId();
+
+    // Fork (DS1), dev diagnostics: micromaps built, every 600 frames. Each frame with a new one makes the accel manager
+    // rebuild every merged BLAS bucket the frame after ([DS1 BLAS] in rtx_accel_manager.cpp).
+    if (DxvkDs1Dev::enable() && ++s_ds1OmmFrames >= 600) {
+      Logger::info(str::format("[DS1 OMM] last ", s_ds1OmmFrames, " frames: built ", s_ds1BuiltMeshOmms, " mesh and ", s_ds1BuiltBillboardOmms,
+        " billboard micromaps; cache holds ", m_ommCache.size(), " (", m_builtList.size(), " built, ", m_bakedList.size(), " baked, waiting)"));
+      s_ds1OmmFrames = s_ds1BuiltMeshOmms = s_ds1BuiltBillboardOmms = 0;
+    }
 
     m_numBoundOMMs = 0;
     m_numRequestedOMMBindings = 0;
