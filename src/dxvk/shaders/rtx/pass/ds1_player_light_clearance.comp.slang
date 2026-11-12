@@ -231,6 +231,22 @@ void main()
     position = ds1AlongLine(position, keep);
   }
 
+  // 5. Never under the floor. A roll brings the head within the line's ignored first 10 cm of the floor, and the light hung
+  // below it went through (the user, Manus's arena: the light under the ground and the arena black). Straight down from the
+  // head's height over the light: a floor met above the light, or closer under it than the emitter and the margin, lifts the
+  // light onto it. Nothing above the head counts, so a bridge or a ceiling over the player does not.
+  {
+    const vec3 down = vec3(0.0f, -1.0f, 0.0f);
+    const float top = max(cb.anchor.y, position.y) + 0.2f;
+    const vec3 origin = vec3(position.x, top, position.z);
+    float floorT;
+    if (ds1WideWall(origin, down, 0.0f, top - position.y + keep, 0.08f, 3u, floorT))
+    {
+      const float floorY = top - floorT;
+      position.y = max(position.y, floorY + keep);
+    }
+  }
+
   if (any(position != target))
   {
     data0.xyz = asuint(position);
