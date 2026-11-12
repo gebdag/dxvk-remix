@@ -507,6 +507,7 @@ namespace dxvk {
     args.layersOverHaze = layerTargets ? m_layerHazeMode : 0u;
     args.layerFogThrough = layerTargets ? std::clamp(layerFogThrough(), 0.0f, 1.0f) : 0.0f;
     args.layerOwnHaze = std::clamp(layerOwnHaze(), 0.0f, 1.0f);
+    args.layerClipBehind = layerTargets && layerClipBehind() ? 1u : 0u;
     // With no meter (a menu's character view, or metering off) there is nothing to go by: the eye returns to no lift, not to stay where it was.
     if (mode != 2 && !DxvkDarkSoulsExposure::wantsMeter()) {
       updateEye(0.0f, 1.0f, false);

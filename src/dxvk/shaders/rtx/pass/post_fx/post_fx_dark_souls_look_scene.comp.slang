@@ -410,7 +410,29 @@ void main(uint2 pixel : SV_DispatchThreadID)
   // Whatever the eye makes of it, the frame's light is the same: the meter reads the frame without the lift.
   const float liftedLuminance = dot(saturate((g - unlifted) * hazeA + layerGamma * (layerLift - 1.0f) * layerHazeA),
                                     vec3(0.2125f, 0.7154f, 0.0721f));
-  g = g * hazeA + resolvedB * layerThrough + layerHazeB * layerShare;
+  // The game's target holds no more than white, and each draw is clipped as it is written: a surface its fog takes past
+  // white is white when an alpha layer then blends over it, and shows through the layer as white times what the layer lets
+  // through. Here the surface's radiance arrives already scaled by that (the resolve's attenuation) and the clip comes
+  // last, so a surface hazed far past white stayed white behind the layer until the layer was all but opaque, and its
+  // channels came down one after the other, tinted (the Kiln's doorway: the passage's haze gain is ten). So the hazed
+  // surface is held to what the layers let through of white. Not with headroom kept (HDR10 output shows what the target cuts).
+  // The additive sprites' share of the colour is no surface, nor are the unhazed alpha layers (a veil mesh, a fog wall's
+  // ribbons), which the resolve puts with them: the game adds them after its fog and they keep what they are. That share,
+  // with the eye's lift it has in the colour, is taken out before the hold and goes back at the haze gain it has in the
+  // line above, no more than 1: with what the line after this one gives back (the share times 1 - gain) it is whole.
+  // (Without the hold a gain over 1 multiplies it, which white hides.)
+  // Hazed alpha layers (smoke, dust) stay in the radiance in this mode and cannot be told from the surface, and the hold
+  // would cap their own colour at what they let through: as far as such layers cover the pixel there is no hold.
+  vec3 hazedSurface = g * hazeA + resolvedB * layerThrough;
+  const float layerTransmittance = saturate(hazedLayers.a);
+  if (cb.layerClipBehind != 0 && cb.keepHeadroom == 0 && layerTransmittance < 1.0f && layerCoverage < 0.25f)
+  {
+    const vec3 liftedAdditive = additive * layerLift;
+    const vec3 surfaceAlone = max(g - liftedAdditive, vec3(0.0f)) * hazeA + resolvedB * layerThrough;
+    const vec3 held = min(surfaceAlone, vec3(layerTransmittance)) + liftedAdditive * min(hazeA, vec3(1.0f));
+    hazedSurface = lerp(held, hazedSurface, saturate(layerCoverage * 4.0f));
+  }
+  g = hazedSurface + layerHazeB * layerShare;
   // The game draws its additive particles after the fog, unfogged (their vertex shader gets c159.xy = (1, 0) for
   // them), and adds them in gamma: the haze above dimmed their share of the colour by the haze gain, so it
   // goes back. And it takes its subtractive ones off in gamma, absolutely, whatever is behind them.

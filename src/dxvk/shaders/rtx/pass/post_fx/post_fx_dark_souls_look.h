@@ -221,6 +221,9 @@ struct PostFxDarkSoulsLookSceneArgs {
   float layerFogThrough;
   // How much of the haze of their own depth the hazed layers take (rtx.ds1Look.layerOwnHaze).
   float layerOwnHaze;
+  // 1: the hazed surface behind unlit alpha layers shows no brighter than white times what they let through
+  // (rtx.ds1Look.layerClipBehind).
+  uint layerClipBehind;
 };
 
 struct PostFxDarkSoulsLookEyeArgs {
