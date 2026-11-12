@@ -1334,6 +1334,8 @@ namespace dxvk {
     RemixGui::Checkbox("Full Resolution Depth of Field", &dofFullResObject());
     RemixGui::Checkbox("Game Light Shafts", &shaftEnableObject());
     RemixGui::Checkbox("Eye Adaptation (dark parts of the view come up)", &eyeEnableObject());
+    const bool advanced = DxvkDs1MenuView::advanced();
+    if (advanced) {
     ImGui::BeginDisabled(!eyeEnable());
     ImGui::Text("Eye: view's lift %.2f", m_eyeViewGain);
     RemixGui::DragFloat("Eye: Largest Lift", &eyeMaxGainObject(), 0.05f, 1.0f, 8.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
@@ -1347,6 +1349,7 @@ namespace dxvk {
                         ImGuiSliderFlags_AlwaysClamp);
     RemixGui::DragFloat("Fog / DoF Temporal Blend (1 = no history)", &depthTemporalBlendObject(), 0.01f, 0.01f, 1.0f, "%.2f",
                         ImGuiSliderFlags_AlwaysClamp);
+    }
     // Image adjustments for players, on top of the game's look (which replaces Remix's tonemapper while it runs).
     if (ImGui::TreeNodeEx("Image Adjustments", ImGuiTreeNodeFlags_DefaultOpen)) {
       ImGui::TextDisabled("On top of the game's look. The defaults change nothing.");
@@ -1357,8 +1360,10 @@ namespace dxvk {
       RemixGui::SliderFloat("Shadow Lift", &adjustLiftObject(), 0.0f, 0.2f, "%.3f", clamp);
       RemixGui::SliderFloat("Contrast", &adjustContrastObject(), 0.5f, 1.5f, "%.2f", clamp);
       RemixGui::SliderFloat("Saturation", &adjustSaturationObject(), 0.0f, 2.0f, "%.2f", clamp);
-      RemixGui::SliderFloat("Black Crush Softening (toe)", &blackToeObject(), 0.0f, 1.0f, "%.2f", clamp);
-      RemixGui::SliderFloat("Game Grade's Black Offset", &blackOffsetScaleObject(), 0.0f, 1.5f, "%.2f", clamp);
+      if (advanced) {
+        RemixGui::SliderFloat("Black Crush Softening (toe)", &blackToeObject(), 0.0f, 1.0f, "%.2f", clamp);
+        RemixGui::SliderFloat("Game Grade's Black Offset", &blackOffsetScaleObject(), 0.0f, 1.5f, "%.2f", clamp);
+      }
       RemixGui::SliderFloat("Bloom Strength", &bloomStrengthObject(), 0.0f, 3.0f, "%.2f", clamp);
       RemixGui::SliderFloat("Light Shaft Strength", &shaftStrengthObject(), 0.0f, 3.0f, "%.2f", clamp);
       if (ImGui::Button("Reset Adjustments")) {
@@ -1374,6 +1379,10 @@ namespace dxvk {
         shaftStrength.resetToDefault();
       }
       ImGui::TreePop();
+    }
+    if (!advanced) {
+      ImGui::Unindent();
+      return;
     }
     RemixGui::Checkbox("Gamma-Space Albedo (game texture multiply)", &gammaAlbedoObject());
     ImGui::BeginDisabled(!gammaAlbedo());

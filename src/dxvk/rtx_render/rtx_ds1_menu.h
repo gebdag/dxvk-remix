@@ -18,6 +18,15 @@ namespace dxvk {
                     "Dev mode: shows the DS1 authoring and debug tools in the Dark Souls tab and the Texture Lab, and logs hitches.");
   };
 
+  // The Dark Souls tab's Advanced checkbox: off (the default), the tab shows a player's switches only (the look's on/off and
+  // image adjustments, motion blur, HDR10, effects, ripples, the wet player, characters, the HUD); on, every tuning slider,
+  // readout and section. A user setting: saved to the player's user.conf.
+  class DxvkDs1MenuView {
+  public:
+    RTX_OPTION_FLAG("rtx.ds1Menu", bool, advanced, false, RtxOptionFlags::UserSetting,
+                    "Shows every Dark Souls setting (tuning, readouts) in the Dark Souls tab; off, a player's switches only.");
+  };
+
   class DxvkDs1SettingsCheck {
   public:
     // A diagnostic: each new value writes the changes Save would write, for user.conf and rtx.conf, to

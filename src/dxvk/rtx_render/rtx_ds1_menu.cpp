@@ -66,7 +66,7 @@ namespace dxvk {
     constexpr ImGuiSliderFlags kClamp = ImGuiSliderFlags_AlwaysClamp;
 
     void showParticles() {
-      if (!ImGui::CollapsingHeader("Particles and effects", kOpen)) {
+      if (!DxvkDs1MenuView::advanced() || !ImGui::CollapsingHeader("Particles and effects", kOpen)) {
         return;
       }
       ImGui::Indent();
@@ -85,13 +85,18 @@ namespace dxvk {
         return;
       }
       ImGui::Indent();
+      RemixGui::Checkbox("Ripples Around the Player", &DxvkDarkSoulsRipples::enableObject());
+      if (!DxvkDs1MenuView::advanced()) {
+        ImGui::Unindent();
+        return;
+      }
+      ImGui::Separator();
       RemixGui::Checkbox("Animated Water", &TranslucentMaterialOptions::animatedWaterEnableObject());
       RemixGui::SliderFloat("Primary Normal LoD Bias", &TranslucentMaterialOptions::animatedWaterPrimaryNormalLodBiasObject(), 0.0f, 16.0f, "%.2f", kClamp);
       RemixGui::SliderFloat("Secondary Normal LoD Bias", &TranslucentMaterialOptions::animatedWaterSecondaryNormalLodBiasObject(), 0.0f, 16.0f, "%.2f", kClamp);
       RemixGui::SliderFloat2("Primary Normal Motion", &TranslucentMaterialOptions::animatedWaterPrimaryNormalMotionObject(), -0.5f, 0.5f, "%.3f", kClamp);
       RemixGui::SliderFloat2("Secondary Normal Motion", &TranslucentMaterialOptions::animatedWaterSecondaryNormalMotionObject(), -0.5f, 0.5f, "%.3f", kClamp);
       ImGui::Separator();
-      RemixGui::Checkbox("Ripples Around the Player", &DxvkDarkSoulsRipples::enableObject());
       RemixGui::SliderFloat("Ripple Gravity Scale", &DxvkDarkSoulsRipples::gravityScaleObject(), 0.1f, 3.0f, "%.2f", kClamp);
       RemixGui::SliderFloat("Ripple Damping (1/s)", &DxvkDarkSoulsRipples::dampingObject(), 0.0f, 5.0f, "%.2f", kClamp);
       RemixGui::DragFloat("Ripple Viscosity (m2/s)", &DxvkDarkSoulsRipples::viscosityObject(), 1.0e-5f, 0.0f, 2.0e-3f, "%.5f", kClamp);
@@ -118,6 +123,10 @@ namespace dxvk {
       ImGui::Indent();
       RemixGui::Checkbox("On", &DxvkDarkSoulsWet::enableObject());
       ImGui::TextDisabled("Clears when resting at a bonfire and on a warp.");
+      if (!DxvkDs1MenuView::advanced()) {
+        ImGui::Unindent();
+        return;
+      }
       if (ImGui::TreeNode("Water")) {
         RemixGui::SliderFloat("Drying Time (s)", &DxvkDarkSoulsWet::dryTimeObject(), 1.0f, 300.0f, "%.0f", kClamp);
         RemixGui::SliderFloat("Droplet Size (0 = none)", &DxvkDarkSoulsWet::dropletScaleObject(), 0.0f, 3.0f, "%.2f", kClamp);
@@ -155,7 +164,7 @@ namespace dxvk {
     }
 
     void showMaterials() {
-      if (!ImGui::CollapsingHeader("Materials", kOpen)) {
+      if (!DxvkDs1MenuView::advanced() || !ImGui::CollapsingHeader("Materials", kOpen)) {
         return;
       }
       ImGui::Indent();
@@ -193,12 +202,20 @@ namespace dxvk {
   void showDs1Menu(const Rc<DxvkContext>& ctx) {
     ImGui::PushItemWidth(240.0f);
 
+    // A player's switches, or everything (DxvkDs1MenuView).
+    RemixGui::Checkbox("Advanced", &DxvkDs1MenuView::advancedObject());
+    ImGui::SameLine();
+    ImGui::TextDisabled(DxvkDs1MenuView::advanced() ? "every setting, tuning and readouts" : "on: every setting, tuning and readouts");
+    ImGui::Separator();
+
     // The DS1 post passes draw their own headers.
     DxvkPostFx& postFx = ctx->getCommonObjects()->metaPostFx();
     postFx.darkSoulsLook().showImguiSettings();
-    DxvkDarkSoulsExposure::showImguiSettings();
-    DxvkDarkSoulsAmbient::showImguiSettings();
-    postFx.darkSoulsHaze().showImguiSettings();
+    if (DxvkDs1MenuView::advanced()) {
+      DxvkDarkSoulsExposure::showImguiSettings();
+      DxvkDarkSoulsAmbient::showImguiSettings();
+      postFx.darkSoulsHaze().showImguiSettings();
+    }
 
     showParticles();
     // How strongly single textures glow (rtx_ds1_emissive.h): an authoring tool that writes emissive_scales.txt.
@@ -207,9 +224,11 @@ namespace dxvk {
     }
     DxvkDarkSoulsSkin::showImguiSettings();
     DxvkDarkSoulsEffectParticles::showImguiSettings();
-    DxvkDarkSoulsSwamp::showImguiSettings();
+    if (DxvkDs1MenuView::advanced()) {
+      DxvkDarkSoulsSwamp::showImguiSettings();
+    }
 
-    if (ImGui::CollapsingHeader("Tonemapper", kOpen)) {
+    if (DxvkDs1MenuView::advanced() && ImGui::CollapsingHeader("Tonemapper", kOpen)) {
       ImGui::Indent();
       if (DxvkDarkSoulsLook::isActive() && DxvkDarkSoulsLook::intensityClamped() >= 1.0f) {
         ImGui::TextWrapped("Not in use: the game's image pipeline above replaces Remix's tonemapper, auto exposure "

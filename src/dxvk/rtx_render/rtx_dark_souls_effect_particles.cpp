@@ -3,6 +3,7 @@
 #include "rtx_dark_souls_swamp.h"
 #include "rtx_dark_souls_skin.h"
 #include "rtx_dark_souls_light_falloff.h"
+#include "rtx_ds1_menu.h"
 
 #include "rtx_imgui.h"
 #include "rtx_particle_system.h"
@@ -231,6 +232,12 @@ namespace dxvk {
     }
     ImGui::Indent();
     RemixGui::Checkbox("Bloodstain Motes", &motesObject());
+    RemixGui::Checkbox("Hit Sparks", &sparksObject());
+    if (!DxvkDs1MenuView::advanced()) {
+      ImGui::Unindent();
+      return;
+    }
+    ImGui::Separator();
     RemixGui::DragFloat("Mote Rate", &moteRateObject(), 50.0f, 0.0f, 30000.0f, "%.0f");
     RemixGui::DragFloat("Mote Size (cm)", &moteSizeObject(), 0.05f, 0.1f, 10.0f, "%.2f");
     RemixGui::DragFloat("Mote Life (s)", &moteLifeObject(), 0.05f, 0.1f, 10.0f, "%.2f");
@@ -241,7 +248,6 @@ namespace dxvk {
     RemixGui::DragFloat("Mote Push (m/s)", &motePushObject(), 0.05f, 0.0f, 10.0f, "%.2f");
     RemixGui::DragFloat("Mote Push Radius (cm)", &motePushRadiusObject(), 1.0f, 5.0f, 150.0f, "%.0f");
     RemixGui::DragFloat("Mote Brightness", &moteBrightnessObject(), 0.01f, 0.0f, 8.0f, "%.2f");
-    RemixGui::Checkbox("Hit Sparks", &sparksObject());
     RemixGui::DragFloat("Sparks per Streak", &sparkCountObject(), 0.1f, 0.0f, 20.0f, "%.1f");
     RemixGui::DragFloat("Spark Speed (x game)", &sparkSpeedObject(), 0.01f, 0.0f, 5.0f, "%.2f");
     RemixGui::DragFloat("Spark Size (cm)", &sparkSizeObject(), 0.05f, 0.1f, 10.0f, "%.2f");
