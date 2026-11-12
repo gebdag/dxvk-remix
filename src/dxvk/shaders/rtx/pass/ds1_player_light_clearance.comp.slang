@@ -20,12 +20,13 @@
 * DEALINGS IN THE SOFTWARE.
 */
 
-// Fork (DS1): one ray from the player's head towards the player light. When a surface lies in the
-// way, the light moves back along the ray to stay short of it (by its emitter radius and the margin),
-// so a player backed into a wall keeps the light on the room's side. Characters do not count: the
-// ray passes through skinned surfaces (the player's own hair, hood, a shield worn on the back). The
-// light buffer entry is a sphere light: data0.xyz its position, data0.w's low half its radius
-// (RtSphereLight::writeGPUData).
+// Fork (DS1): keeps the player light out of walls. First, rays from the player's head towards the light: when a wall lies across
+// that line, the light moves back along it to stay short of the wall (by its emitter radius and the margin), so a player backed
+// into a wall keeps the light on the room's side. Then the light's own sphere: a wall beside it, which the line from the head
+// never meets (a stair along a curved shaft wall), pushes it away until the sphere and the margin clear the wall. Characters do
+// not count: rays pass through skinned surfaces (the player's own hair, hood, a shield worn on the back). Only surfaces wider
+// than a rope, a rung or a bar count, so the light does not jump as the player passes thin things. The light buffer entry is a
+// sphere light: data0.xyz its position, data0.w's low half its radius (RtSphereLight::writeGPUData).
 
 #include "rtx/pass/ds1_player_light_clearance.h"
 #include "rtx/pass/instance_definitions.h"
@@ -42,17 +43,17 @@ RWStructuredBuffer<uint4> lightWords;
 layout(push_constant)
 ConstantBuffer<Ds1PlayerLightClearanceArgs> cb;
 
-// Whether an opaque surface seen from the head's side stands in the way, and how far the light may go along the ray if one does.
-// Cutouts and blended surfaces (foliage, grates, glass) let light through and do not count. A few character layers at most lie on the way out.
-bool ds1ClearanceBlocked(vec3 origin, vec3 direction, float distance, float radius, out float reach)
+// The first opaque, non-skinned surface facing the ray between tMin and tMax. Cutouts and blended surfaces (foliage, grates,
+// glass) let light through and do not count. A few character layers at most lie on the way.
+bool ds1WallHit(vec3 origin, vec3 direction, float tMin, float tMax, out float hitT)
 {
-  reach = distance;
+  hitT = tMax;
 
   RayDesc ray;
   ray.Origin = origin;
   ray.Direction = direction;
-  ray.TMin = cb.ignore;
-  ray.TMax = distance + radius + cb.margin;
+  ray.TMin = tMin;
+  ray.TMax = tMax;
 
   for (uint layer = 0; layer < 4; ++layer)
   {
@@ -67,11 +68,11 @@ bool ds1ClearanceBlocked(vec3 origin, vec3 direction, float distance, float radi
       return false;
     }
 
-    const float hitT = rayQuery.CommittedRayT();
+    const float t = rayQuery.CommittedRayT();
     const uint surfaceIndex = (rayQuery.CommittedInstanceID() & CUSTOM_INDEX_SURFACE_MASK) + rayQuery.CommittedGeometryIndex();
     if ((surfaceWords[surfaceIndex * DS1_PLC_SURFACE_UVEC4S + 13].z & DS1_PLC_SKINNED_FLAG) != 0)
     {
-      ray.TMin = hitT + 1e-3f;
+      ray.TMin = t + 1e-3f;
       if (ray.TMin >= ray.TMax)
       {
         return false;
@@ -79,10 +80,71 @@ bool ds1ClearanceBlocked(vec3 origin, vec3 direction, float distance, float radi
       continue;
     }
 
-    reach = max(hitT - radius - cb.margin, 0.0f);
+    hitT = t;
     return true;
   }
   return false;
+}
+
+// Two directions across a ray.
+void ds1Across(vec3 direction, out vec3 side, out vec3 above)
+{
+  side = cross(direction, vec3(0.0f, 1.0f, 0.0f));
+  side = dot(side, side) < 1e-4f ? cross(direction, vec3(1.0f, 0.0f, 0.0f)) : side;
+  side = normalize(side);
+  above = cross(side, direction);
+}
+
+// A wall along a ray: its centre ray and at least `needed` of four parallel rays `spread` apart hit one before tMax. Returns the
+// mean distance of the rays that hit, so one ray's hit on bumpy rock does not move the light with every sway of the head.
+bool ds1WideWall(vec3 origin, vec3 direction, float tMin, float tMax, float spread, uint needed, out float distance)
+{
+  distance = tMax;
+  float hitT;
+  if (!ds1WallHit(origin, direction, tMin, tMax, hitT))
+  {
+    return false;
+  }
+  vec3 side, above;
+  ds1Across(direction, side, above);
+  const vec3 offsets[4] = { side * spread, -side * spread, above * spread, -above * spread };
+  uint blocked = 0;
+  float sum = hitT;
+  for (uint i = 0; i < 4; ++i)
+  {
+    float sideT;
+    if (ds1WallHit(origin + offsets[i], direction, tMin, tMax, sideT))
+    {
+      ++blocked;
+      sum += sideT;
+    }
+  }
+  if (blocked < needed)
+  {
+    return false;
+  }
+  distance = sum / float(blocked + 1);
+  return true;
+}
+
+// Where the light may go along the line from the head towards `target`: short of the first wall across the line, by `keep`.
+vec3 ds1AlongLine(vec3 target, float keep)
+{
+  const vec3 toTarget = target - cb.anchor;
+  const float distance = length(toTarget);
+  if (!(distance > cb.ignore))
+  {
+    return target;
+  }
+  const vec3 direction = toTarget / distance;
+  // Two of the four side rays 15 cm off: a wall the line grazes blocks the rays on its side only; a ladder rung or a rope blocks
+  // the centre ray alone (frame_20261109_171134: the light jumped to the head and back as the player swayed against a ladder).
+  float wall;
+  if (!ds1WideWall(cb.anchor, direction, cb.ignore, distance + keep, 0.15f, 2u, wall))
+  {
+    return target;
+  }
+  return cb.anchor + direction * clamp(wall - keep, 0.0f, distance);
 }
 
 [shader("compute")]
@@ -94,44 +156,50 @@ void main()
   uint4 data0 = lightWords[first];
   const vec3 target = asfloat(data0.xyz);
   const float radius = f16tof32(data0.w & 0xFFFFu);
+  const float keep = radius + cb.margin;
 
-  const vec3 toTarget = target - cb.anchor;
-  const float distance = length(toTarget);
-  if (!(distance > cb.ignore) || distance > cb.maxOffset)
-  {
-    return;
-  }
-  const vec3 direction = toTarget / distance;
-
-  float reach = distance;
-  if (!ds1ClearanceBlocked(cb.anchor, direction, distance, radius, reach) || reach >= distance)
+  if (length(target - cb.anchor) > cb.maxOffset)
   {
     return;
   }
 
-  // A wall stops rays beside this one too; a rope, rung, bar or pipe across the line does not. Without this check the light
-  // jumped to the head and back as the player swayed against a ladder (frame_20261109_171134) or walked past thin things.
-  vec3 side = cross(direction, vec3(0.0f, 1.0f, 0.0f));
-  side = dot(side, side) < 1e-4f ? cross(direction, vec3(1.0f, 0.0f, 0.0f)) : side;
-  side = normalize(side);
-  const vec3 above = cross(side, direction);
-  const float kSpread = 0.15f;
-  const vec3 offsets[4] = { side * kSpread, -side * kSpread, above * kSpread, -above * kSpread };
-  uint blocked = 1;
-  float sum = reach;
-  for (uint i = 0; i < 4; ++i)
+  // 1. Out from behind a wall across the line from the head.
+  vec3 position = ds1AlongLine(target, keep);
+
+  // 2. Away from walls beside the sphere: every direction that meets a wall closer than `keep` pushes the light back by what
+  // is missing. Opposite walls closer together than the sphere cancel out and leave it in the middle.
+  const vec3 directions[14] = {
+    vec3(1.0f, 0.0f, 0.0f), vec3(-1.0f, 0.0f, 0.0f), vec3(0.0f, 1.0f, 0.0f), vec3(0.0f, -1.0f, 0.0f),
+    vec3(0.0f, 0.0f, 1.0f), vec3(0.0f, 0.0f, -1.0f),
+    vec3(0.57735f, 0.57735f, 0.57735f), vec3(0.57735f, 0.57735f, -0.57735f), vec3(0.57735f, -0.57735f, 0.57735f),
+    vec3(0.57735f, -0.57735f, -0.57735f), vec3(-0.57735f, 0.57735f, 0.57735f), vec3(-0.57735f, 0.57735f, -0.57735f),
+    vec3(-0.57735f, -0.57735f, 0.57735f), vec3(-0.57735f, -0.57735f, -0.57735f) };
+  vec3 push = vec3(0.0f);
+  for (uint i = 0; i < 14; ++i)
   {
-    float sideReach = distance;
-    if (ds1ClearanceBlocked(cb.anchor + offsets[i], direction, distance, radius, sideReach))
+    float wall;
+    // Three of four parallel rays 8 cm off: a wall, not a rung.
+    if (ds1WideWall(position, directions[i], 0.0f, keep, 0.08f, 3u, wall))
     {
-      ++blocked;
-      sum += min(sideReach, distance);
+      push -= directions[i] * (keep - wall);
     }
   }
-  // The mean of the blocked rays: on bumpy rock one ray's hit jumps as the head sways, and a single ray moved the light with it.
-  if (blocked >= 4)
+  const float pushLength = length(push);
+  if (pushLength > keep)
   {
-    data0.xyz = asuint(cb.anchor + direction * min(sum / float(blocked), distance));
+    push *= keep / pushLength;
+  }
+  position += push;
+
+  // 3. The push may cross another wall in a corner: the line from the head decides again.
+  if (pushLength > 0.0f)
+  {
+    position = ds1AlongLine(position, keep);
+  }
+
+  if (any(position != target))
+  {
+    data0.xyz = asuint(position);
     lightWords[first] = data0;
   }
 }
