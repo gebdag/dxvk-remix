@@ -232,6 +232,11 @@ public:
   [[nodiscard]] SamplerIndex trackSampler(Rc<DxvkSampler> sampler);
 
   std::optional<XXH64_hash_t> findLegacyTextureHashByObjectPickingValue(uint32_t objectPickingValue);
+  // Fork (DS1): a picked value is a draw call ID, which restarts at 0 every frame. The readback ends frames after the pick, when
+  // the same ID may be another draw: DS1's draw order changes from frame to frame (characters, effects, culling, the proxy's own
+  // draws), and the Texture Lab picked a weapon for stairs. These look the value up in the frame it was picked in.
+  uint32_t drawCallMetaSerial();
+  std::optional<XXH64_hash_t> findLegacyTextureHashByObjectPickingValue(uint32_t objectPickingValue, uint32_t frameSerial);
   std::vector<ObjectPickingValue> gatherObjectPickingValuesByTextureHash(XXH64_hash_t texHash);
 
   // Replacement material hash tracking
@@ -418,9 +423,13 @@ private:
     XXH64_hash_t legacyTextureHash2 { kEmptyHash };
   };
   struct DrawCallMeta {
-    constexpr static inline uint8_t MaxTicks = 2;
+    // Fork (DS1): 8 frames, not 2, so a readback that ends a few frames after its pick still finds the frame it was taken in.
+    constexpr static inline uint8_t MaxTicks = 8;
     std::unordered_map<ObjectPickingValue, DrawCallMetaInfo> infos[MaxTicks] {};
     bool ready[MaxTicks] {};
+    // Fork (DS1): which frame each table holds (drawCallMetaSerial), so a recycled table is never read as the picked frame.
+    uint32_t serial[MaxTicks] {};
+    uint32_t nextSerial { 1 };
     uint8_t ticker {};
     dxvk::mutex mutex {};
   } m_drawCallMeta {};

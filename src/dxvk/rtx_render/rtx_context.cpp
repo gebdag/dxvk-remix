@@ -2485,10 +2485,13 @@ namespace dxvk {
 
         const uint64_t syncValue = ++m_objectPickingReadback.signalValue;
         this->signal(m_objectPickingReadback.signal, syncValue);
+        // Fork (DS1): the frame this picking image belongs to, for the draw ID lookup after the readback.
+        const uint32_t pickedFrameSerial = getSceneManager().drawCallMetaSerial();
 
         m_objectPickingReadback.asyncTasks.push_back(std::async(
           std::launch::async,
           [this,
+          cPickedFrameSerial = pickedFrameSerial,
           cReadbackDst = std::move(readbackDst),
           cSyncValueToWait = syncValue,
           cCallback = std::move(request->callback)]() {
@@ -2519,7 +2522,7 @@ namespace dxvk {
             }
 
             auto legacyHashForPrimaryValue = g_allowMappingLegacyHashToObjectPickingValue ?
-              m_common->getSceneManager().findLegacyTextureHashByObjectPickingValue(primaryValue) :
+              m_common->getSceneManager().findLegacyTextureHashByObjectPickingValue(primaryValue, cPickedFrameSerial) :
               std::optional<XXH64_hash_t>{};
 
             cCallback(std::move(values), legacyHashForPrimaryValue);

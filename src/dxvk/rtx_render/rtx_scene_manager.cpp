@@ -631,6 +631,7 @@ namespace dxvk {
 
       m_drawCallMeta.infos[nextTick].clear();
       m_drawCallMeta.ready[nextTick] = false;
+      m_drawCallMeta.serial[nextTick] = ++m_drawCallMeta.nextSerial;
       m_drawCallMeta.ticker = nextTick;
     }
 
@@ -2090,6 +2091,31 @@ namespace dxvk {
         }
       }
     }
+    return std::nullopt;
+  }
+
+  uint32_t SceneManager::drawCallMetaSerial() {
+    std::lock_guard lock { m_drawCallMeta.mutex };
+    return m_drawCallMeta.serial[m_drawCallMeta.ticker];
+  }
+
+  std::optional<XXH64_hash_t> SceneManager::findLegacyTextureHashByObjectPickingValue(uint32_t objectPickingValue, uint32_t frameSerial) {
+    std::lock_guard lock { m_drawCallMeta.mutex };
+    for (uint8_t tick = 0; tick < m_drawCallMeta.MaxTicks; ++tick) {
+      if (m_drawCallMeta.serial[tick] != frameSerial) {
+        continue;
+      }
+      const auto found = m_drawCallMeta.infos[tick].find(objectPickingValue);
+      if (found == m_drawCallMeta.infos[tick].end()) {
+        return std::nullopt;
+      }
+      if (found->second.legacyTextureHash != kEmptyHash) {
+        return found->second.legacyTextureHash;
+      }
+      return std::nullopt;
+    }
+    // The frame's table was recycled: better nothing than another draw's texture.
+    Logger::warn("[ObjectPicking] the picked frame's draw list is gone; pick again");
     return std::nullopt;
   }
 
