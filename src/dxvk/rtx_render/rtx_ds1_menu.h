@@ -3,6 +3,8 @@
 #include "../util/rc/util_rc_ptr.h"
 #include "rtx_option.h"
 
+#include <atomic>
+
 namespace dxvk {
   class DxvkContext;
 
@@ -16,6 +18,23 @@ namespace dxvk {
                     "Set by the proxy: the width of the game's scene targets when it renders at another size than the back buffer. 0 = the back buffer's.");
     RTX_OPTION_FLAG("rtx.ds1SceneTarget", int, height, 0, RtxOptionFlags::NoSave,
                     "Set by the proxy: the height of the game's scene targets when it renders at another size than the back buffer. 0 = the back buffer's.");
+  };
+
+  // DS1 debug: which draws reach the path tracer. A draw that still runs the game's vertex shader (the proxy passed it through:
+  // particles, effects, anything it does not convert) is path traced through vertex capture (rtx.useVertexCapture); the
+  // proxy's converted world draws are fixed function. Only Shader Draws drops the fixed-function ones from the path tracer,
+  // so what is left in the view came over the shader pipe; capture off is the opposite (shader draws dropped, the UI too).
+  class DxvkDs1DrawFilter {
+  public:
+    RTX_OPTION_FLAG("rtx.ds1Debug", bool, onlyShaderDraws, false, RtxOptionFlags::NoSave,
+                    "Debug: only draws that run the game's vertex shader are path traced; the proxy's converted (fixed-function) draws are dropped.");
+    RTX_OPTION_FLAG("rtx.ds1Debug", int, logShaderDraws, 0, RtxOptionFlags::NoSave,
+                    "Debug: a new value logs the next frame's path traced shader draws ([DS1 shader draw]).");
+    // Path traced draws of the last frame, by kind (written by the API thread at the end of a frame).
+    inline static std::atomic<uint32_t> shaderDrawsLastFrame { 0 };
+    inline static std::atomic<uint32_t> fixedDrawsLastFrame { 0 };
+    inline static std::atomic<uint32_t> shaderPrimsLastFrame { 0 };
+    inline static std::atomic<uint32_t> fixedPrimsLastFrame { 0 };
   };
 
   // The Dark Souls tab of the developer menu: every DS1-specific runtime option in one place.

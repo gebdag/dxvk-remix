@@ -231,6 +231,10 @@ namespace dxvk {
     // DS1: while the proxy renders apart from presenting (DxvkDs1SceneTarget), the scene target this frame's path traced draws
     // went to. The frame is put into it, at its size, and scaled down into the target bound at the trigger (triggerInjectRTX).
     Rc<DxvkImage> m_ds1SceneImage;
+    // DS1 debug (DxvkDs1DrawFilter): this frame's path traced draws and primitives by kind, and the one-frame shader draw log.
+    uint32_t m_ds1ShaderDraws = 0, m_ds1FixedDraws = 0, m_ds1ShaderPrims = 0, m_ds1FixedPrims = 0;
+    bool m_ds1LogShaderDraws = false;
+    int m_ds1LoggedShaderDrawsValue = 0;
     bool m_forceGeometryCopy = false;
     DWORD m_texcoordIndex = 0;
 

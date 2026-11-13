@@ -588,6 +588,27 @@ namespace dxvk {
       }
     }
 
+    // DS1 debug (DxvkDs1DrawFilter): count the path traced draws by kind; Only Shader Draws drops the fixed-function ones.
+    const bool shaderDraw = m_parent->UseProgrammableVS();
+    (shaderDraw ? m_ds1ShaderDraws : m_ds1FixedDraws)++;
+    (shaderDraw ? m_ds1ShaderPrims : m_ds1FixedPrims) += drawContext.PrimitiveCount;
+    if (shaderDraw && m_ds1LogShaderDraws) {
+      const auto& code = d3d9State().vertexShader->GetCommonShader()->GetBytecode();
+      const D3D9_COMMON_TEXTURE_DESC* target = d3d9State().renderTargets[kRenderTargetIndex]->GetCommonTexture()->Desc();
+      const D3D9CommonTexture* tex0 = GetCommonTexture(d3d9State().textures[0]);
+      Logger::info(str::format("[DS1 shader draw] #", m_activeDrawCallState.drawCallID, " vs ", std::hex,
+                               XXH3_64bits(code.data(), code.size()), std::dec, " prims ", drawContext.PrimitiveCount,
+                               " type ", uint32_t(drawContext.PrimitiveType), " target ", target->Width, "x", target->Height,
+                               " tex0 ", tex0 ? tex0->Desc()->Width : 0, "x", tex0 ? tex0->Desc()->Height : 0,
+                               " fmt ", tex0 ? uint32_t(tex0->Desc()->Format) : 0,
+                               " blend ", d3d9State().renderStates[D3DRS_ALPHABLENDENABLE],
+                               " atest ", d3d9State().renderStates[D3DRS_ALPHATESTENABLE],
+                               " zwrite ", d3d9State().renderStates[D3DRS_ZWRITEENABLE]));
+    }
+    if (!shaderDraw && DxvkDs1DrawFilter::onlyShaderDraws()) {
+      return { RtxGeometryStatus::Ignored, false };
+    }
+
     return { RtxGeometryStatus::RayTraced, false };
   }
 
@@ -1653,6 +1674,21 @@ namespace dxvk {
     m_ds1MenuSceneTarget = nullptr;
     m_ds1FrameTarget = nullptr;
     m_ds1SceneImage = nullptr;
+
+    // DS1 debug (DxvkDs1DrawFilter): the frame's path traced draws by kind; a new logShaderDraws value logs the next frame.
+    DxvkDs1DrawFilter::shaderDrawsLastFrame = m_ds1ShaderDraws;
+    DxvkDs1DrawFilter::fixedDrawsLastFrame = m_ds1FixedDraws;
+    DxvkDs1DrawFilter::shaderPrimsLastFrame = m_ds1ShaderPrims;
+    DxvkDs1DrawFilter::fixedPrimsLastFrame = m_ds1FixedPrims;
+    m_ds1ShaderDraws = m_ds1FixedDraws = m_ds1ShaderPrims = m_ds1FixedPrims = 0;
+    if (m_ds1LogShaderDraws) {
+      Logger::info("[DS1 shader draw] end of the logged frame");
+    }
+    m_ds1LogShaderDraws = DxvkDs1DrawFilter::logShaderDraws() != m_ds1LoggedShaderDrawsValue;
+    if (m_ds1LogShaderDraws) {
+      m_ds1LoggedShaderDrawsValue = DxvkDs1DrawFilter::logShaderDraws();
+      Logger::info("[DS1 shader draw] the next frame's path traced shader draws:");
+    }
     m_drawCallID = 0;
     m_seenCameraPositionsPrev = std::move(m_seenCameraPositions);
 

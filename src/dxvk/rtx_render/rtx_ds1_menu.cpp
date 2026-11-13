@@ -30,6 +30,7 @@
 #include "rtx_ds1_emissive.h"
 #include "rtx_hdr_output.h"
 #include "../dxvk_context.h"
+#include "../../d3d9/d3d9_rtx.h"
 #include "../imgui/imgui.h"
 
 namespace dxvk {
@@ -195,6 +196,24 @@ namespace dxvk {
       RemixGui::Checkbox("Sky", &RtxOptions::skyMarkerEnabledObject());
       RemixGui::Checkbox("UI (classify only)", &RtxOptions::uiMarkerEnabledObject());
       RemixGui::Checkbox("Show Game UI (HUD and menus)", &RtxOptions::showGameUiObject());
+      ImGui::Unindent();
+
+      if (!ImGui::CollapsingHeader("Shader draws", kOpen)) {
+        return;
+      }
+      ImGui::Indent();
+      ImGui::TextDisabled("Draws that still run the game's vertex shader reach the path tracer through vertex capture;");
+      ImGui::TextDisabled("the proxy's converted world draws are fixed function.");
+      RemixGui::Checkbox("Only Shader Draws (drop the fixed-function ones)", &DxvkDs1DrawFilter::onlyShaderDrawsObject());
+      RemixGui::Checkbox("Capture Vertices from Shader (off = drop the shader draws, the UI too)", &D3D9Rtx::useVertexCaptureObject());
+      ImGui::Text("Path traced last frame: %u shader draws (%u prims), %u fixed-function draws (%u prims)",
+                  DxvkDs1DrawFilter::shaderDrawsLastFrame.load(), DxvkDs1DrawFilter::shaderPrimsLastFrame.load(),
+                  DxvkDs1DrawFilter::fixedDrawsLastFrame.load(), DxvkDs1DrawFilter::fixedPrimsLastFrame.load());
+      if (ImGui::Button("Log the next frame's shader draws")) {
+        DxvkDs1DrawFilter::logShaderDrawsObject().setDeferred(DxvkDs1DrawFilter::logShaderDraws() + 1);
+      }
+      ImGui::SameLine();
+      ImGui::TextDisabled("[DS1 shader draw] lines in remix-dxvk.log: shader, size, target, texture, states");
       ImGui::Unindent();
     }
   }
