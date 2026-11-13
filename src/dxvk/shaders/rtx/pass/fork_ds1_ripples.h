@@ -377,9 +377,10 @@ struct Ds1RippleArgs {
   uint parallaxSteps;
   uint parallaxMaxSteps;
 
-  // 1: DS1 water is optically flat (rtx.ds1Water.surfaceDetail off): no normal map, wave layers, ripples or smear.
-  uint flatWater;
-  uint flatPad0;
-  uint flatPad1;
-  uint flatPad2;
+  // 1: DS1 water does not displace what is seen through and on it (rtx.ds1Water.displaceView off): no ripple parallax walk,
+  // no refraction smear, no depth-dependent bending (and its depth ray). Waves and ripples still shape its normal.
+  uint noDisplacement;
+  uint noDisplacementPad0;
+  uint noDisplacementPad1;
+  uint noDisplacementPad2;
 };

@@ -239,7 +239,7 @@ namespace dxvk {
   void DxvkDarkSoulsRipples::prepare(RtxContext* ctx) {
     s_frame = {};
     const Vector3 player = playerPosition();
-    if (!enable() || !surfaceDetail() || (player.x == 0.0f && player.y == 0.0f && player.z == 0.0f)) {
+    if (!enable() || (player.x == 0.0f && player.y == 0.0f && player.z == 0.0f)) {
       s_lastTime = -1.0;
       s_dripsRun = false;
       return;
@@ -339,7 +339,7 @@ namespace dxvk {
     args.shoreMinDepth = std::max(shoreMinDepth(), 0.0f);
     args.refractionFullDepth = refractionFullDepth();
     args.smearFullDepth = std::max(smearFullDepth(), 0.001f);
-    args.flatWater = surfaceDetail() ? 0u : 1u;
+    args.noDisplacement = displaceView() ? 0u : 1u;
     if (!s_frame.active) {
       return;
     }

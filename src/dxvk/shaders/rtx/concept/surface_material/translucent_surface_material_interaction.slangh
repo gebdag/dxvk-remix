@@ -93,13 +93,13 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
   // Fork (DS1): from the flat hit to where the view ray meets the rippled surface (ds1_ripple_parallax.slangh). The wave layers and
   // the ripples' slope are read there.
   vec3 ds1RippleDisplacement = vec3(0.0f);
-  // Fork (DS1): rtx.ds1Water.surfaceDetail off: the water is flat (no normal map, waves, ripples or smear).
-  const bool ds1FlatWater = surface.isDs1Water && cb.ds1Ripple.flatWater != 0;
-  if (surface.isDs1Water && cb.ds1Ripple.enable != 0 && !ds1FlatWater)
+  // Fork (DS1): rtx.ds1Water.displaceView off: no parallax walk and no smear; waves and ripples still shape the normal.
+  const bool ds1NoDisplacement = surface.isDs1Water && cb.ds1Ripple.noDisplacement != 0;
+  if (surface.isDs1Water && cb.ds1Ripple.enable != 0 && !ds1NoDisplacement)
   {
     ds1RippleDisplacement = ds1RippleParallax(surfaceInteraction.position, vec3(surfaceInteraction.geometryNormal), vec3(minimalRayInteraction.viewDirection));
   }
-  if (cb.translucentMaterialArgs.animatedWaterEnable && surface.isAnimatedWater && surface.isDs1Water && !ds1FlatWater)
+  if (cb.translucentMaterialArgs.animatedWaterEnable && surface.isAnimatedWater && surface.isDs1Water)
   {
     // Fork (DS1): the game's three wave layers of this water body, placed and scaled per surface. They
     // share a scale and scroll apart; summed, one layer's ridges fill the flat gaps between the others'.
@@ -148,7 +148,7 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
     surfaceInteraction.textureCoordinates = primaryUV;
   }
 
-  const bool normalLoaded = !ds1FlatWater && surfaceMaterialInteractionTextureReadHelper(translucentSurfaceMaterial.normalTextureIndex, translucentSurfaceMaterial.samplerIndex, surfaceInteraction, normalSample, primaryNormalLodBias);
+  const bool normalLoaded = surfaceMaterialInteractionTextureReadHelper(translucentSurfaceMaterial.normalTextureIndex, translucentSurfaceMaterial.samplerIndex, surfaceInteraction, normalSample, primaryNormalLodBias);
   // Note: Premultiplied alpha should really be used here for the transmittance or diffuse color as without it "transparent" regions of the texture in the diffuse color case for
   // example may cause incorrect coloration on the edges of more opaque regions due to texture filtering. This is hard to ensure on the art pipeline side of things however.
   const bool transmittanceOrDiffuseLoaded = surfaceMaterialInteractionTextureReadHelper(translucentSurfaceMaterial.transmittanceOrDiffuseTextureIndex, translucentSurfaceMaterial.samplerIndex, surfaceInteraction, transmittanceOrDiffuseSample);
@@ -181,7 +181,7 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
     normal = normalize(mul(tangentToWorld, tangentNormal));
   }
 
-  if (surface.isDs1Water && cb.ds1Ripple.enable != 0 && !ds1FlatWater)
+  if (surface.isDs1Water && cb.ds1Ripple.enable != 0)
   {
     normal = ds1RippleNormal(normal, surfaceInteraction.position + vec3(ds1RippleDisplacement.x, 0.0f, ds1RippleDisplacement.z),
                              vec3(surfaceInteraction.geometryNormal));
@@ -252,7 +252,7 @@ TranslucentSurfaceMaterialInteraction translucentSurfaceMaterialInteractionCreat
     // The game's refraction smear fades with the vertex alpha, 0 along the water's border.
     // Never quite 0: the resolver tells a water body by it (geometryResolverDs1WaterRefraction).
     translucentSurfaceMaterialInteraction.ds1RefractionSmear =
-      ds1FlatWater ? 1e-4f : max(surface.ds1WaterSmear * saturate(float(surfaceInteraction.vertexColor.a)), 1e-4f);
+      ds1NoDisplacement ? 1e-4f : max(surface.ds1WaterSmear * saturate(float(surfaceInteraction.vertexColor.a)), 1e-4f);
     if (surface.isDs1WaterGameLook)
     {
       // The game lerps towards its murk, c127, by c127.w * vertex alpha, in gamma; the whole surface (reflection and fog) fades in by

@@ -86,10 +86,10 @@ namespace dxvk {
         return;
       }
       ImGui::Indent();
-      RemixGui::Checkbox("Water Surface Detail (waves, ripples)", &DxvkDarkSoulsRipples::surfaceDetailObject());
+      RemixGui::Checkbox("Water Displacement", &DxvkDarkSoulsRipples::displaceViewObject());
       if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Off: DS1 water is flat, no normal map, wave layers, ripples or refraction smear.\n"
-                          "Reflections and refraction stay, through a flat surface.");
+        ImGui::SetTooltip("Off: the water no longer shifts what is seen on and through it (ripple parallax, refraction smear,\n"
+                          "bending by depth) and skips that work. Waves and ripples still shape its reflections.");
       }
       RemixGui::Checkbox("Ripples Around the Player", &DxvkDarkSoulsRipples::enableObject());
       if (!DxvkDs1MenuView::advanced()) {
