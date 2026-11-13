@@ -30,6 +30,15 @@ namespace dxvk {
                     "Debug: only draws that run the game's vertex shader are path traced; the proxy's converted (fixed-function) draws are dropped.");
     RTX_OPTION_FLAG("rtx.ds1Debug", int, logShaderDraws, 0, RtxOptionFlags::NoSave,
                     "Debug: a new value logs the next frame's path traced shader draws ([DS1 shader draw]).");
+    // Cost bisection for the replacement (enhanced) materials: which draws keep them, and which of their maps.
+    RTX_OPTION_FLAG("rtx.ds1Debug", int, replacementDrawFilter, 0, RtxOptionFlags::NoSave,
+                    "Debug: draws that lose their replacement material. 0 none, 1 alpha-tested, 2 blended, 3 opaque (neither), 4 all but alpha-tested.");
+    RTX_OPTION_FLAG("rtx.ds1Debug", int, replacementMapMask, 0, RtxOptionFlags::NoSave,
+                    "Debug: replacement maps dropped from every replacement material (bits). 1 albedo (the game's own colour texture instead), "
+                    "2 normal, 4 height, 8 roughness, 16 metallic, 32 emissive, 64 subsurface, 128 tangent/secondary/specular colour. "
+                    "Constants from the game's own material, textures kept: 256 all, 512 roughness/metallic/albedo/opacity, 1024 subsurface, "
+                    "2048 displacement, 4096 sampler state, 8192 the rest (anisotropy, emission, legacy flag, thin film, alpha state); "
+                    "16384 roughness map and constant, 32768 metallic map and constant.");
     // Path traced draws of the last frame, by kind (written by the API thread at the end of a frame).
     inline static std::atomic<uint32_t> shaderDrawsLastFrame { 0 };
     inline static std::atomic<uint32_t> fixedDrawsLastFrame { 0 };

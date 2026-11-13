@@ -26,6 +26,7 @@
 #include "rtx_asset_replacer.h"
 #include "rtx_scene_manager.h"
 #include "rtx_ds1_texlab.h"
+#include "rtx_ds1_menu.h"
 #include "rtx_opacity_micromap_manager.h"
 #include "rtx_legacy_specular.h"
 #include "dxvk_device.h"
@@ -889,11 +890,99 @@ namespace dxvk {
     } 
 
     // test if any direct material replacements exist
-    const auto pReplacementMaterial = input.findMaterialReplacement(
+    auto pReplacementMaterial = input.findMaterialReplacement(
       [this](XXH64_hash_t hash) { return m_pReplacer->getReplacementMaterial(hash); });
+    // DS1 debug: drop the replacement from one kind of draw (cost bisection, never saved).
+    const int drawFilter = DxvkDs1DrawFilter::replacementDrawFilter();
+    if (pReplacementMaterial != nullptr && drawFilter != 0) {
+      const LegacyMaterialData& legacy = input.getMaterialData();
+      const bool alphaTested = legacy.alphaTestEnabled;
+      const bool blended = legacy.blendMode.enableBlending;
+      if ((drawFilter == 1 && alphaTested) || (drawFilter == 2 && blended) || (drawFilter == 3 && !alphaTested && !blended) ||
+          (drawFilter == 4 && !alphaTested)) {
+        pReplacementMaterial = nullptr;
+      }
+    }
     if (pReplacementMaterial != nullptr) {
       // Make a copy - dont modify the replacement data.
       MaterialData renderMaterialData = *pReplacementMaterial;
+      // DS1 debug: drop maps from every replacement material (cost bisection, never saved).
+      const int mapMask = DxvkDs1DrawFilter::replacementMapMask();
+      if (mapMask != 0 && renderMaterialData.getType() == MaterialDataType::Opaque) {
+        OpaqueMaterialData& opaque = renderMaterialData.getOpaqueMaterialData();
+        if (mapMask & 1) opaque.setAlbedoOpacityTexture(input.getMaterialData().getColorTexture());
+        if (mapMask & 2) opaque.setNormalTexture(TextureRef {});
+        if (mapMask & 4) opaque.setHeightTexture(TextureRef {});
+        if (mapMask & 8) opaque.setRoughnessTexture(TextureRef {});
+        if (mapMask & 16) opaque.setMetallicTexture(TextureRef {});
+        if (mapMask & 32) opaque.setEmissiveColorTexture(TextureRef {});
+        if (mapMask & 64) {
+          opaque.setSubsurfaceTransmittanceTexture(TextureRef {});
+          opaque.setSubsurfaceThicknessTexture(TextureRef {});
+          opaque.setSubsurfaceSingleScatteringAlbedoTexture(TextureRef {});
+          opaque.setSubsurfaceRadiusTexture(TextureRef {});
+        }
+        if (mapMask & 128) {
+          opaque.setTangentTexture(TextureRef {});
+          opaque.setSecondaryTexture(TextureRef {});
+          opaque.setSpecularColorTexture(TextureRef {});
+        }
+        // Constants from the game's own material (what the legacy conversion gives this draw), textures kept.
+        if (mapMask & (256 | 512 | 1024 | 2048 | 4096 | 8192 | 16384 | 32768)) {
+          const MaterialData legacyMaterial = input.getMaterialData().as<OpaqueMaterialData>();
+          const OpaqueMaterialData& lo = legacyMaterial.getOpaqueMaterialData();
+          const bool all = (mapMask & 256) != 0;
+          if (all || (mapMask & 512)) {
+            opaque.setRoughnessConstant(lo.getRoughnessConstant());
+            opaque.setMetallicConstant(lo.getMetallicConstant());
+            opaque.setAlbedoConstant(lo.getAlbedoConstant());
+            opaque.setOpacityConstant(lo.getOpacityConstant());
+          }
+          if (mapMask & 16384) {
+            opaque.setRoughnessTexture(TextureRef {});
+            opaque.setRoughnessConstant(lo.getRoughnessConstant());
+          }
+          if (mapMask & 32768) {
+            opaque.setMetallicTexture(TextureRef {});
+            opaque.setMetallicConstant(lo.getMetallicConstant());
+          }
+          if (all || (mapMask & 1024)) {
+            opaque.setSubsurfaceTransmittanceColor(lo.getSubsurfaceTransmittanceColor());
+            opaque.setSubsurfaceMeasurementDistance(lo.getSubsurfaceMeasurementDistance());
+            opaque.setSubsurfaceSingleScatteringAlbedo(lo.getSubsurfaceSingleScatteringAlbedo());
+            opaque.setSubsurfaceVolumetricAnisotropy(lo.getSubsurfaceVolumetricAnisotropy());
+            opaque.setSubsurfaceDiffusionProfile(lo.getSubsurfaceDiffusionProfile());
+            opaque.setSubsurfaceRadius(lo.getSubsurfaceRadius());
+            opaque.setSubsurfaceRadiusScale(lo.getSubsurfaceRadiusScale());
+            opaque.setSubsurfaceMaxSampleRadius(lo.getSubsurfaceMaxSampleRadius());
+          }
+          if (all || (mapMask & 2048)) {
+            opaque.setDisplaceIn(lo.getDisplaceIn());
+            opaque.setDisplaceOut(lo.getDisplaceOut());
+          }
+          if (all || (mapMask & 4096)) {
+            opaque.setFilterMode(lo.getFilterMode());
+            opaque.setWrapModeU(lo.getWrapModeU());
+            opaque.setWrapModeV(lo.getWrapModeV());
+          }
+          if (all || (mapMask & 8192)) {
+            opaque.setAnisotropyConstant(lo.getAnisotropyConstant());
+            opaque.setEmissiveIntensity(lo.getEmissiveIntensity());
+            opaque.setEmissiveColorConstant(lo.getEmissiveColorConstant());
+            opaque.setEnableEmission(lo.getEnableEmission());
+            opaque.setIsLegacyMaterial(lo.getIsLegacyMaterial());
+            opaque.setEnableThinFilm(lo.getEnableThinFilm());
+            opaque.setAlphaIsThinFilmThickness(lo.getAlphaIsThinFilmThickness());
+            opaque.setUseLegacyAlphaState(lo.getUseLegacyAlphaState());
+            opaque.setBlendEnabled(lo.getBlendEnabled());
+            opaque.setBlendType(lo.getBlendType());
+            opaque.setInvertedBlend(lo.getInvertedBlend());
+            opaque.setAlphaTestType(lo.getAlphaTestType());
+            opaque.setAlphaTestReferenceValue(lo.getAlphaTestReferenceValue());
+            opaque.setSpecularColorScale(lo.getSpecularColorScale());
+          }
+        }
+      }
       // merge in the input material from game
       renderMaterialData.mergeLegacyMaterial(input.getMaterialData());
       return renderMaterialData;
