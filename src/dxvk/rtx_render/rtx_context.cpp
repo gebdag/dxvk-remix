@@ -92,6 +92,7 @@
 // Destructor requires the struct definitions
 #include "rtx_sky.h"
 #include "rtx_ds1_menu_frame.h"
+#include "rtx_ds1_hitch_watch.h"
 
 namespace dxvk {
 
@@ -542,6 +543,8 @@ namespace dxvk {
       }
       s_lastFrame = now;
     }
+    // Fork (DS1): and what this thread and the API thread were doing while a frame was late (rtx_ds1_hitch_watch.h).
+    Ds1HitchWatch::onFrame();
 #ifdef REMIX_DEVELOPMENT
     m_currentPassStage = RtxFramePassStage::FrameBegin;
 #endif

@@ -257,6 +257,8 @@ dxvk_src = files([
   'rtx_render/rtx_dark_souls_look.cpp',
   'rtx_render/rtx_dark_souls_look.h',
   'rtx_render/rtx_ds1_menu.cpp',
+  'rtx_render/rtx_ds1_hitch_watch.cpp',
+  'rtx_render/rtx_ds1_hitch_watch.h',
   'rtx_render/rtx_ds1_menu.h',
   'rtx_render/rtx_legacy_specular.cpp',
   'rtx_render/rtx_legacy_specular.h',

@@ -33,6 +33,7 @@
 #include "../dxvk/rtx_render/rtx_bridge_message_channel.h"
 #include "../dxvk/rtx_render/rtx_hdr_output.h"
 #include "../dxvk/rtx_render/rtx_context.h"
+#include "../dxvk/rtx_render/rtx_ds1_hitch_watch.h"
 #include "../dxvk/dxvk_scoped_annotation.h"
 
 // NV-DXVK start: DLFG integration
@@ -466,6 +467,8 @@ namespace dxvk {
     const RGNDATA* pDirtyRegion,
           DWORD    dwFlags) {
     ScopedCpuProfileZone();
+    // Fork (DS1): this is the thread that takes the game's D3D9 calls (rtx_ds1_hitch_watch.h).
+    Ds1HitchWatch::onApiPresent();
 
     // NV-DXVK start: Restart RTX capture on the new frame
     m_parent->m_rtx.EndFrame(m_backBuffers[0]->GetCommonTexture()->GetImage());
