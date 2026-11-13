@@ -49,6 +49,7 @@
 
 #include "rtx_matrix_helpers.h"
 #include "rtx_lights.h"
+#include "rtx_ds1_menu.h"
 
 #include "../util/util_global_time.h"
 
@@ -134,6 +135,18 @@ namespace dxvk {
   }
 
   void GameCapturer::step(const Rc<DxvkContext> ctx, const HWND hwnd) {
+    // Fork (DS1): rtx.ds1Dev.captureRequest, a capture started from a script (dev mode only).
+    {
+      static int s_lastRequest = 0;
+      const int request = DxvkDs1Dev::captureRequest();
+      if (request != s_lastRequest) {
+        s_lastRequest = request;
+        if (DxvkDs1Dev::enable() && request != 0) {
+          Logger::info(str::format("[GameCapturer] Capture requested by rtx.ds1Dev.captureRequest = ", request));
+          m_bTriggerCapture = true;
+        }
+      }
+    }
     trigger(ctx);
     if(m_state.has<State::Initializing>()) {
       initCapture(ctx, hwnd);

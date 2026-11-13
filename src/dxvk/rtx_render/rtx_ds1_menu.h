@@ -64,6 +64,9 @@ namespace dxvk {
   public:
     RTX_OPTION_FLAG("rtx.ds1Dev", bool, enable, false, RtxOptionFlags::UserSetting,
                     "Dev mode: shows the DS1 authoring and debug tools in the Dark Souls tab and the Texture Lab, and logs hitches.");
+    RTX_OPTION_FLAG("rtx.ds1Dev", int, captureRequest, 0, RtxOptionFlags::NoSave,
+                    "Dev mode: a new value starts a USD scene capture, as the capture hotkey does (for scripts, which send the game no keys). "
+                    "Replacement assets must be off, as for any capture.");
   };
 
   // The Dark Souls tab's Advanced checkbox: off (the default), the tab shows a player's switches only (the look's on/off and
