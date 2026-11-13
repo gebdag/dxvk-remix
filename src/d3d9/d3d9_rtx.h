@@ -228,6 +228,9 @@ namespace dxvk {
     // draw that samples it into another target carries the frame on, e.g. the game's final pass from its scene target to the back
     // buffer: Show Game UI off keeps that one (ds1DrawCarriesFrame).
     Rc<DxvkImage> m_ds1FrameTarget;
+    // DS1: while the proxy renders apart from presenting (DxvkDs1SceneTarget), the scene target this frame's path traced draws
+    // went to. The frame is put into it, at its size, and scaled down into the target bound at the trigger (triggerInjectRTX).
+    Rc<DxvkImage> m_ds1SceneImage;
     bool m_forceGeometryCopy = false;
     DWORD m_texcoordIndex = 0;
 

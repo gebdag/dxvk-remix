@@ -20,6 +20,7 @@
 #include <cassert>
 #include <cstring>
 #include "../dxvk/rtx_render/rtx_ds1_menu_frame.h"
+#include "../dxvk/rtx_render/rtx_ds1_menu.h"
 
 namespace dxvk {
   static const bool s_isDxvkResolutionEnvVarSet = (env::getEnvVar("DXVK_RESOLUTION_WIDTH") != "") || (env::getEnvVar("DXVK_RESOLUTION_HEIGHT") != "");
@@ -538,11 +539,21 @@ namespace dxvk {
 
     if (!s_isDxvkResolutionEnvVarSet && !isDs1MenuScene) {
       // NOTE: This can fail when setting DXVK_RESOLUTION_WIDTH or HEIGHT
-      const bool isPrimary = isRenderTargetPrimary(*m_activePresentParams, d3d9State().renderTargets[kRenderTargetIndex]->GetCommonTexture()->Desc());
+      const D3D9_COMMON_TEXTURE_DESC* targetDesc = d3d9State().renderTargets[kRenderTargetIndex]->GetCommonTexture()->Desc();
+      // DS1: or a scene target, when the proxy renders at another size than it presents (DxvkDs1SceneTarget).
+      const bool isPrimary = isRenderTargetPrimary(*m_activePresentParams, targetDesc) ||
+        (DxvkDs1SceneTarget::width() > 0 && DxvkDs1SceneTarget::height() > 0 &&
+         targetDesc->Width == static_cast<uint32_t>(DxvkDs1SceneTarget::width()) &&
+         targetDesc->Height == static_cast<uint32_t>(DxvkDs1SceneTarget::height()));
 
       if (!isPrimary) {
         ONCE(Logger::info("[RTX-Compatibility-Info] Found a draw call to a non-primary, non-raytraced render target. Falling back to rasterization"));
         return { RtxGeometryStatus::Rasterized, false };
+      }
+      if (DxvkDs1SceneTarget::width() > 0 && DxvkDs1SceneTarget::height() > 0 &&
+          targetDesc->Width == static_cast<uint32_t>(DxvkDs1SceneTarget::width()) &&
+          targetDesc->Height == static_cast<uint32_t>(DxvkDs1SceneTarget::height())) {
+        m_ds1SceneImage = d3d9State().renderTargets[kRenderTargetIndex]->GetCommonTexture()->GetImage();
       }
     }
 
@@ -866,6 +877,35 @@ namespace dxvk {
     // DS1: where the frame goes (ds1DrawCarriesFrame).
     m_ds1FrameTarget = d3d9State().renderTargets[kRenderTargetIndex] != nullptr
       ? d3d9State().renderTargets[kRenderTargetIndex]->GetCommonTexture()->GetImage() : nullptr;
+
+    // DS1: rendering apart from presenting (DxvkDs1SceneTarget). The trigger comes with the game's screen target bound (the
+    // HUD's, the present size), so the frame would be path traced at that size. It is path traced into the scene target, at the
+    // render size, and scaled down into the screen target, which carries it on as before.
+    Rc<DxvkImage> sceneImage = m_ds1SceneImage;
+    m_ds1SceneImage = nullptr;
+    if (sceneImage != nullptr && m_ds1FrameTarget != nullptr && sceneImage != m_ds1FrameTarget &&
+        DxvkDs1SceneTarget::width() > 0 && DxvkDs1SceneTarget::height() > 0 &&
+        sceneImage->info().extent.width == static_cast<uint32_t>(DxvkDs1SceneTarget::width()) &&
+        sceneImage->info().extent.height == static_cast<uint32_t>(DxvkDs1SceneTarget::height()) &&
+        (m_ds1FrameTarget->info().extent.width != sceneImage->info().extent.width ||
+         m_ds1FrameTarget->info().extent.height != sceneImage->info().extent.height)) {
+      m_parent->Flush();
+      m_parent->EmitCs([cReflexFrameId = GetReflexFrameId(), cScene = sceneImage, cTarget = m_ds1FrameTarget](DxvkContext* ctx) {
+        static_cast<RtxContext*>(ctx)->injectRTX(cReflexFrameId, cScene);
+        VkImageBlit region = {};
+        region.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+        region.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+        region.srcOffsets[1] = VkOffset3D { int32_t(cScene->info().extent.width), int32_t(cScene->info().extent.height), 1 };
+        region.dstOffsets[1] = VkOffset3D { int32_t(cTarget->info().extent.width), int32_t(cTarget->info().extent.height), 1 };
+        const VkComponentMapping identity = { VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+                                              VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY };
+        ctx->blitImage(cTarget, identity, cScene, identity, region, VK_FILTER_LINEAR);
+      });
+      ONCE(Logger::info(str::format("[DS1 resolution] path traced into the ", sceneImage->info().extent.width, "x", sceneImage->info().extent.height,
+                                    " scene target, scaled down into the ", m_ds1FrameTarget->info().extent.width, "x",
+                                    m_ds1FrameTarget->info().extent.height, " target the frame was asked for")));
+      return;
+    }
 
     // Flush any pending game and RTX work
     m_parent->Flush();
@@ -1612,6 +1652,7 @@ namespace dxvk {
     m_rtxInjectTriggered = false;
     m_ds1MenuSceneTarget = nullptr;
     m_ds1FrameTarget = nullptr;
+    m_ds1SceneImage = nullptr;
     m_drawCallID = 0;
     m_seenCameraPositionsPrev = std::move(m_seenCameraPositions);
 

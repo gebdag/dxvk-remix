@@ -6,6 +6,18 @@
 namespace dxvk {
   class DxvkContext;
 
+  // DS1: the size of the game's scene targets while the proxy renders at another size than it presents ([Resolution]
+  // RenderWidth/Height apart from PresentWidth/Height, e.g. 3840x2160 into a 1920x1080 back buffer). Stock Remix path traces
+  // only draws aimed at a target the back buffer's size, so every scene draw fell back to raster and the view was black.
+  // A target of this size counts as well. The proxy sets it while the two sizes differ; 0 (its default) is the stock rule.
+  class DxvkDs1SceneTarget {
+  public:
+    RTX_OPTION_FLAG("rtx.ds1SceneTarget", int, width, 0, RtxOptionFlags::NoSave,
+                    "Set by the proxy: the width of the game's scene targets when it renders at another size than the back buffer. 0 = the back buffer's.");
+    RTX_OPTION_FLAG("rtx.ds1SceneTarget", int, height, 0, RtxOptionFlags::NoSave,
+                    "Set by the proxy: the height of the game's scene targets when it renders at another size than the back buffer. 0 = the back buffer's.");
+  };
+
   // The Dark Souls tab of the developer menu: every DS1-specific runtime option in one place.
   void showDs1Menu(const Rc<DxvkContext>& ctx);
 
