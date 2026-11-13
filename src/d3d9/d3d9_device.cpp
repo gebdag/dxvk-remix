@@ -5047,6 +5047,20 @@ namespace dxvk {
     auto convertFormat = pResource->GetFormatMapping().ConversionFormatInfo;
 
     if (Subresource == 0) {
+      // Fork (DS1), dev diagnostics: the contents uploaded now differ from those the texture was hashed from (the hash stays;
+      // the scene's texture cache then serves another texture's image under it).
+      if (DxvkDs1Dev::enable() && image->getHash() != kEmptyHash && srcSlice.mapPtr != nullptr && !pResource->IsRenderTarget()) {
+        const XXH64_hash_t now = XXH3_64bits(srcSlice.mapPtr, srcSlice.length);
+        if (now != image->getHash()) {
+          static std::atomic<uint32_t> s_lines { 0 };
+          if (s_lines++ < 2000) {
+            const D3D9_COMMON_TEXTURE_DESC* desc = pResource->Desc();
+            Logger::info(str::format("[DS1 tex hash] contents differ at upload: tex ", reinterpret_cast<const void*>(pResource), " ",
+              desc->Width, "x", desc->Height, " fmt ", uint32_t(desc->Format), " pool ", uint32_t(desc->Pool), " hash ", std::hex,
+              image->getHash(), " contents now ", now, std::dec, " (slice ", srcSlice.length, " bytes)"));
+          }
+        }
+      }
       pResource->SetupForRtx();
     }
 

@@ -11,6 +11,8 @@
 #include <iostream>
 #include <sstream>
 #include "../dxvk/imgui/dxvk_imgui.h"
+#include "../dxvk/rtx_render/rtx_ds1_menu.h"
+#include <atomic>
 #include "../dxvk/rtx_render/rtx_hdr_output.h"
 
 #include <charconv>
@@ -695,6 +697,17 @@ namespace dxvk {
     }
     // save hash to dxvkImage
     m_image->setHash(imageHash);
+    // Fork (DS1), dev diagnostics for the Chameleon texture mix-up: every new hash of a texture of 256 px and up, and where it came
+    // from (its own buffer at its first upload, or a copy source), so a texture can be followed to the hash it was given.
+    if (DxvkDs1Dev::enable() && (m_desc.Width >= 256 || m_desc.Height >= 256)) {
+      static std::atomic<uint32_t> s_lines { 0 };
+      if (s_lines++ < 4000) {
+        Logger::info(str::format("[DS1 tex hash] set tex ", reinterpret_cast<const void*>(this), " ", m_desc.Width, "x", m_desc.Height,
+          " fmt ", uint32_t(m_desc.Format), " pool ", uint32_t(m_desc.Pool), " hash ", std::hex, imageHash, std::dec,
+          source == this ? " from its own data" : " from a copy source ", source == this ? "" : str::format(reinterpret_cast<const void*>(source)),
+          useObsoleteHashMethod ? " (obsolete method)" : ""));
+      }
+    }
 
     // Let ImGUI know about this texture
     ImGUI::AddTexture(imageHash, m_sampleView.Color, ImGUI::kTextureFlagsDefault);
