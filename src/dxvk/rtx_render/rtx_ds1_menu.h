@@ -37,6 +37,14 @@ namespace dxvk {
     inline static std::atomic<uint32_t> fixedPrimsLastFrame { 0 };
   };
 
+  // Opacity micromaps on merged BLAS buckets that are rebuilt every frame (BlasBucketKey::isVolatile, rtx_accel_manager.cpp).
+  class DxvkDs1OmmOptions {
+  public:
+    RTX_OPTION("rtx.ds1Omm", bool, skipVolatileBuckets, true,
+               "Leaves opacity micromaps off the merged BLAS buckets rebuilt every frame (instances that changed in the last few "
+               "seconds): their build with micromaps costs more than the micromaps save. Still buckets keep theirs.");
+  };
+
   // The Dark Souls tab of the developer menu: every DS1-specific runtime option in one place.
   void showDs1Menu(const Rc<DxvkContext>& ctx);
 

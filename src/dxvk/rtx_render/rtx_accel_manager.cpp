@@ -1905,6 +1905,11 @@ namespace dxvk {
 
       // Bind opacity micromaps
       for (auto& blasBucket : blasBuckets) {
+        // Fork (DS1): a volatile bucket is rebuilt every frame; with micromaps attached its build costs more than the
+        // micromaps save in tracing (rtx.ds1Omm.skipVolatileBuckets).
+        if (blasBucket->isVolatile && DxvkDs1OmmOptions::skipVolatileBuckets()) {
+          continue;
+        }
         for (uint32_t i = 0; i < blasBucket->geometries.size(); i++) {
           auto ommSourceHash = opacityMicromapManager->tryBindOpacityMicromap(ctx, *blasBucket->originalInstances[i], blasBucket->instanceBillboardIndices[i],
                                                          blasBucket->geometries[i], instanceManager);

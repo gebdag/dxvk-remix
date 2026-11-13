@@ -109,17 +109,22 @@ namespace dxvk {
       RTX_OPTION("rtx.opacityMicromap.building", bool, enableVertexAndTextureOperations, true, "Applies vertex and texture operations during baking.");
       RTX_OPTION("rtx.opacityMicromap.building", bool, allow2StateOpacityMicromaps, true, "Allows generation of two state Opacity Micromaps.");
       RTX_OPTION("rtx.opacityMicromap.building", bool, force2StateOpacityMicromaps, false, "Forces generation of two state Opacity Micromaps.");
-      RTX_OPTION("rtx.opacityMicromap.building", int, subdivisionLevel, 8, "Opacity Micromap subdivision level per triangle. ");
+      // Fork (DS1): 7, not 8. A quarter of the micro triangles to bake and build; at Firelink level 8 never finished baking (each
+      // new micromap rebuilds the merged BLAS buckets), level 7 with the budgets below is done in about 70 s. 4-state micromaps
+      // leave the unknown micro triangles to the alpha test, so the picture is the same.
+      RTX_OPTION("rtx.opacityMicromap.building", int, subdivisionLevel, 7, "Opacity Micromap subdivision level per triangle. ");
       // Set to 0 as higher values cause bullet decals on a glass panels to miss parts in Portal RTX
       RTX_OPTION("rtx.opacityMicromap.building", float, decalsMinResolveTransparencyThreshold, 0.f, "Min resolve transparency threshold for decals.");
 
       // Parameterized to <1% FPS overhead on 4090
       // Baking: 2 mil ~ 0.15 ms
       // Building: 10 mil ~ 0.04 ms
-      RTX_OPTION("rtx.opacityMicromap.building", int, maxMicroTrianglesToBakeMillionPerSecond, 60 * 5, 
+      // Fork (DS1): 3000 (stock 300), with subdivisionLevel 7: the cut-out foliage of a DS1 map is built in about a minute
+      // instead of never; measured at Firelink with no frame over 40 ms while baking.
+      RTX_OPTION("rtx.opacityMicromap.building", int, maxMicroTrianglesToBakeMillionPerSecond, 3000, 
                  "Max Micro Triangles to bake [Million/Second].\n"
                  "The actual number of issued micro triangles also depends on \"costPerTexelTapPerMicroTriangleBudget\" option.");
-      RTX_OPTION("rtx.opacityMicromap.building", int, maxMicroTrianglesToBuildMillionPerSecond, 60 * 5, "Max Micro Triangles to build [Million/Second].");
+      RTX_OPTION("rtx.opacityMicromap.building", int, maxMicroTrianglesToBuildMillionPerSecond, 3000, "Max Micro Triangles to build [Million/Second].");
       RTX_OPTION_ENV("rtx.opacityMicromap.building", bool, enableUnlimitedBakingAndBuildingBudgets, false,
         "RTX_OPACITY_MICROMAP_BUILDING_UNLIMITED_BAKING_AND_BUILDING_BUDGETS",
         "Enables unlimited baking and building budgets so that all available Opacity Micromaps are generated in a frame.");

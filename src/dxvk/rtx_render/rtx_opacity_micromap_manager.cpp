@@ -50,6 +50,7 @@ const VkDeviceSize kBufferInBlasUsageAlignment = 256;
 namespace dxvk {
   // Fork (DS1), dev diagnostics ([DS1 OMM] log in onFrameStart).
   static uint32_t s_ds1OmmFrames = 0, s_ds1BuiltMeshOmms = 0, s_ds1BuiltBillboardOmms = 0;
+  static uint32_t s_ds1BoundLastFrame = 0, s_ds1AskedLastFrame = 0;
 
   DxvkOpacityMicromap::DxvkOpacityMicromap(DxvkDevice& device) : m_vkd(device.vkd()) { }
 
@@ -1332,6 +1333,55 @@ namespace dxvk {
 
     const uint32_t currentFrameIndex = m_device->getCurrentFrameId();
 
+    // Fork (DS1), dev diagnostics, every 600 frames: where every alpha-tested (cut-out) opaque instance stands with its
+    // micromap. Without one, each ray that crosses such a triangle runs the alpha test in a shader: at Firelink the
+    // cut-outs were 12 of 20 ms a frame, and turning micromaps off changed nothing.
+    {
+      static uint32_t s_censusFrames = 0;
+      if (DxvkDs1Dev::enable() && ++s_censusFrames >= 600) {
+        s_censusFrames = 0;
+        struct Tally { uint32_t instances = 0; uint64_t triangles = 0; };
+        Tally all, notEligible, noHash, waitingFilter, blackListed, inCache[6], young, noBlas;
+        for (RtInstance* inst : instanceManager.getInstanceTable()) {
+          if (!inst || inst->isMarkedForGC() || inst->isCreatedByRenderer() || inst->isHidden()) {
+            continue;
+          }
+          const auto& alphaState = inst->surface.alphaState;
+          if (!inst->isOpaque() || alphaState.isFullyOpaque || alphaState.isParticle || alphaState.emissiveBlend) {
+            continue;
+          }
+          auto add = [](Tally& t, uint32_t triangles) { t.instances++; t.triangles += triangles; };
+          if (!inst->getBlas()) {
+            add(noBlas, 0);
+            continue;
+          }
+          const uint32_t triangles = inst->getBlas()->modifiedGeometryData.calculatePrimitiveCount();
+          add(all, triangles);
+          if (inst->getFrameAge() < 10) {
+            add(young, triangles);
+          }
+          const OpacityMicromapInstanceData& data = inst->getOpacityMicromapInstanceData();
+          if (data.ommEligibilityGeneration == m_ommGeneration && !data.usesOMM) {
+            add(notEligible, triangles);
+          } else if (data.ommSrcHash == kEmptyHash) {
+            add(noHash, triangles);
+          } else if (m_blackListedList.find(data.ommSrcHash) != m_blackListedList.end()) {
+            add(blackListed, triangles);
+          } else if (const auto cached = m_ommCache.find(data.ommSrcHash); cached != m_ommCache.end()) {
+            add(inCache[std::min(uint32_t(cached->second.cacheState), 5u)], triangles);
+          } else {
+            add(waitingFilter, triangles);
+          }
+        }
+        auto text = [](const Tally& t) { return str::format(t.instances, " (", t.triangles, " tri)"); };
+        Logger::info(str::format("[DS1 OMM census] cut-out opaque instances ", text(all), ": younger than 10 frames ", text(young),
+          "; not eligible ", text(notEligible), ", no hash yet ", text(noHash), ", waiting on the request filter ", text(waitingFilter),
+          ", black listed ", text(blackListed), ", unprocessed ", text(inCache[0]), ", baking ", text(inCache[1]), ", baked ", text(inCache[2]),
+          ", built ", text(inCache[3]), ", ready ", text(inCache[4]), "; no BLAS ", noBlas.instances, ". Bindings last frame: ", s_ds1BoundLastFrame,
+          " bound of ", s_ds1AskedLastFrame, " asked. Memory ", m_memoryManager.getUsed() >> 20, " of ", m_memoryManager.getBudget() >> 20, " MB"));
+      }
+    }
+
     // Per-frame processing budget: limits how many non-deferred candidates are fully processed
     // to spread work across frames and avoid spikes when many deferrals expire at once.
     // When request filtering is disabled, tests expect every eligible request to be submitted
@@ -2406,6 +2456,8 @@ namespace dxvk {
         " billboard micromaps; cache holds ", m_ommCache.size(), " (", m_builtList.size(), " built, ", m_bakedList.size(), " baked, waiting)"));
       s_ds1OmmFrames = s_ds1BuiltMeshOmms = s_ds1BuiltBillboardOmms = 0;
     }
+    s_ds1BoundLastFrame = m_numBoundOMMs;
+    s_ds1AskedLastFrame = m_numRequestedOMMBindings;
 
     m_numBoundOMMs = 0;
     m_numRequestedOMMBindings = 0;
