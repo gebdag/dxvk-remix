@@ -135,15 +135,20 @@ void geometryResolverDs1WaterRefraction(inout SurfaceMaterialInteractionPSRSampl
                                         vec3 geometryNormal, vec3 position)
 {
   const float fullDepth = cb.ds1Ripple.refractionFullDepth;
-  if (!(fullDepth > 0.0f) || all(sample.ds1SmearedNormal == vec3(0.0f)))
+  if (all(sample.ds1SmearedNormal == vec3(0.0f)))
   {
     return;
   }
-  // rtx.ds1Water.displaceView off: no depth ray; the view goes straight through, as in shallow water.
+  // rtx.ds1Water.displaceView off: no depth ray; the view goes straight through, as in shallow water, whatever
+  // refractionFullDepth says (0 = bend fully everywhere would otherwise keep the full bend).
   if (cb.ds1Ripple.noDisplacement != 0)
   {
     sample.ds1SmearedNormal = vec3(0.0f);
     sample.inputDirection = incidentDirection;
+    return;
+  }
+  if (!(fullDepth > 0.0f))
+  {
     return;
   }
 
