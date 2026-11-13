@@ -43,9 +43,11 @@ RWStructuredBuffer<uint4> lightWords;
 layout(push_constant)
 ConstantBuffer<Ds1PlayerLightClearanceArgs> cb;
 
-// The first opaque, non-skinned surface facing the ray between tMin and tMax. Cutouts and blended surfaces (foliage, grates,
-// glass) let light through and do not count. A few character layers at most lie on the way.
-bool ds1WallHit(vec3 origin, vec3 direction, float tMin, float tMax, out float hitT)
+// The first opaque, non-skinned surface between tMin and tMax. Cutouts and blended surfaces (foliage, grates, glass) let light
+// through and do not count. A few character layers at most lie on the way. `bothSides`: a surface counts whichever side the ray
+// meets. From the player's side every surface across the way is a wall, whatever its winding: one-sided walls, the game's
+// inside-out thin walls and mirrored pieces show the ray their back, and with back faces culled the light went through them.
+bool ds1WallHit(vec3 origin, vec3 direction, float tMin, float tMax, bool bothSides, out float hitT)
 {
   hitT = tMax;
 
@@ -58,7 +60,7 @@ bool ds1WallHit(vec3 origin, vec3 direction, float tMin, float tMax, out float h
   for (uint layer = 0; layer < 4; ++layer)
   {
     RayQuery<0> rayQuery = RayQuery<0>();
-    rayQuery.TraceRayInline(topLevelAS, RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_CULL_NON_OPAQUE,
+    rayQuery.TraceRayInline(topLevelAS, bothSides ? RAY_FLAG_CULL_NON_OPAQUE : (RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_CULL_NON_OPAQUE),
                             OBJECT_MASK_OPAQUE, ray);
     while (rayQuery.Proceed())
     {
@@ -95,56 +97,60 @@ void ds1Across(vec3 direction, out vec3 side, out vec3 above)
   above = cross(side, direction);
 }
 
-// A wall along a ray: its centre ray and at least `needed` of four parallel rays `spread` apart hit one before tMax. Returns the
-// mean distance of the rays that hit, so one ray's hit on bumpy rock does not move the light with every sway of the head.
-bool ds1WideWall(vec3 origin, vec3 direction, float tMin, float tMax, float spread, uint needed, out float distance)
+// A wall along a ray: at least `needed` of five parallel rays (the centre and four `spread` off it) hit one before tMax. Any of
+// the five may be the one that misses: a crack between two wall pieces under the centre ray let the light through when the
+// centre had to hit. A rope or a bar meets one or two of them. Returns the mean distance of the rays that hit, so one ray's hit
+// on bumpy rock does not move the light with every sway of the head.
+bool ds1WideWall(vec3 origin, vec3 direction, float tMin, float tMax, float spread, uint needed, bool bothSides, out float distance)
 {
   distance = tMax;
-  float hitT;
-  if (!ds1WallHit(origin, direction, tMin, tMax, hitT))
-  {
-    return false;
-  }
   vec3 side, above;
   ds1Across(direction, side, above);
-  const vec3 offsets[4] = { side * spread, -side * spread, above * spread, -above * spread };
+  const vec3 offsets[5] = { vec3(0.0f), side * spread, -side * spread, above * spread, -above * spread };
   uint blocked = 0;
-  float sum = hitT;
-  for (uint i = 0; i < 4; ++i)
+  float sum = 0.0f;
+  for (uint i = 0; i < 5; ++i)
   {
-    float sideT;
-    if (ds1WallHit(origin + offsets[i], direction, tMin, tMax, sideT))
+    // Not enough rays left to reach `needed`: no wall.
+    if (blocked + (5u - i) < needed)
+    {
+      return false;
+    }
+    float hitT;
+    if (ds1WallHit(origin + offsets[i], direction, tMin, tMax, bothSides, hitT))
     {
       ++blocked;
-      sum += sideT;
+      sum += hitT;
     }
   }
   if (blocked < needed)
   {
     return false;
   }
-  distance = sum / float(blocked + 1);
+  distance = sum / float(blocked);
   return true;
 }
 
-// Where the light may go along the line from `anchor` towards `target`: short of the first wall across the line, by `keep`.
-vec3 ds1AlongLine(vec3 anchor, vec3 target, float keep)
+// Where the light may go along the line from `origin` towards `target`: short of the first wall across the line, by `keep`.
+// `tMin`: hits closer to the origin than this do not count.
+vec3 ds1AlongLine(vec3 origin, vec3 target, float keep, float tMin)
 {
-  const vec3 toTarget = target - anchor;
+  const vec3 toTarget = target - origin;
   const float distance = length(toTarget);
-  if (!(distance > cb.ignore))
+  if (!(distance > tMin))
   {
     return target;
   }
   const vec3 direction = toTarget / distance;
-  // Two of the four side rays 15 cm off: a wall the line grazes blocks the rays on its side only; a ladder rung or a rope blocks
-  // the centre ray alone (frame_20261109_171134: the light jumped to the head and back as the player swayed against a ladder).
+  // Three of the five rays 15 cm apart: a wall the line grazes blocks the rays on its side and the centre; a rope blocks one
+  // (frame_20261109_171134: the light jumped to the head and back as the player swayed against a ladder). Both sides of a
+  // surface count.
   float wall;
-  if (!ds1WideWall(anchor, direction, cb.ignore, distance + keep, 0.15f, 2u, wall))
+  if (!ds1WideWall(origin, direction, tMin, distance + keep, 0.15f, 3u, true, wall))
   {
     return target;
   }
-  return anchor + direction * clamp(wall - keep, 0.0f, distance);
+  return origin + direction * clamp(wall - keep, 0.0f, distance);
 }
 
 [shader("compute")]
@@ -174,8 +180,21 @@ void main()
     anchor.y = max(anchor.y, cb.bodyFeet.y + 0.3f);
   }
 
-  // 1. Out from behind a wall across the line from the head.
-  vec3 position = ds1AlongLine(anchor, target, keep);
+  // Where the lines to the light start: a point the player can be in. The head is not one: backed into a wall it sits at the
+  // wall or in it (animations put it there), and a line from it started on the wall's far side or met the wall closer than the
+  // `ignore` distance, so the light went behind the wall and the room went dark. The game's collision keeps the player's body,
+  // an upright capsule over the feet, out of every wall, narrow ones too: its axis at the head's height (kept inside the
+  // capsule) is always on the player's side. Without the feet, the head with its ignore distance as before.
+  vec3 start = anchor;
+  float startMin = cb.ignore;
+  if (feetKnown)
+  {
+    start = vec3(cb.bodyFeet.x, clamp(cb.anchor.y, cb.bodyFeet.y + 0.3f, cb.bodyFeet.y + cb.bodyHeight - 0.2f), cb.bodyFeet.z);
+    startMin = 0.02f;
+  }
+
+  // 1. Out from behind a wall across the line from the player.
+  vec3 position = ds1AlongLine(start, target, keep, startMin);
 
   // 2. Away from walls beside the sphere: every direction that meets a wall closer than `keep` pushes the light back by what
   // is missing. Opposite walls closer together than the sphere cancel out and leave it in the middle.
@@ -189,8 +208,9 @@ void main()
   for (uint i = 0; i < 14; ++i)
   {
     float wall;
-    // Three of four parallel rays 8 cm off: a wall, not a rung.
-    if (ds1WideWall(position, directions[i], 0.0f, keep, 0.08f, 3u, wall))
+    // Four of five parallel rays 8 cm apart: a wall, not a rung. Both sides count: a one-sided wall beside the light cut into its
+    // sphere from behind.
+    if (ds1WideWall(position, directions[i], 0.0f, keep, 0.08f, 4u, true, wall))
     {
       push -= directions[i] * (keep - wall);
     }
@@ -236,10 +256,10 @@ void main()
     }
   }
 
-  // 4. The pushes may cross another wall in a corner: the line from the head decides again.
+  // 4. The pushes may cross another wall in a corner, or out through a narrow one: the line from the player decides again.
   if (pushLength > 0.0f || bodyPush)
   {
-    position = ds1AlongLine(anchor, position, keep);
+    position = ds1AlongLine(start, position, keep, startMin);
   }
 
   // 5. Never under the floor (the user, Manus's arena: the light under the ground and the arena black). Straight down from
@@ -250,7 +270,7 @@ void main()
     const float top = max(max(anchor.y, position.y), feetKnown ? cb.bodyFeet.y + 0.5f : position.y) + 0.2f;
     const vec3 origin = vec3(position.x, top, position.z);
     float floorT;
-    if (ds1WideWall(origin, down, 0.0f, top - position.y + keep, 0.08f, 3u, floorT))
+    if (ds1WideWall(origin, down, 0.0f, top - position.y + keep, 0.08f, 4u, false, floorT))
     {
       const float floorY = top - floorT;
       position.y = max(position.y, floorY + keep);
