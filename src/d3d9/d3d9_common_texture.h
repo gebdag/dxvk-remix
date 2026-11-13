@@ -409,6 +409,9 @@ namespace dxvk {
 
     void SetupForRtx();
     void SetupForRtxFrom(const D3D9CommonTexture* source);
+    // Fork (DS1): a whole-texture copy from `source` (UpdateTexture, UpdateSurface) replaced this texture's contents: its hash
+    // follows them. Returns true when the hash changed.
+    bool RefreshRtxHashFrom(const D3D9CommonTexture* source);
     void ClearHash();
     
     void AddDirtyBox(CONST D3DBOX* pDirtyBox, uint32_t layer) {

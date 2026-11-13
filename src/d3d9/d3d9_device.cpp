@@ -847,7 +847,7 @@ namespace dxvk {
     // Set up the destination texture from the source texture for RTX use,
     // but only if the entire texture is updated.
     if (copyExtent == dstImage->info().extent) {
-      dstTextureInfo->SetupForRtxFrom(srcTextureInfo);
+      dstTextureInfo->RefreshRtxHashFrom(srcTextureInfo);
     }
 
     EmitCs([
@@ -897,8 +897,8 @@ namespace dxvk {
     if (dstTexInfo->IsAutomaticMip())
       mipLevels = 1;
 
-    // Set up the destination texture from the source texture for RTX use
-    dstTexInfo->SetupForRtxFrom(srcTexInfo);
+    // Set up the destination texture from the source texture for RTX use (fork: and follow new contents, RefreshRtxHashFrom)
+    dstTexInfo->RefreshRtxHashFrom(srcTexInfo);
 
     for (uint32_t a = 0; a < arraySlices; a++) {
       const D3DBOX& box = srcTexInfo->GetDirtyBox(a);

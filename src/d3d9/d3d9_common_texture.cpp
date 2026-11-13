@@ -711,6 +711,40 @@ namespace dxvk {
     SetupForRtxFrom(this);
   }
 
+  // Fork (DS1): SetupForRtxFrom keeps a texture's first hash for good. Dark Souls refills texture objects it keeps (a model
+  // loaded for the Chameleon spell, models streamed in over a map) with UpdateTexture from a system-memory copy, so the object
+  // kept the hash of its first contents, and the scene's texture cache handed out the image last seen under that hash: the
+  // Chameleon vase drew with an undead's atlas (no vines), the player came back with a dark mouth and an odd weapon, until
+  // Remix's caches were dropped (ray tracing off and on, a capture). A whole-texture copy now takes the source's hash. Hashes
+  // listed in the configuration as fixed identities (terrain, lightmaps, ignored textures) are kept, as the lock path keeps them.
+  bool D3D9CommonTexture::RefreshRtxHashFrom(const D3D9CommonTexture* source) {
+    if (source == nullptr || m_image == nullptr || m_image->getHash() == kEmptyHash) {
+      SetupForRtxFrom(source);
+      return false;
+    }
+    if (m_type != D3DRTYPE_TEXTURE || (m_desc.Usage & D3DUSAGE_DEPTHSTENCIL)) {
+      return false;
+    }
+    const auto& buffer = source->m_buffers[0];
+    if (nullptr == buffer.ptr()) {
+      return false;
+    }
+    const XXH64_hash_t oldHash = m_image->getHash();
+    if (lookupHash(RtxOptions::terrainTextures(), oldHash) || lookupHash(RtxOptions::lightmapTextures(), oldHash) ||
+        lookupHash(RtxOptions::ignoreTextures(), oldHash) || lookupHash(RtxOptions::ignoreBakedLightingTextures(), oldHash)) {
+      return false;
+    }
+    const bool useObsoleteHashMethod = NeedsUpload(0) && RtxOptions::useObsoleteHashOnTextureUpload();
+    const XXH64_hash_t newHash = useObsoleteHashMethod ? XXH64(buffer->mapPtr(0), buffer->info().size, 0)
+                                                       : XXH3_64bits(buffer->mapPtr(0), buffer->info().size);
+    if (newHash == oldHash) {
+      return false;
+    }
+    ClearHash();
+    SetupForRtxFrom(source);
+    return true;
+  }
+
   void D3D9CommonTexture::ClearHash() {
     if (m_image == nullptr) {
       return;
