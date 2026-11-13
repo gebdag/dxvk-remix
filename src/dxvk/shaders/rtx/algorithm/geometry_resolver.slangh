@@ -139,6 +139,13 @@ void geometryResolverDs1WaterRefraction(inout SurfaceMaterialInteractionPSRSampl
   {
     return;
   }
+  // rtx.ds1Water.surfaceDetail off: no depth ray; the view goes straight through the flat water, as in shallow water.
+  if (cb.ds1Ripple.flatWater != 0)
+  {
+    sample.ds1SmearedNormal = vec3(0.0f);
+    sample.inputDirection = incidentDirection;
+    return;
+  }
 
   Ray depthRay = (Ray) 0;
   depthRay.origin = position;

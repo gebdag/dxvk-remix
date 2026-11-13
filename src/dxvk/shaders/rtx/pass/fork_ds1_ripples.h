@@ -376,4 +376,10 @@ struct Ds1RippleArgs {
   // Steps of the walk: at the least, and at the most (a ray near the surface crosses many cells).
   uint parallaxSteps;
   uint parallaxMaxSteps;
+
+  // 1: DS1 water is optically flat (rtx.ds1Water.surfaceDetail off): no normal map, wave layers, ripples or smear.
+  uint flatWater;
+  uint flatPad0;
+  uint flatPad1;
+  uint flatPad2;
 };
