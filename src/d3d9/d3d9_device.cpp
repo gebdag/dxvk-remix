@@ -48,6 +48,7 @@
 #include "../dxvk/rtx_render/rtx_options.h"
 #include "../dxvk/rtx_render/rtx_terrain_baker.h"
 #include "../dxvk/rtx_render/rtx_ds1_occlusion_depth.h"
+#include "../dxvk/rtx_render/rtx_ds1_menu.h"
 
 #include "d3d9_initializer.h"
 
@@ -756,6 +757,30 @@ namespace dxvk {
   }
 
 
+  // Fork (DS1), dev diagnostics: a write into a texture Remix already identified by its contents' hash. The Chameleon vase and
+  // the player after Chameleon show another model's texture in Remix (stale hash -> the scene's texture cache serves the image
+  // last seen under it) while the game's own raster is right: these lines say which write path refills such textures, with the
+  // hash before and after. A few lines per texture and path, 3000 at most a session.
+  static void ds1LogTextureWrite(const char* op, const D3D9CommonTexture* tex, UINT mip, XXH64_hash_t before, XXH64_hash_t after,
+                                 const char* note = "") {
+    if (!DxvkDs1Dev::enable() || tex == nullptr || before == kEmptyHash) {
+      return;
+    }
+    static std::mutex s_mutex;
+    static std::unordered_map<uint64_t, uint32_t> s_seen;
+    static uint32_t s_lines = 0;
+    std::lock_guard<std::mutex> guard(s_mutex);
+    const uint64_t key = (reinterpret_cast<uint64_t>(tex) << 3) ^ std::hash<std::string>{}(op);
+    if (s_lines >= 3000 || s_seen[key]++ >= 4) {
+      return;
+    }
+    s_lines++;
+    const D3D9_COMMON_TEXTURE_DESC* desc = tex->Desc();
+    Logger::info(str::format("[DS1 tex write] ", op, " tex ", reinterpret_cast<const void*>(tex), " ", desc->Width, "x", desc->Height,
+      " fmt ", uint32_t(desc->Format), " pool ", uint32_t(desc->Pool), " usage 0x", std::hex, desc->Usage, std::dec, " mip ", mip,
+      " hash ", std::hex, before, " -> ", after, std::dec, before == after ? " (kept)" : " (changed)", note));
+  }
+
   HRESULT STDMETHODCALLTYPE D3D9DeviceEx::UpdateSurface(
           IDirect3DSurface9* pSourceSurface,
     const RECT*              pSourceRect,
@@ -846,8 +871,14 @@ namespace dxvk {
 
     // Set up the destination texture from the source texture for RTX use,
     // but only if the entire texture is updated.
-    if (copyExtent == dstImage->info().extent) {
-      dstTextureInfo->RefreshRtxHashFrom(srcTextureInfo);
+    {
+      const XXH64_hash_t before = dstImage->getHash();
+      const bool whole = copyExtent == dstImage->info().extent;
+      if (whole) {
+        dstTextureInfo->RefreshRtxHashFrom(srcTextureInfo);
+      }
+      ds1LogTextureWrite(whole ? "UpdateSurface" : "UpdateSurface partial", dstTextureInfo, dst->GetMipLevel(), before,
+                         dstImage->getHash());
     }
 
     EmitCs([
@@ -898,7 +929,11 @@ namespace dxvk {
       mipLevels = 1;
 
     // Set up the destination texture from the source texture for RTX use (fork: and follow new contents, RefreshRtxHashFrom)
-    dstTexInfo->RefreshRtxHashFrom(srcTexInfo);
+    {
+      const XXH64_hash_t before = dstImage->getHash();
+      dstTexInfo->RefreshRtxHashFrom(srcTexInfo);
+      ds1LogTextureWrite("UpdateTexture", dstTexInfo, 0, before, dstImage->getHash());
+    }
 
     for (uint32_t a = 0; a < arraySlices; a++) {
       const D3DBOX& box = srcTexInfo->GetDirtyBox(a);
@@ -1130,6 +1165,11 @@ namespace dxvk {
     if (unlikely(dstTextureInfo->Desc()->Pool != D3DPOOL_DEFAULT ||
                  srcTextureInfo->Desc()->Pool != D3DPOOL_DEFAULT))
       return D3DERR_INVALIDCALL;
+
+    if (dstTextureInfo->GetImage() != nullptr && !dstTextureInfo->IsRenderTarget()) {
+      const XXH64_hash_t h = dstTextureInfo->GetImage()->getHash();
+      ds1LogTextureWrite("StretchRect", dstTextureInfo, dst->GetMipLevel(), h, h);
+    }
 
     // NV-DXVK start: DS1 port - guard against NULL-format surfaces (D3DFMT_NULL has no backing image)
     if (unlikely(dstTextureInfo->IsNull() || srcTextureInfo->IsNull()))
@@ -4719,6 +4759,9 @@ namespace dxvk {
     const bool readOnly = Flags & D3DLOCK_READONLY;
     pResource->SetReadOnlyLocked(Subresource, readOnly);
 
+    // Fork (DS1): writes into an identified texture (ds1LogTextureWrite); the hash itself is handled below.
+    const XXH64_hash_t ds1HashBeforeLock = (!readOnly && pResource->GetImage() != nullptr) ? pResource->GetImage()->getHash() : kEmptyHash;
+
     // These hashes are configured as stable identities for RTX draw-call setup.
     // Some games update them after setup, but Remix still needs the original
     // hash to classify terrain and omit auxiliary textures like lightmaps.
@@ -4735,6 +4778,11 @@ namespace dxvk {
           pResource->ClearHash();
         }
       }
+    }
+
+    if (ds1HashBeforeLock != kEmptyHash && !(desc.Usage & (D3DUSAGE_RENDERTARGET | D3DUSAGE_DEPTHSTENCIL))) {
+      ds1LogTextureWrite("Lock write", pResource, MipLevel, ds1HashBeforeLock, pResource->GetImage()->getHash(),
+                         (Flags & D3DLOCK_DISCARD) ? " discard" : (Flags & D3DLOCK_NO_DIRTY_UPDATE) ? " no-dirty-update" : "");
     }
 
     bool renderable = desc.Usage & (D3DUSAGE_RENDERTARGET | D3DUSAGE_DEPTHSTENCIL);

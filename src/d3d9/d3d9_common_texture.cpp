@@ -711,7 +711,9 @@ namespace dxvk {
     SetupForRtxFrom(this);
   }
 
-  // Fork (DS1): SetupForRtxFrom keeps a texture's first hash for good. Dark Souls refills texture objects it keeps (a model
+  // Fork (DS1), CANDIDATE FOR REVERT (2026-11-13): did not fix the Chameleon vase / player textures in the user's test; kept
+  // until the [DS1 tex write] log (d3d9_device.cpp) shows which write path refills those textures.
+  // SetupForRtxFrom keeps a texture's first hash for good. Dark Souls refills texture objects it keeps (a model
   // loaded for the Chameleon spell, models streamed in over a map) with UpdateTexture from a system-memory copy, so the object
   // kept the hash of its first contents, and the scene's texture cache handed out the image last seen under that hash: the
   // Chameleon vase drew with an undead's atlas (no vines), the player came back with a dark mouth and an odd weapon, until
