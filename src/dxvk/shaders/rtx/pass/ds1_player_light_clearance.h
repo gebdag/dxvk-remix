@@ -35,6 +35,10 @@
 // the stage 6 tag 0xD2000000 (Surface::ds1SunLightmap, RtSurface::writeGPUData).
 #define DS1_PLC_SURFACE_UVEC4S   16
 #define DS1_PLC_SKINNED_FLAG     (1u << 29)
+// A character's rigid part (a weapon, a shield): the record's first uvec4's w, low half (RtSurface::writeGPUData's flags0) carries
+// it in bit 3 while the view fade's bit 2 is clear (Surface::isDs1RigidPart, DS1_RIPPLE_RIGID_PART_MARK).
+#define DS1_PLC_VIEW_FADE_MARK   (1u << 2)
+#define DS1_PLC_RIGID_PART_MARK  (1u << 3)
 
 struct Ds1PlayerLightClearanceArgs {
   // The head: where the light hangs before the proxy's offset.

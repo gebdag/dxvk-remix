@@ -72,7 +72,12 @@ bool ds1WallHit(vec3 origin, vec3 direction, float tMin, float tMax, bool bothSi
 
     const float t = rayQuery.CommittedRayT();
     const uint surfaceIndex = (rayQuery.CommittedInstanceID() & CUSTOM_INDEX_SURFACE_MASK) + rayQuery.CommittedGeometryIndex();
-    if ((surfaceWords[surfaceIndex * DS1_PLC_SURFACE_UVEC4S + 13].z & DS1_PLC_SKINNED_FLAG) != 0)
+    // A character's rigid parts pass too: weapons and shields hang on bones without weights, so they are no skinned draws. A big
+    // weapon in hand or on the back lay across the line to the light behind the player, and with every step of a run the light
+    // jumped to the head and back (the user, 2026-11-14).
+    const uint marks = surfaceWords[surfaceIndex * DS1_PLC_SURFACE_UVEC4S].w;
+    if ((surfaceWords[surfaceIndex * DS1_PLC_SURFACE_UVEC4S + 13].z & DS1_PLC_SKINNED_FLAG) != 0 ||
+        (marks & (DS1_PLC_VIEW_FADE_MARK | DS1_PLC_RIGID_PART_MARK)) == DS1_PLC_RIGID_PART_MARK)
     {
       ray.TMin = t + 1e-3f;
       if (ray.TMin >= ray.TMax)
