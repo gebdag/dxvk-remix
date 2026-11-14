@@ -84,13 +84,35 @@ vec3 geometryResolverDs1RefractionShift(SurfaceMaterialInteractionPSRSample samp
   while (rayQuery.Proceed())
   {
   }
-  if (rayQuery.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
+  float stop = rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? rayQuery.CommittedRayT() : shiftLength;
+
+  // The water's own surface stops the shift too. DS1 water meshes are not flat (the Gaping Dragon's sewer folds 2 degrees
+  // between neighbouring triangles at the median, 17 at the 90th percentile): past an edge where the next triangle folds
+  // down, the shift in this triangle's plane came out above the water, the resolver still held the view inside the medium,
+  // and it ran on through the "water" to its fog colour. Light bands along the water's triangle edges, cut through the
+  // floor seen under it (frame_20261114_192835, _192934).
+  RayQuery<0> waterQuery = RayQuery<0>();
+  waterQuery.TraceRayInline(topLevelAS, RAY_FLAG_FORCE_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES,
+                            OBJECT_MASK_TRANSLUCENT, rayToRayDesc(guardRay));
+  while (waterQuery.Proceed())
+  {
+    const uint waterSurface = (waterQuery.CandidateInstanceID() & CUSTOM_INDEX_SURFACE_MASK) + waterQuery.CandidateGeometryIndex();
+    if (surfaces[waterSurface].isDs1Water)
+    {
+      waterQuery.CommitNonOpaqueTriangleHit();
+    }
+  }
+  if (waterQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+  {
+    stop = min(stop, waterQuery.CommittedRayT());
+  }
+  if (stop >= shiftLength)
   {
     return shift;
   }
   // A small margin keeps the new origin off the surface it stopped at.
   const float kMargin = 0.01f;
-  return guardRay.direction * max(rayQuery.CommittedRayT() - kMargin, 0.0f);
+  return guardRay.direction * max(stop - kMargin, 0.0f);
 }
 
 // Fork (DS1): where a view entering DS1 water continues from, near the shore. The ray leaves the surface a fraction of a millimetre under
