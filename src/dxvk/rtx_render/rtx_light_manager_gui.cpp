@@ -355,11 +355,23 @@ namespace dxvk {
     if (!sphereIntersectsFrustum(frustum, sphereLight.getPosition(), sphereLight.getRadius())) {
       return {};
     }
+    // Fork (DS1): a light centre level with or behind the camera (a free camera flown into a light's sphere) projects with
+    // w <= 0: the division by it made the circle infinite, ImGui's segment table took (int)inf as a negative index and the
+    // runtime crashed (access violation in ImDrawList::_CalcCircleAutoSegmentCount, 2026-11-14). Such a light is not drawn.
+    const Vector3& centre = sphereLight.getPosition();
+    if (!((worldToProj * Vector4(centre.x, centre.y, centre.z, 1.f)).w > 1e-4f)) {
+      return {};
+    }
     ImVec2 screenPos[2];
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    transformToScreen(worldToProj, Vector2{ viewport->Size.x, viewport->Size.y }, sphereLight.getPosition(), screenPos[0]);
-    transformToScreen(worldToProj, Vector2{ viewport->Size.x, viewport->Size.y }, sphereLight.getPosition() + cameraRight * sphereLight.getRadius(), screenPos[1]);
-    const float radius = std::max(1.f, sqrtf(ImLengthSqr(ImVec2(screenPos[0].x - screenPos[1].x, screenPos[0].y - screenPos[1].y))));
+    transformToScreen(worldToProj, Vector2{ viewport->Size.x, viewport->Size.y }, centre, screenPos[0]);
+    transformToScreen(worldToProj, Vector2{ viewport->Size.x, viewport->Size.y }, centre + cameraRight * sphereLight.getRadius(), screenPos[1]);
+    float radius = std::max(1.f, sqrtf(ImLengthSqr(ImVec2(screenPos[0].x - screenPos[1].x, screenPos[0].y - screenPos[1].y))));
+    if (!std::isfinite(radius) || !std::isfinite(screenPos[0].x) || !std::isfinite(screenPos[0].y)) {
+      return {};
+    }
+    // Larger than a few screens is no different on screen, and keeps the circle's segment count bounded.
+    radius = std::min(radius, 4.f * std::max(viewport->Size.x, viewport->Size.y));
     drawList->AddCircleFilled(screenPos[0], radius, colHex);
 
     return DrawResult {
