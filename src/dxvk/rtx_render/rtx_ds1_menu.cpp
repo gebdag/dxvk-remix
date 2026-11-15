@@ -32,6 +32,7 @@
 #include "../dxvk_context.h"
 #include "../../d3d9/d3d9_rtx.h"
 #include "../imgui/imgui.h"
+#include "../../util/util_env.h"
 
 namespace dxvk {
 
@@ -65,6 +66,37 @@ namespace dxvk {
     // Sections start closed: the menu is a place to look something up, not a page of everything.
     constexpr ImGuiTreeNodeFlags kOpen = ImGuiTreeNodeFlags_None;
     constexpr ImGuiSliderFlags kClamp = ImGuiSliderFlags_AlwaysClamp;
+
+    // A line that opens `url` in the browser when clicked.
+    void link(const char* url) {
+      ImGui::TextColored(ImVec4(0.45f, 0.7f, 1.0f, 1.0f), "%s", url);
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        ImGui::SetTooltip("Open in the browser");
+      }
+      if (ImGui::IsItemClicked()) {
+        env::openUrlInBrowser(url);
+      }
+    }
+
+    void showAbout() {
+      if (!ImGui::CollapsingHeader("About", kOpen)) {
+        return;
+      }
+      ImGui::Indent();
+      ImGui::TextUnformatted("Dark Souls RTX created by gabdeg");
+      link("https://github.com/gebdag/");
+      ImGui::Spacing();
+      ImGui::TextUnformatted("Credits to:");
+      ImGui::Spacing();
+      ImGui::TextUnformatted("NVIDIA for RTX Remix");
+      ImGui::TextUnformatted("NV_E-man for Vibe Reverse Engineering Toolset");
+      ImGui::TextUnformatted("#xoxor4d for remix-comp-proxy & general inspiration");
+      ImGui::TextUnformatted("NightRaven for PBRFusion 4");
+      ImGui::TextUnformatted("Entity for play testing");
+      ImGui::TextUnformatted("and the RTX Remix Discord community!");
+      ImGui::Unindent();
+    }
 
     void showParticles() {
       if (!DxvkDs1MenuView::advanced() || !ImGui::CollapsingHeader("Particles and effects", kOpen)) {
@@ -278,6 +310,7 @@ namespace dxvk {
     if (DxvkDs1MenuView::advanced()) {
       ctx->getCommonObjects()->getSceneManager().getLightManager().showDs1LightList();
     }
+    showAbout();
 
     ImGui::PopItemWidth();
   }

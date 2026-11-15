@@ -112,7 +112,7 @@ namespace dxvk {
       ImGuiWindowFlags_NoSavedSettings |
       ImGuiWindowFlags_AlwaysAutoResize;
 
-    if (!ImGui::Begin("Welcome to RTX Remix", nullptr, kWindowFlags)) {
+    if (!ImGui::Begin("Welcome to Dark Souls RTX", nullptr, kWindowFlags)) {
       ImGui::End();
       return false;
     }
