@@ -1,3 +1,49 @@
+# dxvk-remix for Dark Souls: Prepare to Die Edition
+
+A fork of NVIDIA's [dxvk-remix](https://github.com/NVIDIAGameWorks/dxvk-remix), the RTX Remix runtime and bridge, with the
+runtime side of the RTX Remix port of *Dark Souls: Prepare to Die Edition*. It works together with the Dark Souls RTX Remix
+compatibility proxy (`d3d9.dll`), which hands it the game's draws, lights and settings through the Remix API.
+
+The Dark Souls work is on the `dark-souls` branch, on top of NVIDIA's `main`, which is kept here unchanged.
+
+Requires an owned copy of Dark Souls: Prepare to Die Edition.
+
+## What the `dark-souls` branch adds
+
+- **DS1's image pipeline:** haze, light shafts, depth of field, bloom, eye adaptation, colour
+  grade run on the path-traced image, with per-surface haze sets and image adjustments for players.
+- **Lights:** the game's point light falloff for the proxy's lights, the player's light kept out of walls and out of the
+  player's body, the sun scaled by the game's lightmaps, and a light view that shows every light and where it comes from.
+- **Water:** per-surface water layers, ripples around the wading player, refractions, swamp surface dynamics.
+- **Effects:** effect layers composited in the game's draw order, soft particles with the game's feather distance, sparks,
+  bloodstain motes and hit sparks as Remix particles, SpEffect colouring of phantoms.
+- **Characters:** skin scattering, wet/muddy/lava player effects, fur shell handling.
+- **Performance and stability:** opacity micromaps for foliage, shader pipelines prewarmed at launch and cached, bridge
+  fixes.
+- **HDR10 output** (experimental).
+- **A Dark Souls tab** in the developer menu (Alt+X) with the DS1-specific runtime settings; authoring tools such as
+  the Texture Lab in developer mode.
+
+## Building
+
+The requirements are NVIDIA's, listed in the build instructions below. From the repo root:
+
+```powershell
+.\scripts\build.ps1           # runtime: _output\d3d9.dll (goes into the game's .trex folder)
+.\scripts\build_bridge.ps1    # bridge: bridge\_output\d3d9.dll (the game's d3d9_remix.dll) and .trex\NvRemixBridge.exe
+```
+
+Both take `-Flavor release|debug|debugoptimized` (release by default).
+
+## License
+
+The same licences as dxvk-remix: [LICENSE](LICENSE), [LICENSE-MIT](LICENSE-MIT) and
+[ThirdPartyLicenses.txt](ThirdPartyLicenses.txt). Fixes picked from upstream keep their authors.
+
+---
+
+*NVIDIA's README for dxvk-remix follows unchanged.*
+
 # dxvk-remix
 
 [![Build Status](https://github.com/NVIDIAGameWorks/dxvk-remix/actions/workflows/build.yml/badge.svg)](https://github.com/NVIDIAGameWorks/dxvk-remix/actions/workflows/build.yml)
